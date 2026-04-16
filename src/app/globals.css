@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --cream: #fbf8f3;
+  --cream-deep: #f4efe6;
+  --blue: #6ec4e8;
+  --blue-deep: #4ba8d0;
+  --green: #5cb87a;
+  --green-deep: #3d9a5c;
+  --orange: #e9a26c;
+  --orange-deep: #d8894a;
+  --brown: #8b5e3c;
+  --charcoal: #3a3a3a;
+  --yellow: #f2d16b;
+}
+
+@theme inline {
+  --color-cream: var(--cream);
+  --color-cream-deep: var(--cream-deep);
+  --color-brand-blue: var(--blue);
+  --color-brand-blue-deep: var(--blue-deep);
+  --color-brand-green: var(--green);
+  --color-brand-green-deep: var(--green-deep);
+  --color-brand-orange: var(--orange);
+  --color-brand-orange-deep: var(--orange-deep);
+  --color-brand-brown: var(--brown);
+  --color-brand-charcoal: var(--charcoal);
+  --color-brand-yellow: var(--yellow);
+  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--cream);
+  color: var(--charcoal);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

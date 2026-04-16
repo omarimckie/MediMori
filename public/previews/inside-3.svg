@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <rect width="900" height="1200" fill="#fbf8f3"/>
+  <rect x="60" y="70" width="780" height="1060" rx="36" fill="#ffffff" stroke="#d9c8b6" stroke-width="6"/>
+  <path d="M150 220h600" stroke="#8b5e3c" stroke-width="18" stroke-linecap="round" opacity="0.38"/>
+  <path d="M150 280h600" stroke="#8b5e3c" stroke-width="18" stroke-linecap="round" opacity="0.28"/>
+  <path d="M150 340h430" stroke="#8b5e3c" stroke-width="18" stroke-linecap="round" opacity="0.28"/>
+  <rect x="140" y="430" width="620" height="480" rx="28" fill="#f4efe6"/>
+  <path d="M220 790l120-150 90 110 130-170 120 210" fill="none" stroke="#4ba8d0" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="220" cy="640" r="18" fill="#f2d16b"/>
+  <circle cx="340" cy="640" r="18" fill="#f2d16b"/>
+  <circle cx="450" cy="640" r="18" fill="#f2d16b"/>
+  <circle cx="580" cy="640" r="18" fill="#f2d16b"/>
+  <text x="450" y="1000" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#3a3a3a">Inside Preview Page 3</text>
+</svg>

@@ -1,0 +1,37 @@
+{
+  "books": [
+    {
+      "id": "book-one",
+      "title": "Children Diseases: Sickle Cell",
+      "subtitle": "By Dale-marie McKie, Omari McKie & Tayyaba Rasheed",
+      "description": "Children Diseases: Sickle Cell When Amara starts feeling tired and missing out on playtime, she begins to wonder why her body feels different. With the help of her parents and a kind doctor, Amara learns that she has something called Sickle Cell Anemia — a condition that makes her red blood cells special, but also means she has to take extra care of herself. Through gentle storytelling and vibrant illustrations, Amara’s Special Cells helps children understand what Sickle Cell Disease is in a comforting and age-appropriate way. Amara discovers how her body works, what helps her feel better, and most importantly — that she is strong, brave, and never alone. This inspiring story teaches children to: Understand their bodies and health in a simple, empowering way Find comfort in learning and talking about their diagnosis Build confidence in coping with challenges Encourage empathy among friends, siblings, and classmates Perfect for families, classrooms, and healthcare offices, Amara’s Special Cells is a beautiful resource for helping children and those who love them learn about Sickle Cell Anemia with compassion and hope. The first book in the “Children Diseases” series — helping kids understand, accept, and thrive through every diagnosis.",
+      "pricePaperback": "Check Amazon listing",
+      "priceEbook": "$7.00",
+      "amazonPaperbackUrl": "https://www.amazon.com/dp/B0GNSYT81K",
+      "ebookFileBaseName": "Sickle Cell",
+      "stripePriceIdEbook": "price_1TMhTEGmFetwj9NcJnvrh1e2",
+      "coverImageUrl": "/covers/sickle-cell.png",
+      "insideImageUrls": [
+        "/previews/inside-1.svg",
+        "/previews/inside-2.svg",
+        "/previews/inside-3.svg"
+      ]
+    },
+    {
+      "id": "book-two",
+      "title": "Health & Medicine Word Search Collection",
+      "subtitle": "By Omari McKie",
+      "description": "Medicine-Themed Word Search Book for All Ages Discover 60 exciting word search puzzles all centered around the world of medicine! From common illnesses and doctor visits to body systems and healthy habits, each puzzle introduces important medical words in a fun and easy-to-read format. This large print edition makes searching for words simple and enjoyable for children, teens, adults, and seniors alike. Perfect for: • Students learning about health • Families looking for educational fun • Classroom activities • Waiting rooms and clinics • Puzzle lovers of all ages All answers are clearly provided in the back of the book for quick and easy checking. Learn. Search. Discover. Repeat.",
+      "pricePaperback": "Check Amazon listing",
+      "priceEbook": "Set in dashboard",
+      "amazonPaperbackUrl": "https://www.amazon.com/dp/B0GSWSSKN9",
+      "ebookFileBaseName": "book-two",
+      "stripePriceIdEbook": "",
+      "insideImageUrls": [
+        "/previews/inside-1.svg",
+        "/previews/inside-2.svg",
+        "/previews/inside-3.svg"
+      ]
+    }
+  ]
+}
