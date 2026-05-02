@@ -63,7 +63,7 @@ export function SiteHeader() {
               alt="Twilight.Feather"
               width={56}
               height={56}
-              className="h-14 w-14 rounded-full border-2 border-brand-orange/40 object-cover shadow-sm"
+              className="h-14 w-14 shrink-0 rounded-full border-2 border-brand-orange/40 object-cover shadow-sm"
               priority
             />
             <div className="leading-tight">

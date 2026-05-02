@@ -90,7 +90,7 @@ export function EmailSignup() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-green px-5 font-bold text-white transition hover:bg-brand-green-deep disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-green-deep px-5 font-bold text-white transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
             >
               {isSubmitting ? "Saving..." : "Get 10% Off"}
             </button>

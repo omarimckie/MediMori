@@ -1,17 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --cream: #fbf8f3;
-  --cream-deep: #f4efe6;
-  --blue: #6ec4e8;
-  --blue-deep: #4ba8d0;
-  --green: #5cb87a;
-  --green-deep: #3d9a5c;
-  --orange: #e9a26c;
-  --orange-deep: #d8894a;
-  --brown: #8b5e3c;
-  --charcoal: #3a3a3a;
-  --yellow: #f2d16b;
+  /* Warm Ivory */
+  --cream: #fdf6e3;
+  --cream-deep: #f3ead4;
+  /* Slate Blue — lighter tint + exact for text / primary */
+  --blue: #6d8aad;
+  --blue-deep: #4a6b8f;
+  /* Lavender — exact + deep for solid buttons / “.Feather” wordmark */
+  --green: #c8b6e2;
+  --green-deep: #6e5d8e;
+  /* Dusty Rose — exact + deep for solid CTAs */
+  --orange: #d99b9b;
+  --orange-deep: #a86a6a;
+  /* Borders / footer — slate–rose neutral */
+  --brown: #8a7a7c;
+  --charcoal: #2c3540;
+  /* Golden Accent */
+  --yellow: #e8c547;
 }
 
 @theme inline {

@@ -90,7 +90,7 @@ export default async function BookDetailPage({ params }: Props) {
                   href={book.amazonPaperbackUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-orange px-5 text-sm font-bold text-white transition hover:bg-brand-orange-deep"
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-orange-deep px-5 text-sm font-bold text-white transition hover:brightness-95"
                 >
                   Paperback on Amazon
                 </a>

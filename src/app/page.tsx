@@ -61,7 +61,7 @@ export default function Home() {
             </div>
             <Link
               href="/blog"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-orange px-5 text-sm font-bold text-white transition hover:bg-brand-orange-deep"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-orange-deep px-5 text-sm font-bold text-white transition hover:brightness-95"
             >
               Open blog
             </Link>

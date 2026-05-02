@@ -66,7 +66,7 @@ export default function BlogPage() {
         <div className="mt-10 text-center">
           <Link
             href="/#books"
-            className="inline-flex rounded-2xl bg-brand-blue px-6 py-3 text-sm font-bold text-white transition hover:bg-brand-blue-deep"
+            className="inline-flex rounded-2xl bg-brand-blue-deep px-6 py-3 text-sm font-bold text-white transition hover:brightness-95"
           >
             Explore our books
           </Link>

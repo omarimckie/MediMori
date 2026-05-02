@@ -47,7 +47,7 @@ export function BookCard({ book }: Props) {
             </span>
             <Link
               href={`/books/${book.id}`}
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-brand-blue px-4 text-sm font-bold text-white transition hover:bg-brand-blue-deep"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-brand-blue-deep px-4 text-sm font-bold text-white transition hover:brightness-95"
             >
               View details
             </Link>

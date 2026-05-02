@@ -69,7 +69,7 @@ export function SuccessClient() {
         </p>
         <Link
           href="/#books"
-          className="mt-8 inline-flex rounded-2xl bg-brand-green px-6 py-3 font-bold text-white hover:bg-brand-green-deep"
+          className="mt-8 inline-flex rounded-2xl bg-brand-green-deep px-6 py-3 font-bold text-white hover:brightness-95"
         >
           Back to books
         </Link>
@@ -93,7 +93,7 @@ export function SuccessClient() {
         type="button"
         onClick={download}
         disabled={loading}
-        className="mt-10 inline-flex rounded-2xl bg-brand-blue px-8 py-4 text-lg font-bold text-white shadow-md transition hover:bg-brand-blue-deep disabled:cursor-wait disabled:opacity-70"
+        className="mt-10 inline-flex rounded-2xl bg-brand-blue-deep px-8 py-4 text-lg font-bold text-white shadow-md transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
       >
         {loading ? "Preparing download…" : "Download eBook"}
       </button>

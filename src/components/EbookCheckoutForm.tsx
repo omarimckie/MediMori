@@ -92,7 +92,7 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       <button
         type="submit"
         disabled={loading}
-        className="mt-3 inline-flex h-11 items-center justify-center rounded-xl bg-brand-green px-5 text-sm font-bold text-white transition hover:bg-brand-green-deep disabled:cursor-wait disabled:opacity-70"
+        className="mt-3 inline-flex h-11 items-center justify-center rounded-xl bg-brand-green-deep px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
       >
         {loading ? "Redirecting to checkout..." : "Buy eBook now"}
       </button>
