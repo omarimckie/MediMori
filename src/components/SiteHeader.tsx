@@ -45,11 +45,11 @@ function XIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 const socialLinks = [
-  { label: "Instagram", href: "https://instagram.com/medimori", Icon: InstagramIcon },
-  { label: "Facebook", href: "https://facebook.com/medimori", Icon: FacebookIcon },
-  { label: "Pinterest", href: "https://pinterest.com/medimori", Icon: PinterestIcon },
-  { label: "TikTok", href: "https://tiktok.com/@medimori", Icon: TikTokIcon },
-  { label: "X", href: "https://x.com/medimori", Icon: XIcon },
+  { label: "Instagram", href: "https://www.instagram.com/twilight.feather/", Icon: InstagramIcon },
+  { label: "Facebook", href: "https://www.facebook.com/twilight.feather/", Icon: FacebookIcon },
+  { label: "Pinterest", href: "https://www.pinterest.com/twilight.feather/", Icon: PinterestIcon },
+  { label: "TikTok", href: "https://tiktok.com/@twilightfeather", Icon: TikTokIcon },
+  { label: "X", href: "https://x.com/twilightfeather", Icon: XIcon },
 ];
 
 export function SiteHeader() {
@@ -60,7 +60,7 @@ export function SiteHeader() {
           <Link href="/" className="flex items-center gap-3">
             <Image
               src="/logo.png"
-              alt="Medi.Mori"
+              alt="Twilight.Feather"
               width={56}
               height={56}
               className="h-14 w-14 rounded-full border-2 border-brand-orange/40 object-cover shadow-sm"
@@ -68,8 +68,8 @@ export function SiteHeader() {
             />
             <div className="leading-tight">
               <span className="block text-xl font-extrabold tracking-tight">
-                <span className="text-brand-blue-deep">Medi</span>
-                <span className="text-brand-green-deep">.Mori</span>
+                <span className="text-brand-blue-deep">Twilight</span>
+                <span className="text-brand-green-deep">.Feather</span>
               </span>
               <span className="text-xs font-medium text-brand-charcoal/70">
                 Empowering Little Minds, Nurturing Wellness

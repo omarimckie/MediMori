@@ -16,7 +16,7 @@ const posts = [
     category: "Parent Tips",
   },
   {
-    title: "Inside Medi.Mori: Why We Create These Books",
+    title: "Inside Twilight.Feather: Why We Create These Books",
     excerpt:
       "A look at our mission to empower little minds with books rooted in compassion, wellness, and curiosity.",
     date: "April 2026",
@@ -30,7 +30,7 @@ export default function BlogPage() {
       <section className="mx-auto max-w-5xl">
         <div className="text-center">
           <p className="text-sm font-extrabold uppercase tracking-wide text-brand-orange-deep">
-            Medi.Mori Blog
+            Twilight.Feather Blog
           </p>
           <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-brand-charcoal sm:text-5xl">
             Stories, tips, and wellness insights

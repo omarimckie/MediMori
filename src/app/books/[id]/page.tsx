@@ -172,8 +172,8 @@ export default async function BookDetailPage({ params }: Props) {
                   src={src}
                   alt={`${book.title} inside page ${index + 1}`}
                   width={900}
-                  height={1200}
-                  className="h-auto w-full object-cover"
+                  height={900}
+                  className="h-auto w-full bg-cream object-contain"
                 />
               </div>
             ))}

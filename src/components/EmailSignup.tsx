@@ -9,7 +9,7 @@ type SignupResponse = {
   message?: string;
 };
 
-const DEFAULT_CODE = "MEDIMORI10";
+const DEFAULT_CODE = "TWILIGHTFEATHER10";
 
 export function EmailSignup() {
   const [email, setEmail] = useState("");
@@ -62,7 +62,7 @@ export function EmailSignup() {
         <div className="grid gap-6 md:grid-cols-[1.3fr_1fr] md:items-center">
           <div>
             <p className="text-sm font-extrabold uppercase tracking-wider text-brand-green-deep">
-              Join the Medi.Mori list
+              Join the Twilight.Feather list
             </p>
             <h2 className="mt-2 text-3xl font-extrabold text-brand-charcoal">
               Get 10% off your purchase

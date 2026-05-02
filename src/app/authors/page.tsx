@@ -7,7 +7,7 @@ export default function AuthorsPage() {
             About Our Authors
           </h1>
           <p className="mt-4 text-brand-charcoal/75">
-            Meet the creators behind Medi.Mori&apos;s wellness-focused stories.
+            Meet the creators behind Twilight.Feather&apos;s wellness-focused stories.
           </p>
         </div>
 

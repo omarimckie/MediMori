@@ -39,7 +39,7 @@ export function SuccessClient() {
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="([^"]+)"/i);
-      const filename = match?.[1] ?? "medimori-ebook.pdf";
+      const filename = match?.[1] ?? "twilightfeather-ebook.pdf";
 
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");

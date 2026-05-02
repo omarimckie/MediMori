@@ -11,9 +11,9 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Medi.Mori — Children’s books & wellness",
+  title: "Twilight.Feather — Children’s books & wellness",
   description:
-    "Empowering Little Minds, Nurturing Wellness. Shop Medi.Mori stories for children.",
+    "Empowering Little Minds, Nurturing Wellness. Shop Twilight.Feather stories for children.",
 };
 
 export default function RootLayout({

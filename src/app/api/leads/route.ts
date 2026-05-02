@@ -3,7 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 const LEADS_FILE = path.join(process.cwd(), "private", "leads.json");
-const DISCOUNT_CODE = "MEDIMORI10";
+const DISCOUNT_CODE = "TWILIGHTFEATHER10";
 
 type Lead = {
   email: string;

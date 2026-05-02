@@ -10,6 +10,7 @@
     "scrape:amazon": "node scripts/scrape-amazon.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.3.3",
     "framer-motion": "^12.38.0",
     "next": "16.2.4",
     "react": "19.2.4",

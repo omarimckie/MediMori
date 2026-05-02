@@ -35,7 +35,7 @@ export default function Home() {
             transition={{ duration: 0.5, delay: 0.25, ease: "easeOut" }}
             className="mt-6 text-lg leading-relaxed text-brand-charcoal/80"
           >
-            Medi.Mori publishes gentle, colorful children’s books rooted in wellness
+            Twilight.Feather publishes gentle, colorful children’s books rooted in wellness
             and care. Choose a paperback on Amazon, or buy an eBook here for an instant
             download after checkout.
           </motion.p>
@@ -56,7 +56,7 @@ export default function Home() {
               </h2>
               <p className="mt-2 max-w-2xl text-sm text-brand-charcoal/75 sm:text-base">
                 Read wellness tips, family reading guidance, and updates from the
-                Medi.Mori team.
+                Twilight.Feather team.
               </p>
             </div>
             <Link
