@@ -18,16 +18,19 @@ function AuthorPhoto({
   className?: string;
 }) {
   if (author.photoSrc) {
+    const fitClass = author.photoFit === "contain" ? "object-contain" : "object-cover";
+    const bgClass = author.photoFit === "contain" ? "bg-cream-deep" : "bg-white";
+
     return (
       <div
-        className={`aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-brand-brown/20 bg-white shadow-sm ${className}`}
+        className={`aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-brand-brown/20 shadow-sm ${bgClass} ${className}`}
       >
         <Image
           src={author.photoSrc}
           alt={author.photoAlt ?? `${author.name} headshot`}
           width={220}
           height={220}
-          className="h-full w-full object-cover"
+          className={`h-full w-full ${fitClass}`}
         />
       </div>
     );
