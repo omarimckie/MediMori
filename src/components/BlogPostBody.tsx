@@ -44,19 +44,23 @@ export function BlogPostBody({ post }: Props) {
         {post.externalUrl ? (
           <div className="rounded-2xl border border-brand-blue/20 bg-brand-blue/[0.06] p-5">
             <p className="text-xs font-bold uppercase tracking-wide text-brand-blue-deep">
-              External article
+              Original article
             </p>
             <p className="mt-2 text-lg font-extrabold text-brand-charcoal">
-              {post.sourceName ? `${post.sourceName}: ` : ""}
               {post.title}
             </p>
+            {post.sourceName ? (
+              <p className="mt-1 text-sm text-brand-charcoal/70">
+                Published by {post.sourceName} — not written by Twilight.Feather.
+              </p>
+            ) : null}
             <a
               href={post.externalUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-4 inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-5 text-sm font-bold text-section-navy transition hover:brightness-95"
             >
-              Read on {post.sourceName ?? "publisher site"} →
+              Read the original article →
             </a>
             <p className="mt-3 break-all text-xs text-brand-charcoal/55">
               {post.externalUrl}

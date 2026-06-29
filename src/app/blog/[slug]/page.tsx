@@ -8,6 +8,7 @@ import {
   getPostBySlug,
   getPostTypeLabel,
   getPosts,
+  isSharedBlogPost,
 } from "@/lib/blog";
 import { absoluteUrl } from "@/lib/site";
 import type { Metadata } from "next";
@@ -19,13 +20,16 @@ type Props = {
   params: Promise<{ slug: string }>;
 };
 
-export function generateStaticParams() {
-  return getPosts().map((post) => ({ slug: post.slug }));
+export const dynamic = "force-dynamic";
+
+export async function generateStaticParams() {
+  const posts = await getPosts();
+  return posts.map((post) => ({ slug: post.slug }));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPostBySlug(slug);
+  const post = await getPostBySlug(slug);
 
   if (!post) {
     return { title: "Post not found" };
@@ -61,13 +65,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
-  const post = getPostBySlug(slug);
+  const post = await getPostBySlug(slug);
 
   if (!post) notFound();
 
   const pageUrl = absoluteUrl(`/blog/${post.slug}`);
   const typeLabel = getPostTypeLabel(post.type);
   const author = getPostAuthor(post);
+  const shared = isSharedBlogPost(post.type);
 
   return (
     <main>
@@ -96,7 +101,7 @@ export default async function BlogPostPage({ params }: Props) {
         </p>
         {author ? (
           <div className="mt-4">
-            <BlogPostAuthor author={author} tone="dark" />
+            <BlogPostAuthor author={author} tone="dark" shared={shared} />
           </div>
         ) : null}
         <p className="mt-4 text-base leading-relaxed text-white/85">{post.excerpt}</p>
@@ -113,7 +118,7 @@ export default async function BlogPostPage({ params }: Props) {
 
         {author ? (
           <div className="mt-8">
-            <BlogPostAuthor author={author} variant="detail" />
+            <BlogPostAuthor author={author} variant="detail" shared={shared} />
           </div>
         ) : null}
 

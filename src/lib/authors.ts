@@ -2,6 +2,8 @@ import { authors, type Author } from "@/data/authors";
 
 export type { Author };
 
+export const DEFAULT_BLOG_AUTHOR_ID = "omari";
+
 export function getAuthors(): Author[] {
   return authors;
 }

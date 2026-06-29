@@ -1,5 +1,5 @@
 import { BlogPostAuthor } from "@/components/BlogPostAuthor";
-import { formatPostDate, getPostAuthor, getPostTypeLabel, type BlogPost } from "@/lib/blog";
+import { formatPostDate, getPostAuthor, getPostTypeLabel, isSharedBlogPost, type BlogPost } from "@/lib/blog";
 import Link from "next/link";
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
 export function BlogPostCard({ post }: Props) {
   const typeLabel = getPostTypeLabel(post.type);
   const author = getPostAuthor(post);
+  const shared = isSharedBlogPost(post.type);
 
   return (
     <article className="flex h-full flex-col rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm shadow-brand-brown/10 transition hover:border-brand-blue/25 hover:shadow-md">
@@ -35,7 +36,7 @@ export function BlogPostCard({ post }: Props) {
       </p>
 
       <div className="mt-5 space-y-3">
-        {author ? <BlogPostAuthor author={author} /> : null}
+        {author ? <BlogPostAuthor author={author} shared={shared} /> : null}
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold text-brand-charcoal/60">
             {formatPostDate(post)}

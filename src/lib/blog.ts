@@ -1,7 +1,10 @@
 import blogData from "@/data/blog.json";
-import { getAuthorById, type Author } from "@/lib/authors";
+import { DEFAULT_BLOG_AUTHOR_ID, getAuthorById, type Author } from "@/lib/authors";
+import { readStoredPosts } from "@/lib/blog-store";
+import type { BlogPostType } from "@/lib/blog-types";
 
-export type BlogPostType = "article" | "link" | "roundup";
+export type { BlogPostType } from "@/lib/blog-types";
+export { getPostTypeLabel, isSharedBlogPost } from "@/lib/blog-types";
 
 export type BlogRoundupLink = {
   title: string;
@@ -28,28 +31,58 @@ export type BlogPost = {
   links?: BlogRoundupLink[];
 };
 
+type BlogPostRecord = Omit<BlogPost, "authorId"> & {
+  authorId?: string;
+};
+
 type BlogDataFile = {
-  posts: BlogPost[];
+  posts: BlogPostRecord[];
 };
 
-const typeLabels: Record<BlogPostType, string> = {
-  article: "Article",
-  link: "Link share",
-  roundup: "Reading roundup",
-};
-
-export function getPostTypeLabel(type: BlogPostType): string {
-  return typeLabels[type];
+function resolveAuthorId(authorId?: string): string {
+  const trimmed = authorId?.trim();
+  return trimmed || DEFAULT_BLOG_AUTHOR_ID;
 }
 
-export function getPosts(): BlogPost[] {
-  return [...(blogData as BlogDataFile).posts].sort(
+function normalizePost(post: BlogPostRecord): BlogPost {
+  return {
+    ...post,
+    authorId: resolveAuthorId(post.authorId),
+  };
+}
+
+function sortPosts(posts: BlogPost[]): BlogPost[] {
+  return [...posts].sort(
     (a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt),
   );
 }
 
-export function getPostBySlug(slug: string): BlogPost | undefined {
-  return getPosts().find((post) => post.slug === slug);
+function mergePosts(staticPosts: BlogPostRecord[], storedPosts: BlogPostRecord[]): BlogPost[] {
+  const bySlug = new Map<string, BlogPostRecord>();
+
+  for (const post of staticPosts) {
+    bySlug.set(post.slug, post);
+  }
+
+  for (const post of storedPosts) {
+    bySlug.set(post.slug, post);
+  }
+
+  return sortPosts([...bySlug.values()].map(normalizePost));
+}
+
+function getStaticPosts(): BlogPostRecord[] {
+  return (blogData as BlogDataFile).posts;
+}
+
+export async function getPosts(): Promise<BlogPost[]> {
+  const storedPosts = await readStoredPosts();
+  return mergePosts(getStaticPosts(), storedPosts);
+}
+
+export async function getPostBySlug(slug: string): Promise<BlogPost | undefined> {
+  const posts = await getPosts();
+  return posts.find((post) => post.slug === slug);
 }
 
 export function getPostAuthor(post: BlogPost): Author | undefined {
@@ -63,4 +96,8 @@ export function formatPostDate(post: BlogPost): string {
     month: "long",
     year: "numeric",
   });
+}
+
+export function getStaticSeedPosts(): BlogPostRecord[] {
+  return getStaticPosts();
 }

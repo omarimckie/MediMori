@@ -7,15 +7,18 @@ type Props = {
   author: Author;
   variant?: "compact" | "detail";
   tone?: "light" | "dark";
+  shared?: boolean;
 };
 
 export function BlogPostAuthor({
   author,
   variant = "compact",
   tone = "light",
+  shared = false,
 }: Props) {
   const href = getAuthorProfileHref(author.id);
   const isDark = tone === "dark";
+  const prefix = shared ? "Shared by " : "By ";
 
   const linkClass =
     variant === "detail"
@@ -26,11 +29,6 @@ export function BlogPostAuthor({
     variant === "detail"
       ? "text-base font-extrabold text-brand-charcoal group-hover:text-brand-blue-deep"
       : `text-xs font-bold ${isDark ? "text-white/90 group-hover:text-white" : "text-brand-charcoal/80 group-hover:text-brand-blue-deep"}`;
-
-  const metaClass =
-    variant === "detail"
-      ? "mt-0.5 text-sm text-brand-charcoal/65"
-      : "hidden";
 
   return (
     <Link href={href} className={linkClass}>
@@ -52,11 +50,15 @@ export function BlogPostAuthor({
 
       <span className="min-w-0">
         <span className={nameClass}>
-          {variant === "compact" ? "By " : ""}
+          {variant === "compact" ? prefix : shared ? "Shared by " : ""}
           {author.name}
         </span>
         {variant === "detail" ? (
-          <p className={metaClass}>{author.tagline}</p>
+          <p className="mt-0.5 text-sm text-brand-charcoal/65">
+            {shared
+              ? "Curated link share — we did not write the original article."
+              : author.tagline}
+          </p>
         ) : null}
       </span>
     </Link>

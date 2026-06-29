@@ -1,6 +1,23 @@
 {
   "posts": [
     {
+      "slug": "wellness-mama-asthma-remedies",
+      "type": "link",
+      "title": "Natural remedies to calm asthma symptoms",
+      "excerpt": "Omari shares a Wellness Mama article on gentle, everyday ways families can support children with asthma—alongside care from your doctor.",
+      "category": "What we're reading",
+      "publishedAt": "2026-06-28",
+      "dateLabel": "June 2026",
+      "externalUrl": "https://wellnessmama.com/remedies/asthma-remedies/",
+      "sourceName": "Wellness Mama",
+      "commentary": [
+        "I am not the author of this piece—it was written by Katie Wells at Wellness Mama. I wanted to share it here because I thought it was a helpful resource on natural remedies that may calm mild asthma symptoms.",
+        "The article walks through practical ideas: reducing environmental irritants, stress support, diet changes rich in anti-inflammatory nutrients, and other gentle approaches families sometimes explore with their doctor.",
+        "I appreciate that it does not treat inhalers or medical care as optional. Natural remedies are framed as something to discuss with your child's physician—not a replacement for prescribed treatment when it is needed.",
+        "If your family is reading AJ Can Breathe Easy together, this link may be a useful companion for caregivers who want more to discuss at home. As always, check with your pediatrician or family physician before trying anything new."
+      ]
+    },
+    {
       "slug": "health-stories-for-kids",
       "type": "article",
       "authorId": "dale-marie",
@@ -19,7 +36,6 @@
     {
       "slug": "family-reading-routine",
       "type": "article",
-      "authorId": "omari",
       "title": "5 Ways Families Can Build a Reading Routine",
       "excerpt": "Small daily reading habits create stronger confidence, vocabulary growth, and emotional connection at home.",
       "category": "Parent Tips",
@@ -67,7 +83,6 @@
     {
       "slug": "march-reading-roundup",
       "type": "roundup",
-      "authorId": "omari",
       "title": "March reading roundup: articles we loved",
       "excerpt": "Three links worth your time—each with a short note on why we saved it for families and educators.",
       "category": "What we're reading",
