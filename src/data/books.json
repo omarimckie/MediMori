@@ -33,6 +33,19 @@
         "/previews/inside-2.svg",
         "/previews/inside-3.svg"
       ]
+    },
+    {
+      "id": "book-three",
+      "title": "Children Diseases: Asthma",
+      "subtitle": "AJ Can Breathe Easy — By Dr. Dale-marie McKie & Omari McKie",
+      "description": "AJ Can Breathe Easy is a story about asthma, courage, and doing all the things you love. When AJ learns about his asthma, he discovers—with the help of his family—how to understand his body, use his inhaler, and keep doing the activities that make him happy. Through gentle storytelling and warm illustrations, this book helps children understand asthma in a comforting, age-appropriate way. AJ learns that he is strong, brave, and never alone. Perfect for families, classrooms, and healthcare offices, AJ Can Breathe Easy is a beautiful resource for helping children and those who love them learn about asthma with compassion and hope. Part of the Children Diseases series — helping kids understand, accept, and thrive through every diagnosis.",
+      "pricePaperback": "Check Amazon listing",
+      "priceEbook": "$7.00",
+      "amazonPaperbackUrl": "",
+      "ebookFileBaseName": "Asthma",
+      "stripePriceIdEbook": "",
+      "coverImageUrl": "/covers/asthma.png",
+      "insideImageUrls": []
     }
   ]
 }

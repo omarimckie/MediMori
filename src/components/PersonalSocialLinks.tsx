@@ -21,9 +21,17 @@ const platformLabels: Record<PersonalSocialPlatform, string> = {
   bluesky: "Bluesky",
 };
 
-export function PersonalSocialLinks() {
+export function PersonalSocialLinks({
+  align = "center",
+  stopLinkPropagation = false,
+}: {
+  align?: "center" | "start";
+  stopLinkPropagation?: boolean;
+}) {
+  const alignClass = align === "start" ? "items-start" : "items-center";
+
   return (
-    <ul className="mt-3 flex flex-col items-center gap-2">
+    <ul className={`mt-3 flex flex-col gap-2 ${alignClass}`}>
       {personalSocialLinks.map((link) => {
         const Icon = platformIcons[link.platform];
 
@@ -33,6 +41,7 @@ export function PersonalSocialLinks() {
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={stopLinkPropagation ? (event) => event.stopPropagation() : undefined}
               className="inline-flex items-center gap-2 text-sm font-semibold text-brand-charcoal/80 transition hover:text-brand-blue-deep"
             >
               <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-blue/10 text-brand-charcoal/80">

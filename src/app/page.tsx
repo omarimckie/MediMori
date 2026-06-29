@@ -45,10 +45,10 @@ export default function Home() {
       <PageSection tone="white" id="books" className="scroll-mt-24">
         <div className="mb-10 text-center">
           <h2 className="text-3xl font-extrabold text-brand-charcoal">Our books</h2>
-          <p className="mt-2 text-brand-charcoal/75">Two titles today — more stories on the way.</p>
+          <p className="mt-2 text-brand-charcoal/75">Three titles today — more stories on the way.</p>
         </div>
         <motion.div
-          className="grid gap-10 md:grid-cols-2"
+          className="grid gap-10 md:grid-cols-2 lg:grid-cols-3"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
