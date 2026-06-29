@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-brand-brown/20 bg-brand-brown/10">
+    <footer className="mt-auto border-t border-brand-brown/15 bg-white">
       <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-10 text-sm text-brand-charcoal/80 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <p className="font-medium">
           © {new Date().getFullYear()} Twilight.Feather. All rights reserved.

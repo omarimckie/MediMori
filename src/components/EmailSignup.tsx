@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { FormEvent, useState } from "react";
 
 type SignupResponse = {
@@ -51,14 +50,7 @@ export function EmailSignup() {
   }
 
   return (
-    <section className="px-4 py-14 sm:px-6 sm:py-18">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.45, ease: "easeOut" }}
-        className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-brand-green/20 bg-gradient-to-r from-white to-brand-green/10 p-6 shadow-sm shadow-brand-brown/10 sm:p-8"
-      >
+    <div className="overflow-hidden rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm shadow-brand-brown/10 sm:p-8">
         <div className="grid gap-6 md:grid-cols-[1.3fr_1fr] md:items-center">
           <div>
             <p className="text-sm font-extrabold uppercase tracking-wider text-brand-green-deep">
@@ -90,7 +82,7 @@ export function EmailSignup() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-green-deep px-5 font-bold text-white transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-yellow-bright px-5 font-bold text-section-navy transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
             >
               {isSubmitting ? "Saving..." : "Get 10% Off"}
             </button>
@@ -109,7 +101,6 @@ export function EmailSignup() {
             </p>
           </div>
         ) : null}
-      </motion.div>
-    </section>
+    </div>
   );
 }

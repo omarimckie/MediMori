@@ -1,4 +1,5 @@
 import { EbookCheckoutForm } from "@/components/EbookCheckoutForm";
+import { PageSection } from "@/components/PageSection";
 import { getBookById, getBooks } from "@/lib/books";
 import Image from "next/image";
 import Link from "next/link";
@@ -24,16 +25,26 @@ export default async function BookDetailPage({ params }: Props) {
   const hasDirectEbookCheckout = Boolean(book.stripePriceIdEbook?.trim());
 
   return (
-    <main className="px-4 py-14 sm:px-6 sm:py-20">
-      <section className="mx-auto max-w-5xl">
+    <main>
+      <PageSection tone="navy" className="py-12 sm:py-14">
         <Link
           href="/#books"
-          className="inline-flex items-center rounded-full bg-brand-blue/10 px-4 py-2 text-sm font-bold text-brand-blue-deep transition hover:bg-brand-blue/20"
+          className="inline-flex items-center rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
         >
           Back to books
         </Link>
+        <h1 className="mt-6 text-3xl font-extrabold text-white sm:text-4xl">
+          {book.title}
+        </h1>
+        {book.subtitle ? (
+          <p className="mt-2 text-base font-semibold text-brand-yellow-bright">
+            {book.subtitle}
+          </p>
+        ) : null}
+      </PageSection>
 
-        <div className="mt-6 grid gap-8 md:grid-cols-[0.8fr_1.2fr]">
+      <PageSection tone="white">
+        <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr]">
           <div className="mx-auto w-full max-w-[340px] overflow-hidden rounded-3xl border border-brand-brown/20 bg-white shadow-sm">
             {book.coverImageUrl ? (
               <Image
@@ -45,24 +56,15 @@ export default async function BookDetailPage({ params }: Props) {
                 priority
               />
             ) : (
-              <div className="flex h-[420px] items-center justify-center bg-cream text-sm font-semibold text-brand-charcoal/70">
+              <div className="flex h-[420px] items-center justify-center bg-cream-section text-sm font-semibold text-brand-charcoal/70">
                 Cover image coming soon
               </div>
             )}
           </div>
 
           <article className="rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm">
-            <h1 className="text-3xl font-extrabold text-brand-charcoal sm:text-4xl">
-              {book.title}
-            </h1>
-            {book.subtitle ? (
-              <p className="mt-2 text-base font-semibold text-brand-green-deep">
-                {book.subtitle}
-              </p>
-            ) : null}
-
             {book.amazonStarRating ? (
-              <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-yellow/25 px-4 py-2 text-sm font-bold text-brand-charcoal">
+              <p className="inline-flex items-center gap-2 rounded-full bg-brand-yellow/25 px-4 py-2 text-sm font-bold text-brand-charcoal">
                 <span aria-hidden="true" className="text-brand-orange-deep">
                   ★
                 </span>
@@ -74,7 +76,7 @@ export default async function BookDetailPage({ params }: Props) {
               {book.description}
             </p>
 
-            <div className="mt-7 grid gap-3 rounded-2xl border border-brand-brown/15 bg-cream p-4 text-sm">
+            <div className="mt-7 grid gap-3 rounded-2xl border border-brand-brown/15 bg-cream-section p-4 text-sm">
               <p className="font-bold text-brand-charcoal">Pricing</p>
               <p className="text-brand-charcoal/85">
                 Paperback: <span className="font-semibold">{book.pricePaperback ?? "Set price"}</span>
@@ -90,7 +92,7 @@ export default async function BookDetailPage({ params }: Props) {
                   href={book.amazonPaperbackUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-orange-deep px-5 text-sm font-bold text-white transition hover:brightness-95"
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-5 text-sm font-bold text-section-navy transition hover:brightness-95"
                 >
                   Paperback on Amazon
                 </a>
@@ -106,17 +108,17 @@ export default async function BookDetailPage({ params }: Props) {
             ) : null}
           </article>
         </div>
-      </section>
+      </PageSection>
 
       {galleryImages.length ? (
-        <section className="mx-auto mt-14 max-w-5xl">
+        <PageSection tone="cream">
           <h2 className="text-2xl font-extrabold text-brand-charcoal">
             Photos from Amazon listing
           </h2>
           <p className="mt-2 text-sm text-brand-charcoal/75">
-            Pulled when you run <code className="rounded bg-cream-deep px-1">npm run scrape:amazon</code>.
+            Pulled when you run <code className="rounded bg-white px-1">npm run scrape:amazon</code>.
             Replace with your own assets anytime in{" "}
-            <code className="rounded bg-cream-deep px-1">amazonGalleryImageUrls</code>.
+            <code className="rounded bg-white px-1">amazonGalleryImageUrls</code>.
           </p>
           <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {galleryImages.map((src, index) => (
@@ -134,31 +136,31 @@ export default async function BookDetailPage({ params }: Props) {
               </div>
             ))}
           </div>
-        </section>
+        </PageSection>
       ) : null}
 
       {book.amazonAplusText ? (
-        <section className="mx-auto mt-14 max-w-5xl">
+        <PageSection tone="white">
           <h2 className="text-2xl font-extrabold text-brand-charcoal">
             More from the Amazon page (A+ style content)
           </h2>
           <p className="mt-2 text-sm text-brand-charcoal/75">
             Plain-text extract for readability. Layout and images on Amazon may
-            differ; edit <code className="rounded bg-cream-deep px-1">amazonAplusText</code>{" "}
-            in <code className="rounded bg-cream-deep px-1">books.json</code> as needed.
+            differ; edit <code className="rounded bg-cream-section px-1">amazonAplusText</code>{" "}
+            in <code className="rounded bg-cream-section px-1">books.json</code> as needed.
           </p>
           <div className="mt-6 max-h-[min(70vh,900px)] overflow-y-auto rounded-3xl border border-brand-brown/15 bg-white p-6 text-sm leading-relaxed text-brand-charcoal/90 shadow-sm whitespace-pre-wrap">
             {book.amazonAplusText}
           </div>
-        </section>
+        </PageSection>
       ) : null}
 
-      <section className="mx-auto mt-14 max-w-5xl">
+      <PageSection tone={galleryImages.length || book.amazonAplusText ? "cream" : "white"}>
         <h2 className="text-2xl font-extrabold text-brand-charcoal">
           Inside the book preview
         </h2>
         <p className="mt-2 text-sm text-brand-charcoal/75">
-          Add or replace preview images in <code className="rounded bg-cream-deep px-1">src/data/books.json</code> under <code className="rounded bg-cream-deep px-1">insideImageUrls</code>.
+          Add or replace preview images in <code className="rounded bg-white px-1">src/data/books.json</code> under <code className="rounded bg-white px-1">insideImageUrls</code>.
         </p>
 
         {insideImages.length ? (
@@ -173,7 +175,7 @@ export default async function BookDetailPage({ params }: Props) {
                   alt={`${book.title} inside page ${index + 1}`}
                   width={900}
                   height={900}
-                  className="h-auto w-full bg-cream object-contain"
+                  className="h-auto w-full bg-cream-section object-contain"
                 />
               </div>
             ))}
@@ -181,10 +183,10 @@ export default async function BookDetailPage({ params }: Props) {
         ) : (
           <p className="mt-4 rounded-2xl border border-dashed border-brand-brown/25 bg-white p-4 text-sm text-brand-charcoal/70">
             No inside preview images yet. Add image URLs or local paths to this
-            book&apos;s <code className="rounded bg-cream-deep px-1">insideImageUrls</code>.
+            book&apos;s <code className="rounded bg-cream-section px-1">insideImageUrls</code>.
           </p>
         )}
-      </section>
+      </PageSection>
     </main>
   );
 }

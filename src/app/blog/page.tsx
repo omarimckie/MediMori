@@ -1,3 +1,4 @@
+import { PageSection } from "@/components/PageSection";
 import Link from "next/link";
 
 const posts = [
@@ -26,22 +27,22 @@ const posts = [
 
 export default function BlogPage() {
   return (
-    <main className="px-4 py-16 sm:px-6 sm:py-20">
-      <section className="mx-auto max-w-5xl">
-        <div className="text-center">
-          <p className="text-sm font-extrabold uppercase tracking-wide text-brand-orange-deep">
-            Twilight.Feather Blog
-          </p>
-          <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-brand-charcoal sm:text-5xl">
-            Stories, tips, and wellness insights
-          </h1>
-          <p className="mt-4 text-brand-charcoal/75">
-            This section is ready for your upcoming posts. Replace these starter
-            cards with your real blog content anytime.
-          </p>
-        </div>
+    <main>
+      <PageSection tone="navy" containerClassName="mx-auto max-w-3xl text-center">
+        <p className="text-sm font-extrabold uppercase tracking-wide text-brand-yellow-bright">
+          Twilight.Feather Blog
+        </p>
+        <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
+          Stories, tips, and wellness insights
+        </h1>
+        <p className="mt-4 text-white/80">
+          This section is ready for your upcoming posts. Replace these starter
+          cards with your real blog content anytime.
+        </p>
+      </PageSection>
 
-        <div className="mt-12 grid gap-7 md:grid-cols-3">
+      <PageSection tone="white">
+        <div className="grid gap-7 md:grid-cols-3">
           {posts.map((post) => (
             <article
               key={post.title}
@@ -62,16 +63,22 @@ export default function BlogPage() {
             </article>
           ))}
         </div>
+      </PageSection>
 
-        <div className="mt-10 text-center">
-          <Link
-            href="/#books"
-            className="inline-flex rounded-2xl bg-brand-blue-deep px-6 py-3 text-sm font-bold text-white transition hover:brightness-95"
-          >
-            Explore our books
-          </Link>
-        </div>
-      </section>
+      <PageSection tone="cream" containerClassName="mx-auto max-w-3xl text-center">
+        <h2 className="text-2xl font-extrabold text-brand-charcoal sm:text-3xl">
+          Ready to read together?
+        </h2>
+        <p className="mt-3 text-brand-charcoal/75">
+          Explore our children&apos;s books and find your next family favorite.
+        </p>
+        <Link
+          href="/#books"
+          className="mt-6 inline-flex rounded-2xl bg-brand-yellow-bright px-6 py-3 text-sm font-bold text-section-navy transition hover:brightness-95"
+        >
+          Explore our books
+        </Link>
+      </PageSection>
     </main>
   );
 }

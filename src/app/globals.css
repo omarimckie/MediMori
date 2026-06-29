@@ -4,6 +4,10 @@
   /* Warm Ivory */
   --cream: #fdf6e3;
   --cream-deep: #f3ead4;
+  /* Section backgrounds */
+  --cream-section: #fdf6ed;
+  --section-navy: #1a2b4b;
+  --white: #ffffff;
   /* Slate Blue — lighter tint + exact for text / primary */
   --blue: #6d8aad;
   --blue-deep: #4a6b8f;
@@ -18,11 +22,14 @@
   --charcoal: #2c3540;
   /* Golden Accent */
   --yellow: #e8c547;
+  --yellow-bright: #ffcc33;
 }
 
 @theme inline {
   --color-cream: var(--cream);
   --color-cream-deep: var(--cream-deep);
+  --color-cream-section: var(--cream-section);
+  --color-section-navy: var(--section-navy);
   --color-brand-blue: var(--blue);
   --color-brand-blue-deep: var(--blue-deep);
   --color-brand-green: var(--green);
@@ -32,11 +39,12 @@
   --color-brand-brown: var(--brown);
   --color-brand-charcoal: var(--charcoal);
   --color-brand-yellow: var(--yellow);
+  --color-brand-yellow-bright: var(--yellow-bright);
   --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
-  background: var(--cream);
+  background: var(--white);
   color: var(--charcoal);
 }
 
