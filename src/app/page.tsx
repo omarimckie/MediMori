@@ -1,6 +1,6 @@
 "use client";
 
-import { BookCard } from "@/components/BookCard";
+import { BookCatalog } from "@/components/BookCatalog";
 import { EmailSignup } from "@/components/EmailSignup";
 import { PageSection } from "@/components/PageSection";
 import { getBooks } from "@/lib/books";
@@ -47,29 +47,7 @@ export default function Home() {
           <h2 className="text-3xl font-extrabold text-brand-charcoal">Our books</h2>
           <p className="mt-2 text-brand-charcoal/75">Three titles today — more stories on the way.</p>
         </div>
-        <motion.div
-          className="grid gap-10 md:grid-cols-2 lg:grid-cols-3"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          variants={{
-            hidden: {},
-            visible: { transition: { staggerChildren: 0.12 } },
-          }}
-        >
-          {books.map((book) => (
-            <motion.div
-              key={book.id}
-              variants={{
-                hidden: { opacity: 0, y: 24 },
-                visible: { opacity: 1, y: 0 },
-              }}
-              transition={{ duration: 0.45, ease: "easeOut" }}
-            >
-              <BookCard book={book} />
-            </motion.div>
-          ))}
-        </motion.div>
+        <BookCatalog books={books} />
       </PageSection>
 
       <PageSection tone="cream">
