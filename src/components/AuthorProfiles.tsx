@@ -4,10 +4,11 @@ import { PersonalSocialLinks } from "@/components/PersonalSocialLinks";
 import type { Author } from "@/data/authors";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   authors: Author[];
+  initialAuthorId?: string;
 };
 
 function AuthorPhoto({
@@ -77,14 +78,14 @@ function AuthorSelectorCard({
         compact ? "p-4" : "p-2"
       }`}
     >
-      <motion.div layoutId={`author-photo-${author.name}`}>
+      <motion.div layoutId={`author-photo-${author.id}`}>
         <AuthorPhoto
           author={author}
           className={compact ? "mx-auto max-w-[120px]" : "mx-auto"}
         />
       </motion.div>
       <motion.h2
-        layoutId={`author-name-${author.name}`}
+        layoutId={`author-name-${author.id}`}
         className={`font-extrabold text-brand-blue-deep ${
           compact ? "mt-3 text-lg" : "mt-6 text-2xl sm:text-[1.65rem]"
         }`}
@@ -110,10 +111,19 @@ function AuthorSelectorCard({
   );
 }
 
-export function AuthorProfiles({ authors }: Props) {
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-  const selectedAuthor = authors.find((author) => author.name === selectedName);
-  const otherAuthors = authors.filter((author) => author.name !== selectedName);
+export function AuthorProfiles({ authors, initialAuthorId }: Props) {
+  const validInitialId = authors.some((author) => author.id === initialAuthorId)
+    ? initialAuthorId
+    : undefined;
+  const [selectedId, setSelectedId] = useState<string | null>(validInitialId ?? null);
+  const selectedAuthor = authors.find((author) => author.id === selectedId);
+  const otherAuthors = authors.filter((author) => author.id !== selectedId);
+
+  useEffect(() => {
+    if (validInitialId) {
+      setSelectedId(validInitialId);
+    }
+  }, [validInitialId]);
 
   return (
     <div>
@@ -129,9 +139,9 @@ export function AuthorProfiles({ authors }: Props) {
           >
             {authors.map((author) => (
               <AuthorSelectorCard
-                key={author.name}
+                key={author.id}
                 author={author}
-                onSelect={() => setSelectedName(author.name)}
+                onSelect={() => setSelectedId(author.id)}
               />
             ))}
           </motion.div>
@@ -145,11 +155,11 @@ export function AuthorProfiles({ authors }: Props) {
           >
             <div className="grid gap-8 md:grid-cols-[minmax(240px,0.85fr)_1.15fr] md:items-start md:gap-12">
               <div className="md:text-left">
-                <motion.div layoutId={`author-photo-${selectedAuthor.name}`}>
+                <motion.div layoutId={`author-photo-${selectedAuthor.id}`}>
                   <AuthorPhoto author={selectedAuthor} className="md:mx-0" />
                 </motion.div>
                 <motion.h2
-                  layoutId={`author-name-${selectedAuthor.name}`}
+                  layoutId={`author-name-${selectedAuthor.id}`}
                   className="mt-6 text-2xl font-extrabold text-brand-blue-deep sm:text-[1.65rem]"
                 >
                   {selectedAuthor.name}
@@ -161,7 +171,7 @@ export function AuthorProfiles({ authors }: Props) {
               </div>
 
               <motion.div
-                key={selectedAuthor.name}
+                key={selectedAuthor.id}
                 initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 16 }}
@@ -182,10 +192,10 @@ export function AuthorProfiles({ authors }: Props) {
                 <div className="mx-auto grid max-w-xs gap-4">
                   {otherAuthors.map((author) => (
                     <AuthorSelectorCard
-                      key={author.name}
+                      key={author.id}
                       author={author}
                       compact
-                      onSelect={() => setSelectedName(author.name)}
+                      onSelect={() => setSelectedId(author.id)}
                     />
                   ))}
                 </div>

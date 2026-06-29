@@ -2,7 +2,13 @@ import { AuthorProfiles } from "@/components/AuthorProfiles";
 import { PageSection } from "@/components/PageSection";
 import { authors } from "@/data/authors";
 
-export default function AuthorsPage() {
+type Props = {
+  searchParams: Promise<{ author?: string }>;
+};
+
+export default async function AuthorsPage({ searchParams }: Props) {
+  const { author } = await searchParams;
+
   return (
     <main>
       <PageSection tone="navy" containerClassName="mx-auto max-w-3xl text-center">
@@ -17,7 +23,7 @@ export default function AuthorsPage() {
       </PageSection>
 
       <PageSection tone="white">
-        <AuthorProfiles authors={authors} />
+        <AuthorProfiles authors={authors} initialAuthorId={author} />
       </PageSection>
 
       <PageSection tone="navy">

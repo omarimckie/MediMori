@@ -1,0 +1,101 @@
+{
+  "posts": [
+    {
+      "slug": "health-stories-for-kids",
+      "type": "article",
+      "authorId": "dale-marie",
+      "title": "Helping Kids Understand Health Through Stories",
+      "excerpt": "Simple language and gentle storytelling can make medical topics less scary and more approachable for children.",
+      "category": "Wellness",
+      "publishedAt": "2026-04-10",
+      "dateLabel": "April 2026",
+      "imageUrl": "/covers/asthma.png",
+      "body": [
+        "When children hear words like asthma, sickle cell, or inhaler for the first time, it is easy for fear to take over. A calm story can slow that moment down and give families language they can reuse at home.",
+        "Picture books work because they meet kids where they are. Characters like AJ show that breathing challenges are real, but they do not have to define a child's whole day. That message matters for confidence and for classroom conversations too.",
+        "If you are supporting a young reader with a health condition, start small: one book, one question, one reassuring answer at a time. Stories are not a substitute for medical care, but they can make care feel less lonely."
+      ]
+    },
+    {
+      "slug": "family-reading-routine",
+      "type": "article",
+      "authorId": "omari",
+      "title": "5 Ways Families Can Build a Reading Routine",
+      "excerpt": "Small daily reading habits create stronger confidence, vocabulary growth, and emotional connection at home.",
+      "category": "Parent Tips",
+      "publishedAt": "2026-04-05",
+      "dateLabel": "April 2026",
+      "body": [
+        "You do not need a perfect bedtime schedule to raise a reader. Consistency beats length—a few minutes most days adds up faster than one long session on the weekend.",
+        "Try anchoring reading to something you already do: after brushing teeth, before lights out, or while dinner cools. Let your child pick the book sometimes, even if it is the same title three nights in a row.",
+        "Ask one open question instead of quizzing: What surprised you? Who would you tell this story to? Which picture was your favorite?",
+        "Keep books visible—in a basket by the couch, on the kitchen counter, or in the car. Visibility turns reading from an event into part of family life.",
+        "Celebrate effort, not speed. A child who listens, points at pictures, or retells one scene is building literacy skills that will support them for years."
+      ]
+    },
+    {
+      "slug": "why-we-create-these-books",
+      "type": "article",
+      "authorId": "dale-marie",
+      "title": "Inside Twilight.Feather: Why We Create These Books",
+      "excerpt": "A look at our mission to empower little minds with books rooted in compassion, wellness, and curiosity.",
+      "category": "Behind the Scenes",
+      "publishedAt": "2026-04-01",
+      "dateLabel": "April 2026",
+      "body": [
+        "Twilight.Feather began with a simple belief: children deserve stories that honor their questions about health, identity, and growing up.",
+        "Our books are written for families and classrooms that want honest, age-appropriate language without alarm. We pair medical accuracy with warmth so caregivers have a starting point for harder conversations.",
+        "Every title we publish is meant to be read together—aloud, slowly, with room for pauses. That is how little minds feel seen."
+      ]
+    },
+    {
+      "slug": "cdc-asthma-kids-guide",
+      "type": "link",
+      "authorId": "dale-marie",
+      "title": "A helpful CDC guide on asthma in children",
+      "excerpt": "We bookmarked this plain-language resource for parents who want trusted facts before talking with their child's care team.",
+      "category": "Wellness",
+      "publishedAt": "2026-03-28",
+      "dateLabel": "March 2026",
+      "externalUrl": "https://www.cdc.gov/asthma/children.html",
+      "sourceName": "CDC",
+      "commentary": [
+        "When families ask where to start after an asthma diagnosis, we often point them toward reputable public-health sources first. This CDC page explains symptoms, triggers, and action plans in language that is easy to scan.",
+        "We share it here because it pairs well with story-based conversations at home. Read the guide for facts, then open a book with your child for feelings and reassurance."
+      ]
+    },
+    {
+      "slug": "march-reading-roundup",
+      "type": "roundup",
+      "authorId": "omari",
+      "title": "March reading roundup: articles we loved",
+      "excerpt": "Three links worth your time—each with a short note on why we saved it for families and educators.",
+      "category": "What we're reading",
+      "publishedAt": "2026-03-15",
+      "dateLabel": "March 2026",
+      "intro": [
+        "Each month we collect a few articles that made us think, teach, or feel hopeful. These are external links—we are not affiliated with the publishers."
+      ],
+      "links": [
+        {
+          "title": "Helping Children Cope with Medical Experiences",
+          "url": "https://www.nationwidechildrens.org/family-resources-education/health-wellness-and-safety-resources/helping-hands/helping-children-cope-with-medical-experiences",
+          "source": "Nationwide Children's",
+          "blurb": "Practical tips for preparing kids before appointments and reducing anxiety around clinics."
+        },
+        {
+          "title": "The Importance of Reading Aloud to Children",
+          "url": "https://www.readingrockets.org/topics/reading-aloud",
+          "source": "Reading Rockets",
+          "blurb": "A concise reminder of why read-aloud time matters at every age—not just for toddlers."
+        },
+        {
+          "title": "Sickle Cell Disease: What You Should Know",
+          "url": "https://www.nhlbi.nih.gov/health/sickle-cell-disease",
+          "source": "NIH",
+          "blurb": "Clear overview for caregivers who want background before or alongside our Sickle Cell title."
+        }
+      ]
+    }
+  ]
+}
