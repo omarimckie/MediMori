@@ -4,8 +4,8 @@ export type SectionTone = "navy" | "white" | "cream";
 
 const toneStyles: Record<SectionTone, string> = {
   navy: "bg-section-navy text-white",
-  white: "bg-white text-brand-charcoal",
-  cream: "bg-cream-section text-brand-charcoal",
+  white: "bg-cream text-brand-charcoal",
+  cream: "bg-cream-deep text-brand-charcoal",
 };
 
 type Props = {

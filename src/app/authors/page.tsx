@@ -81,15 +81,7 @@ export default function AuthorsPage() {
   return (
     <main>
       <PageSection tone="navy" containerClassName="mx-auto max-w-3xl text-center">
-        <Image
-          src="/logo.png"
-          alt=""
-          width={72}
-          height={72}
-          aria-hidden="true"
-          className="mx-auto h-[72px] w-[72px] rounded-full border-2 border-brand-yellow-bright/50 object-cover shadow-sm"
-        />
-        <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
+        <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
           About the Authors
         </h1>
         <p className="mx-auto mt-4 max-w-3xl text-lg italic leading-relaxed text-white/85">
