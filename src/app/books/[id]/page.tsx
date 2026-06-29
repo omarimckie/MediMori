@@ -1,3 +1,4 @@
+import { BookDescription } from "@/components/BookDescription";
 import { BookDetailPreview } from "@/components/BookDetailPreview";
 import { EbookCheckoutForm } from "@/components/EbookCheckoutForm";
 import { PageSection } from "@/components/PageSection";
@@ -58,9 +59,7 @@ export default async function BookDetailPage({ params }: Props) {
               </p>
             ) : null}
 
-            <p className="mt-5 leading-relaxed text-brand-charcoal/85">
-              {book.description}
-            </p>
+            <BookDescription book={book} className="mt-5" />
 
             <div className="mt-7 grid gap-3 rounded-2xl border border-brand-brown/15 bg-cream-deep p-4 text-sm">
               <p className="font-bold text-brand-charcoal">Pricing</p>

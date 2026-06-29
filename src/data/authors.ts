@@ -8,6 +8,8 @@ export type Author = {
   photoSrc?: string;
   photoAlt?: string;
   photoFit?: "cover" | "contain";
+  photoWidth?: number;
+  photoHeight?: number;
   socialLinks?: PersonalSocialLink[];
 };
 
@@ -19,6 +21,8 @@ export const authors: Author[] = [
     photoSrc: "/authors/dale-marie.png",
     photoAlt: "Dr. Dale-Marie McKie headshot",
     photoFit: "contain",
+    photoWidth: 526,
+    photoHeight: 1024,
     socialLinks: [instagramLink("daley001")],
   },
   {

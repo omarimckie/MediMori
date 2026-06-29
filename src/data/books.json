@@ -11,6 +11,8 @@
       "ebookFileBaseName": "Sickle Cell",
       "stripePriceIdEbook": "price_1TMhTEGmFetwj9NcJnvrh1e2",
       "coverImageUrl": "/covers/sickle-cell.png",
+      "coverWidth": 1009,
+      "coverHeight": 1024,
       "insideImageUrls": [
         "/previews/sickle-inside-1.png",
         "/previews/sickle-inside-2.png",
@@ -21,31 +23,41 @@
       "id": "book-two",
       "title": "Health & Medicine Word Search Collection",
       "subtitle": "By Omari McKie",
-      "description": "Medicine-Themed Word Search Book for All Ages Discover 60 exciting word search puzzles all centered around the world of medicine! From common illnesses and doctor visits to body systems and healthy habits, each puzzle introduces important medical words in a fun and easy-to-read format. This large print edition makes searching for words simple and enjoyable for children, teens, adults, and seniors alike. Perfect for: • Students learning about health • Families looking for educational fun • Classroom activities • Waiting rooms and clinics • Puzzle lovers of all ages All answers are clearly provided in the back of the book for quick and easy checking. Learn. Search. Discover. Repeat.",
-      "pricePaperback": "Check Amazon listing",
+      "description": "Medicine-Themed Word Search Book for All Ages. Discover 60 exciting word search puzzles all centered around the world of medicine!",
+      "descriptionHtml": "<p><span class=\"a-text-bold\">Medicine-Themed Word Search Book for All Ages</span></p><p><span>Discover 60 exciting word search puzzles all centered around the world of medicine! From common illnesses and doctor visits to body systems and healthy habits, each puzzle introduces important medical words in a fun and easy-to-read format.</span></p><p><span>This large print edition makes searching for words simple and enjoyable for children, teens, adults, and seniors alike.</span></p><p><span>Perfect for:<br/>• Students learning about health<br/>• Families looking for educational fun<br/>• Classroom activities<br/>• Waiting rooms and clinics<br/>• Puzzle lovers of all ages</span></p><p><span>All answers are clearly provided in the back of the book for quick and easy checking.</span></p><p><span>Learn. Search. Discover. Repeat.</span></p>",
+      "pricePaperback": "$9.99",
       "priceEbook": "Set in dashboard",
       "amazonPaperbackUrl": "https://www.amazon.com/dp/B0GSWSSKN9",
       "ebookFileBaseName": "book-two",
       "stripePriceIdEbook": "",
       "coverImageUrl": "/covers/Word%20Search.jpg",
+      "coverWidth": 842,
+      "coverHeight": 1080,
       "insideImageUrls": [
-        "/previews/inside-1.svg",
-        "/previews/inside-2.svg",
-        "/previews/inside-3.svg"
+        "/previews/word-search-inside-1.png",
+        "/previews/word-search-inside-2.png",
+        "/previews/word-search-inside-3.png"
       ]
     },
     {
       "id": "book-three",
       "title": "Children Diseases: Asthma",
       "subtitle": "AJ Can Breathe Easy — By Dr. Dale-marie McKie & Omari McKie",
-      "description": "AJ Can Breathe Easy is a story about asthma, courage, and doing all the things you love. When AJ learns about his asthma, he discovers—with the help of his family—how to understand his body, use his inhaler, and keep doing the activities that make him happy. Through gentle storytelling and warm illustrations, this book helps children understand asthma in a comforting, age-appropriate way. AJ learns that he is strong, brave, and never alone. Perfect for families, classrooms, and healthcare offices, AJ Can Breathe Easy is a beautiful resource for helping children and those who love them learn about asthma with compassion and hope. Part of the Children Diseases series — helping kids understand, accept, and thrive through every diagnosis.",
-      "pricePaperback": "Check Amazon listing",
+      "description": "Meet AJ—a curious, energetic boy who loves to play, learn, and explore the world around him. AJ Can Breathe Easy is a gentle, reassuring children's book that helps young readers understand asthma in a calm and supportive way.",
+      "descriptionHtml": "<p><span>Meet AJ—a curious, energetic boy who loves to play, learn, and explore the world around him.</span></p><p><span>Sometimes, AJ’s breathing gets tight. It feels scary. It feels frustrating. But with the help of his inhaler, his family, and his growing confidence, AJ learns that asthma doesn’t have to stop him from doing the things he loves.</span></p><p><span>AJ Can Breathe Easy is a gentle, reassuring children’s book that helps young readers understand asthma in a calm and supportive way. Through relatable moments and warm storytelling, children learn what’s happening in their bodies—and that they are not alone.</span></p><p><span>Perfect for:<br/>• Children with asthma or breathing challenges<br/>• Parents looking to start supportive conversations<br/>• Classrooms and social-emotional learning environments</span></p><p><span>This story helps children:<br/>- Understand asthma in simple terms<br/>- Feel less scared during difficult moments<br/>- Build confidence and emotional resilience</span></p><p><span>Because every child deserves to feel safe, supported, and able to breathe easy.</span></p><p><span>You are not alone.</span></p>",
+      "pricePaperback": "$13.00",
       "priceEbook": "$7.00",
-      "amazonPaperbackUrl": "",
+      "amazonPaperbackUrl": "https://www.amazon.com/dp/B0H6F879H2",
       "ebookFileBaseName": "Asthma",
       "stripePriceIdEbook": "",
       "coverImageUrl": "/covers/asthma.png",
-      "insideImageUrls": []
+      "coverWidth": 1024,
+      "coverHeight": 1024,
+      "insideImageUrls": [
+        "/previews/asthma-inside-1.png",
+        "/previews/asthma-inside-2.png",
+        "/previews/asthma-inside-3.png"
+      ]
     }
   ]
 }

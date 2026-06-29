@@ -1,10 +1,11 @@
 "use client";
 
 import { BookBuyActions } from "@/components/BookBuyActions";
+import { BookCoverImage } from "@/components/BookCoverImage";
+import { BookDescription } from "@/components/BookDescription";
 import { BookPreviewCarousel } from "@/components/BookPreviewCarousel";
 import type { Book } from "@/lib/books";
 import { AnimatePresence, motion } from "framer-motion";
-import Image from "next/image";
 import { useState } from "react";
 
 type Props = {
@@ -33,17 +34,14 @@ function BookCover({
   }
 
   return (
-    <div
-      className={`aspect-[2/3] w-full ${maxWidth} overflow-hidden rounded-2xl border border-brand-brown/20 bg-white shadow-sm ${className}`}
-    >
-      <Image
-        src={book.coverImageUrl}
-        alt={`${book.title} cover`}
-        width={440}
-        height={660}
-        className="h-full w-full object-cover"
-      />
-    </div>
+    <BookCoverImage
+      src={book.coverImageUrl}
+      alt={`${book.title} cover`}
+      width={book.coverWidth ?? 700}
+      height={book.coverHeight ?? 1000}
+      maxWidthClass={maxWidth}
+      className={className}
+    />
   );
 }
 
@@ -148,6 +146,8 @@ export function BookCatalog({ books }: Props) {
                   <BookPreviewCarousel
                     title={selectedBook.title}
                     coverImageUrl={selectedBook.coverImageUrl}
+                    coverWidth={selectedBook.coverWidth}
+                    coverHeight={selectedBook.coverHeight}
                     insideImageUrls={selectedBook.insideImageUrls}
                     className="md:mx-0"
                   />
@@ -178,9 +178,7 @@ export function BookCatalog({ books }: Props) {
                 transition={{ duration: 0.35, ease: "easeOut" }}
                 className="flex items-center"
               >
-                <p className="text-sm leading-relaxed text-brand-charcoal/85 sm:text-[0.95rem]">
-                  {selectedBook.description}
-                </p>
+                <BookDescription book={selectedBook} />
               </motion.div>
             </div>
 

@@ -18,19 +18,33 @@ function AuthorPhoto({
   className?: string;
 }) {
   if (author.photoSrc) {
-    const fitClass = author.photoFit === "contain" ? "object-contain" : "object-cover";
-    const bgClass = author.photoFit === "contain" ? "bg-cream-deep" : "bg-white";
+    if (author.photoFit === "contain") {
+      const width = author.photoWidth ?? 220;
+      const height = author.photoHeight ?? 220;
+
+      return (
+        <Image
+          src={author.photoSrc}
+          alt={author.photoAlt ?? `${author.name} headshot`}
+          width={width}
+          height={height}
+          className={`h-auto w-full rounded-2xl border border-brand-brown/20 shadow-sm ${
+            className.includes("max-w-") ? className : `mx-auto max-w-[220px] ${className}`
+          }`}
+        />
+      );
+    }
 
     return (
       <div
-        className={`aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-brand-brown/20 shadow-sm ${bgClass} ${className}`}
+        className={`aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-brand-brown/20 bg-white shadow-sm ${className}`}
       >
         <Image
           src={author.photoSrc}
           alt={author.photoAlt ?? `${author.name} headshot`}
           width={220}
           height={220}
-          className={`h-full w-full ${fitClass}`}
+          className="h-full w-full object-cover"
         />
       </div>
     );

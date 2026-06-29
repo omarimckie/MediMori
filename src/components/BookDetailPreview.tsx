@@ -1,6 +1,6 @@
+import { BookCoverImage } from "@/components/BookCoverImage";
 import { BookPreviewCarousel } from "@/components/BookPreviewCarousel";
 import type { Book } from "@/lib/books";
-import Image from "next/image";
 
 type Props = {
   book: Book;
@@ -14,6 +14,8 @@ export function BookDetailPreview({ book }: Props) {
       <BookPreviewCarousel
         title={book.title}
         coverImageUrl={book.coverImageUrl}
+        coverWidth={book.coverWidth}
+        coverHeight={book.coverHeight}
         insideImageUrls={insideImages}
         maxWidth="max-w-[340px]"
         className="mx-auto"
@@ -30,15 +32,14 @@ export function BookDetailPreview({ book }: Props) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[340px] overflow-hidden rounded-3xl border border-brand-brown/20 bg-white shadow-sm">
-      <Image
-        src={book.coverImageUrl}
-        alt={`${book.title} cover`}
-        width={700}
-        height={1000}
-        className="h-auto w-full object-cover"
-        priority
-      />
-    </div>
+    <BookCoverImage
+      src={book.coverImageUrl}
+      alt={`${book.title} cover`}
+      width={book.coverWidth ?? 700}
+      height={book.coverHeight ?? 1000}
+      maxWidthClass="max-w-[340px]"
+      className="mx-auto"
+      priority
+    />
   );
 }

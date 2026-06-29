@@ -5,7 +5,11 @@ export type Book = {
   title: string;
   subtitle?: string;
   description: string;
+  /** Amazon book description HTML (paragraphs + bullet lists). */
+  descriptionHtml?: string;
   coverImageUrl?: string;
+  coverWidth?: number;
+  coverHeight?: number;
   /** Extra listing photos scraped from Amazon (when available). */
   amazonGalleryImageUrls?: string[];
   /** e.g. "4.7 out of 5 stars · 128 reviews" */

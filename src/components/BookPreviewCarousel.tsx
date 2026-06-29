@@ -9,11 +9,15 @@ type Slide = {
   src: string;
   alt: string;
   label: string;
+  width: number;
+  height: number;
 };
 
 type Props = {
   title: string;
   coverImageUrl?: string;
+  coverWidth?: number;
+  coverHeight?: number;
   insideImageUrls?: string[];
   className?: string;
   maxWidth?: string;
@@ -22,6 +26,8 @@ type Props = {
 export function BookPreviewCarousel({
   title,
   coverImageUrl,
+  coverWidth = 700,
+  coverHeight = 1000,
   insideImageUrls = [],
   className = "",
   maxWidth = "max-w-[220px]",
@@ -30,7 +36,13 @@ export function BookPreviewCarousel({
     const items: Slide[] = [];
 
     if (coverImageUrl) {
-      items.push({ src: coverImageUrl, alt: `${title} cover`, label: "Cover" });
+      items.push({
+        src: coverImageUrl,
+        alt: `${title} cover`,
+        label: "Cover",
+        width: coverWidth,
+        height: coverHeight,
+      });
     }
 
     insideImageUrls.forEach((src, index) => {
@@ -38,11 +50,13 @@ export function BookPreviewCarousel({
         src,
         alt: `${title} inside page ${index + 1}`,
         label: `Page ${index + 1}`,
+        width: coverWidth,
+        height: coverHeight,
       });
     });
 
     return items;
-  }, [coverImageUrl, insideImageUrls, title]);
+  }, [coverImageUrl, coverHeight, coverWidth, insideImageUrls, title]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -146,9 +160,9 @@ export function BookPreviewCarousel({
                   <Image
                     src={activeSlide.src}
                     alt={activeSlide.alt}
-                    width={1200}
-                    height={1600}
-                    className="max-h-[min(85vh,900px)] w-full object-contain"
+                    width={activeSlide.width}
+                    height={activeSlide.height}
+                    className="h-auto max-h-[min(85vh,900px)] w-full object-contain"
                     priority
                   />
                 </div>
@@ -169,18 +183,16 @@ export function BookPreviewCarousel({
         <button
           type="button"
           onClick={() => setLightboxOpen(true)}
-          className="group block w-full overflow-hidden rounded-2xl border border-brand-brown/20 bg-white shadow-sm transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
+          className="group block w-full rounded-2xl border border-brand-brown/20 bg-white shadow-sm transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
         >
-          <div className="relative aspect-[2/3] w-full">
-            <Image
-              src={activeSlide.src}
-              alt={activeSlide.alt}
-              width={440}
-              height={660}
-              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-            />
-          </div>
-          <p className="border-t border-brand-brown/10 bg-cream-deep px-3 py-2 text-xs font-semibold text-brand-charcoal/70">
+          <Image
+            src={activeSlide.src}
+            alt={activeSlide.alt}
+            width={activeSlide.width}
+            height={activeSlide.height}
+            className="h-auto w-full rounded-t-2xl object-contain transition duration-300 group-hover:scale-[1.01]"
+          />
+          <p className="rounded-b-2xl border-t border-brand-brown/10 bg-cream-deep px-3 py-2 text-xs font-semibold text-brand-charcoal/70">
             {activeSlide.label} · Tap to enlarge
           </p>
         </button>
@@ -198,7 +210,7 @@ export function BookPreviewCarousel({
                   aria-label={`Show ${slide.label}`}
                   aria-current={index === activeIndex ? "true" : undefined}
                   onClick={() => setActiveIndex(index)}
-                  className={`shrink-0 overflow-hidden rounded-lg border-2 bg-white transition ${
+                  className={`flex h-[72px] w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 bg-white p-1 transition sm:h-[88px] sm:w-14 ${
                     index === activeIndex
                       ? "border-brand-blue-deep shadow-sm"
                       : "border-brand-brown/15 opacity-80 hover:border-brand-blue/40 hover:opacity-100"
@@ -207,9 +219,9 @@ export function BookPreviewCarousel({
                   <Image
                     src={slide.src}
                     alt={slide.alt}
-                    width={72}
-                    height={108}
-                    className="h-[54px] w-9 object-cover sm:h-[72px] sm:w-12"
+                    width={slide.width}
+                    height={slide.height}
+                    className="max-h-full max-w-full object-contain"
                   />
                 </button>
               ))}
