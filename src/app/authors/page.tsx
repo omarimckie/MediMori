@@ -23,10 +23,7 @@ const authors: Author[] = [
   },
 ];
 
-function AuthorPhoto({ author, tone }: { author: Author; tone: "white" | "cream" }) {
-  const placeholderBg =
-    tone === "cream" ? "bg-brand-charcoal/5" : "bg-brand-charcoal/[0.03]";
-
+function AuthorPhoto({ author }: { author: Author }) {
   if (author.photoSrc) {
     return (
       <div className="mx-auto aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl border border-brand-brown/20 bg-white shadow-sm">
@@ -44,23 +41,17 @@ function AuthorPhoto({ author, tone }: { author: Author; tone: "white" | "cream"
   return (
     <div
       aria-hidden="true"
-      className={`mx-auto flex aspect-square w-full max-w-[220px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 ${placeholderBg} text-sm font-medium text-brand-charcoal/45`}
+      className="mx-auto flex aspect-square w-full max-w-[220px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45"
     >
       Author Photo
     </div>
   );
 }
 
-function AuthorProfile({
-  author,
-  tone,
-}: {
-  author: Author;
-  tone: "white" | "cream";
-}) {
+function AuthorProfile({ author }: { author: Author }) {
   return (
-    <article className="mx-auto max-w-2xl text-center">
-      <AuthorPhoto author={author} tone={tone} />
+    <article className="text-center">
+      <AuthorPhoto author={author} />
       <h2 className="mt-6 text-2xl font-extrabold text-brand-blue-deep sm:text-[1.65rem]">
         {author.name}
       </h2>
@@ -76,8 +67,6 @@ function AuthorProfile({
 }
 
 export default function AuthorsPage() {
-  const [dale, omari] = authors;
-
   return (
     <main>
       <PageSection tone="navy" containerClassName="mx-auto max-w-3xl text-center">
@@ -92,11 +81,11 @@ export default function AuthorsPage() {
       </PageSection>
 
       <PageSection tone="white">
-        <AuthorProfile author={dale} tone="white" />
-      </PageSection>
-
-      <PageSection tone="cream">
-        <AuthorProfile author={omari} tone="cream" />
+        <div className="grid gap-10 md:grid-cols-2 md:gap-12">
+          {authors.map((author) => (
+            <AuthorProfile key={author.name} author={author} />
+          ))}
+        </div>
       </PageSection>
 
       <PageSection tone="navy">
