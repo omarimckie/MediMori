@@ -16,7 +16,6 @@ export function BookBuyActions({
   showDetailsLink = true,
 }: Props) {
   const hasDirectEbookCheckout = Boolean(book.stripePriceIdEbook?.trim());
-  const showEbookCheckout = book.id === "book-one" || hasDirectEbookCheckout;
 
   function stopClick(event: React.MouseEvent) {
     if (stopLinkPropagation) {
@@ -62,7 +61,7 @@ export function BookBuyActions({
         ) : null}
       </div>
 
-      {showEbookCheckout ? (
+      {hasDirectEbookCheckout ? (
         <EbookCheckoutForm
           bookId={book.id}
           ebookFileBaseName={book.ebookFileBaseName}

@@ -23,7 +23,6 @@ export default async function BookDetailPage({ params }: Props) {
 
   const insideImages = book.insideImageUrls ?? [];
   const galleryImages = book.amazonGalleryImageUrls ?? [];
-  const isSickleCellBook = book.id === "book-one";
   const hasDirectEbookCheckout = Boolean(book.stripePriceIdEbook?.trim());
 
   return (
@@ -84,7 +83,7 @@ export default async function BookDetailPage({ params }: Props) {
               ) : null}
             </div>
 
-            {isSickleCellBook ? (
+            {hasDirectEbookCheckout ? (
               <EbookCheckoutForm
                 bookId={book.id}
                 ebookFileBaseName={book.ebookFileBaseName}
