@@ -63,24 +63,11 @@ export default async function BookDetailPage({ params }: Props) {
             <div className="mt-7 grid gap-3 rounded-2xl border border-brand-brown/15 bg-cream-deep p-4 text-sm">
               <p className="font-bold text-brand-charcoal">Pricing</p>
               <p className="text-brand-charcoal/85">
-                Paperback: <span className="font-semibold">{book.pricePaperback ?? "Set price"}</span>
-              </p>
-              <p className="text-brand-charcoal/85">
                 eBook (direct): <span className="font-semibold">{book.priceEbook ?? "Set price"}</span>
               </p>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              {book.amazonPaperbackUrl ? (
-                <a
-                  href={book.amazonPaperbackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-5 text-sm font-bold text-section-navy transition hover:brightness-95"
-                >
-                  Paperback on Amazon
-                </a>
-              ) : null}
+              <p className="text-brand-charcoal/85">
+                Paperback: <span className="font-semibold">{book.pricePaperback ?? "Set price"}</span>
+              </p>
             </div>
 
             {hasDirectEbookCheckout ? (
@@ -89,6 +76,19 @@ export default async function BookDetailPage({ params }: Props) {
                 ebookFileBaseName={book.ebookFileBaseName}
                 isEnabled={hasDirectEbookCheckout}
               />
+            ) : null}
+
+            {book.amazonPaperbackUrl ? (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <a
+                  href={book.amazonPaperbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-5 text-sm font-bold text-section-navy transition hover:brightness-95"
+                >
+                  Paperback on Amazon
+                </a>
+              </div>
             ) : null}
           </article>
         </div>

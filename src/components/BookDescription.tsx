@@ -1,8 +1,9 @@
 import type { Book } from "@/lib/books";
+import type { ReactNode } from "react";
 
 type DescriptionBlock =
-  | { kind: "paragraph"; text: string; bold?: boolean }
-  | { kind: "list"; title: string; items: string[]; marker: "bullet" | "dash" };
+  | { kind: "paragraph"; nodes: ReactNode[]; bold?: boolean }
+  | { kind: "list"; title?: string; items: string[]; marker: "bullet" | "dash" };
 
 function decodeHtmlEntities(text: string) {
   return text
@@ -18,12 +19,50 @@ function stripTags(html: string) {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
 }
 
-function parseParagraph(inner: string): DescriptionBlock {
+function parseInlineAmazonHtml(html: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const pattern =
+    /<span[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/span>|<span>([\s\S]*?)<\/span>/gi;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(decodeHtmlEntities(html.slice(lastIndex, match.index)));
+    }
+
+    const classes = match[1] ?? "";
+    const text = decodeHtmlEntities(match[2] ?? match[3] ?? "");
+
+    if (classes.includes("a-text-bold")) {
+      parts.push(<strong key={match.index}>{text}</strong>);
+    } else if (classes.includes("a-text-italic")) {
+      parts.push(<em key={match.index}>{text}</em>);
+    } else {
+      parts.push(text);
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < html.length) {
+    parts.push(decodeHtmlEntities(html.slice(lastIndex)));
+  }
+
+  return parts.length ? parts : [stripTags(html)];
+}
+
+function parseLegacyParagraph(inner: string): DescriptionBlock {
   const boldOnly = inner.match(
     /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>$/i,
   );
   if (boldOnly) {
-    return { kind: "paragraph", text: stripTags(boldOnly[1]), bold: true };
+    return {
+      kind: "paragraph",
+      nodes: [stripTags(boldOnly[1])],
+      bold: true,
+    };
   }
 
   const normalized = inner.replace(/<\/?span[^>]*>/gi, "");
@@ -33,7 +72,7 @@ function parseParagraph(inner: string): DescriptionBlock {
     .filter(Boolean);
 
   if (rawLines.length === 1) {
-    return { kind: "paragraph", text: rawLines[0] };
+    return { kind: "paragraph", nodes: parseInlineAmazonHtml(inner) };
   }
 
   const title = rawLines[0];
@@ -45,12 +84,65 @@ function parseParagraph(inner: string): DescriptionBlock {
 
 export function parseAmazonDescriptionHtml(html: string): DescriptionBlock[] {
   const blocks: DescriptionBlock[] = [];
+  let remaining = html.trim();
 
-  for (const match of html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) {
-    blocks.push(parseParagraph(match[1]));
+  while (remaining.length > 0) {
+    const boldSpan = remaining.match(
+      /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    );
+    if (boldSpan) {
+      blocks.push({
+        kind: "paragraph",
+        nodes: [stripTags(boldSpan[1])],
+        bold: true,
+      });
+      remaining = remaining.slice(boldSpan[0].length);
+      continue;
+    }
+
+    const paragraph = remaining.match(/^<p[^>]*>([\s\S]*?)<\/p>/i);
+    if (paragraph) {
+      const inner = paragraph[1];
+      const boldParagraph = inner.match(
+        /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>$/i,
+      );
+      if (boldParagraph) {
+        blocks.push({
+          kind: "paragraph",
+          nodes: [stripTags(boldParagraph[1])],
+          bold: true,
+        });
+      } else {
+        blocks.push({
+          kind: "paragraph",
+          nodes: parseInlineAmazonHtml(inner),
+        });
+      }
+      remaining = remaining.slice(paragraph[0].length);
+      continue;
+    }
+
+    const list = remaining.match(/^<ul[^>]*>([\s\S]*?)<\/ul>/i);
+    if (list) {
+      const items = [...list[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+        .map((item) => stripTags(item[1]))
+        .filter(Boolean);
+
+      blocks.push({ kind: "list", items, marker: "bullet" });
+      remaining = remaining.slice(list[0].length);
+      continue;
+    }
+
+    break;
   }
 
-  return blocks;
+  if (blocks.length) {
+    return blocks;
+  }
+
+  return [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)].map((match) =>
+    parseLegacyParagraph(match[1]),
+  );
 }
 
 type Props = {
@@ -70,20 +162,23 @@ export function BookDescription({ book, className = "" }: Props) {
         {blocks.map((block, index) => {
           if (block.kind === "paragraph") {
             return (
-              <p key={index} className={block.bold ? "font-bold text-brand-charcoal" : undefined}>
-                {block.text}
+              <p
+                key={index}
+                className={block.bold ? "font-bold text-brand-charcoal" : undefined}
+              >
+                {block.nodes}
               </p>
             );
           }
 
           return (
             <div key={index}>
-              <p>{block.title}</p>
+              {block.title ? <p>{block.title}</p> : null}
               <ul
                 className={
                   block.marker === "dash"
-                    ? "mt-2 list-none space-y-1"
-                    : "mt-2 list-disc space-y-1 pl-5"
+                    ? `${block.title ? "mt-2" : ""} list-none space-y-1`
+                    : `${block.title ? "mt-2" : ""} list-disc space-y-1 pl-5`
                 }
               >
                 {block.items.map((item) => (

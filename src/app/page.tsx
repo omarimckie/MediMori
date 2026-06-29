@@ -36,8 +36,8 @@ export default function Home() {
             className="mt-6 text-lg leading-relaxed text-white/85"
           >
             Twilight.Feather publishes gentle, colorful children&apos;s books rooted in wellness
-            and care. Choose a paperback on Amazon, or buy an eBook here for an instant
-            download after checkout.
+            and care. Buy an eBook here for an instant download after checkout, or choose a
+            paperback on Amazon.
           </motion.p>
         </motion.div>
       </PageSection>
