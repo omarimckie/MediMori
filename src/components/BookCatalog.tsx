@@ -1,6 +1,7 @@
 "use client";
 
 import { BookBuyActions } from "@/components/BookBuyActions";
+import { BookPreviewCarousel } from "@/components/BookPreviewCarousel";
 import type { Book } from "@/lib/books";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
@@ -143,9 +144,18 @@ export function BookCatalog({ books }: Props) {
           >
             <div className="grid gap-8 md:grid-cols-[minmax(240px,0.85fr)_1.15fr] md:items-start md:gap-12">
               <div className="md:text-left">
-                <motion.div layoutId={`book-cover-${selectedBook.id}`}>
-                  <BookCover book={selectedBook} className="md:mx-0" />
-                </motion.div>
+                {selectedBook.insideImageUrls?.length ? (
+                  <BookPreviewCarousel
+                    title={selectedBook.title}
+                    coverImageUrl={selectedBook.coverImageUrl}
+                    insideImageUrls={selectedBook.insideImageUrls}
+                    className="md:mx-0"
+                  />
+                ) : (
+                  <motion.div layoutId={`book-cover-${selectedBook.id}`}>
+                    <BookCover book={selectedBook} className="md:mx-0" />
+                  </motion.div>
+                )}
                 <motion.h3
                   layoutId={`book-title-${selectedBook.id}`}
                   className="mt-6 text-2xl font-extrabold text-brand-charcoal sm:text-[1.65rem]"

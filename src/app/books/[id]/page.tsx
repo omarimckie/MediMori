@@ -1,3 +1,4 @@
+import { BookDetailPreview } from "@/components/BookDetailPreview";
 import { EbookCheckoutForm } from "@/components/EbookCheckoutForm";
 import { PageSection } from "@/components/PageSection";
 import { getBookById, getBooks } from "@/lib/books";
@@ -45,22 +46,7 @@ export default async function BookDetailPage({ params }: Props) {
 
       <PageSection tone="white">
         <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr]">
-          <div className="mx-auto w-full max-w-[340px] overflow-hidden rounded-3xl border border-brand-brown/20 bg-white shadow-sm">
-            {book.coverImageUrl ? (
-              <Image
-                src={book.coverImageUrl}
-                alt={`${book.title} cover`}
-                width={700}
-                height={1000}
-                className="h-auto w-full object-cover"
-                priority
-              />
-            ) : (
-              <div className="flex h-[420px] items-center justify-center bg-cream text-sm font-semibold text-brand-charcoal/70">
-                Cover image coming soon
-              </div>
-            )}
-          </div>
+          <BookDetailPreview book={book} />
 
           <article className="rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm">
             {book.amazonStarRating ? (
@@ -155,38 +141,20 @@ export default async function BookDetailPage({ params }: Props) {
         </PageSection>
       ) : null}
 
-      <PageSection tone={galleryImages.length || book.amazonAplusText ? "cream" : "white"}>
-        <h2 className="text-2xl font-extrabold text-brand-charcoal">
-          Inside the book preview
-        </h2>
-        <p className="mt-2 text-sm text-brand-charcoal/75">
-          Add or replace preview images in <code className="rounded bg-cream-deep px-1">src/data/books.json</code> under <code className="rounded bg-cream-deep px-1">insideImageUrls</code>.
-        </p>
-
-        {insideImages.length ? (
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {insideImages.map((src, index) => (
-              <div
-                key={`${book.id}-inside-${index}`}
-                className="overflow-hidden rounded-2xl border border-brand-brown/15 bg-white shadow-sm"
-              >
-                <Image
-                  src={src}
-                  alt={`${book.title} inside page ${index + 1}`}
-                  width={900}
-                  height={900}
-                  className="h-auto w-full bg-cream object-contain"
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
+      {insideImages.length === 0 ? (
+        <PageSection tone={galleryImages.length || book.amazonAplusText ? "cream" : "white"}>
+          <h2 className="text-2xl font-extrabold text-brand-charcoal">
+            Inside the book preview
+          </h2>
+          <p className="mt-2 text-sm text-brand-charcoal/75">
+            Add or replace preview images in <code className="rounded bg-cream-deep px-1">src/data/books.json</code> under <code className="rounded bg-cream-deep px-1">insideImageUrls</code>.
+          </p>
           <p className="mt-4 rounded-2xl border border-dashed border-brand-brown/25 bg-white p-4 text-sm text-brand-charcoal/70">
             No inside preview images yet. Add image URLs or local paths to this
             book&apos;s <code className="rounded bg-cream-deep px-1">insideImageUrls</code>.
           </p>
-        )}
-      </PageSection>
+        </PageSection>
+      ) : null}
     </main>
   );
 }

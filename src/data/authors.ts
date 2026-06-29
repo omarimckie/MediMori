@@ -15,6 +15,8 @@ export const authors: Author[] = [
     name: "Dr. Dale-Marie McKie",
     tagline: "Family Physician • Co-Author",
     bio: "Dr. Dale-Marie McKie is a Family Physician who has spent her career caring for children and families. That same compassion shows up in every Twilight Feather story, especially the Children Diseases series, where she turns conditions like sickle cell disease and asthma into stories that comfort and empower young readers. She's a proud wife and mom of three boys, and rarely without a cup of coffee and a dog at her feet.",
+    photoSrc: "/authors/dale-marie.png",
+    photoAlt: "Dr. Dale-Marie McKie headshot",
     socialLinks: [instagramLink("daley001")],
   },
   {
