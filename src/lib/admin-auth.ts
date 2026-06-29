@@ -6,6 +6,8 @@ export { ADMIN_SESSION_COOKIE };
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
+type AdminUserMap = Record<string, string>;
+
 function getSessionSecret(): string {
   const secret = process.env.ADMIN_SESSION_SECRET?.trim();
   if (!secret) {
@@ -14,13 +16,39 @@ function getSessionSecret(): string {
   return secret;
 }
 
+function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
+function getAdminUsers(): AdminUserMap {
+  const raw = process.env.ADMIN_USERS?.trim();
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const users: AdminUserMap = {};
+
+    for (const [username, password] of Object.entries(parsed)) {
+      const normalized = normalizeUsername(username);
+      if (!normalized || typeof password !== "string" || !password) continue;
+      users[normalized] = password;
+    }
+
+    return users;
+  } catch {
+    return {};
+  }
+}
+
 function signPayload(payload: string): string {
   return createHmac("sha256", getSessionSecret()).update(payload).digest("base64url");
 }
 
-export function createAdminSessionValue(): string {
+export function createAdminSessionValue(username: string): string {
   const exp = Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
-  const payload = Buffer.from(JSON.stringify({ exp })).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({ exp, username: normalizeUsername(username) }),
+  ).toString("base64url");
   return `${payload}.${signPayload(payload)}`;
 }
 
@@ -46,26 +74,52 @@ export function verifyAdminSessionValue(value: string | undefined): boolean {
   }
 }
 
-export function verifyAdminPassword(password: string): boolean {
-  const expected = process.env.ADMIN_PASSWORD?.trim();
-  if (!expected) return false;
+export function getAdminSessionUsername(value: string | undefined): string | null {
+  if (!value || !verifyAdminSessionValue(value)) return null;
 
-  const a = Buffer.from(password);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
+  const [payload] = value.split(".");
+  if (!payload) return null;
 
-  return timingSafeEqual(a, b);
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      username?: string;
+    };
+    return typeof data.username === "string" ? data.username : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeEqualStrings(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+export function verifyAdminCredentials(username: string, password: string): boolean {
+  const users = getAdminUsers();
+  const expectedPassword = users[normalizeUsername(username)];
+  if (!expectedPassword) return false;
+
+  return safeEqualStrings(password, expectedPassword);
 }
 
 export function isAdminConfigured(): boolean {
-  return Boolean(
-    process.env.ADMIN_PASSWORD?.trim() && process.env.ADMIN_SESSION_SECRET?.trim(),
+  return (
+    Object.keys(getAdminUsers()).length > 0 &&
+    Boolean(process.env.ADMIN_SESSION_SECRET?.trim())
   );
 }
 
 export async function isAdminAuthenticated(): Promise<boolean> {
   const cookieStore = await cookies();
   return verifyAdminSessionValue(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
+}
+
+export async function getAuthenticatedAdminUsername(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return getAdminSessionUsername(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
 }
 
 export function adminSessionCookieOptions() {

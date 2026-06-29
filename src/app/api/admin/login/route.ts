@@ -3,7 +3,7 @@ import {
   ADMIN_SESSION_COOKIE,
   createAdminSessionValue,
   isAdminConfigured,
-  verifyAdminPassword,
+  verifyAdminCredentials,
 } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_SESSION_SECRET.",
+          "Admin login is not configured. Set ADMIN_USERS and ADMIN_SESSION_SECRET.",
       },
       { status: 503 },
     );
@@ -25,6 +25,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  const username =
+    typeof body === "object" &&
+    body !== null &&
+    "username" in body &&
+    typeof (body as { username: unknown }).username === "string"
+      ? (body as { username: string }).username
+      : "";
+
   const password =
     typeof body === "object" &&
     body !== null &&
@@ -33,14 +41,17 @@ export async function POST(request: Request) {
       ? (body as { password: string }).password
       : "";
 
-  if (!verifyAdminPassword(password)) {
-    return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
+  if (!verifyAdminCredentials(username, password)) {
+    return NextResponse.json(
+      { error: "Incorrect username or password." },
+      { status: 401 },
+    );
   }
 
   const response = NextResponse.json({ ok: true });
   response.cookies.set(
     ADMIN_SESSION_COOKIE,
-    createAdminSessionValue(),
+    createAdminSessionValue(username),
     adminSessionCookieOptions(),
   );
   return response;
