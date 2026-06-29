@@ -1,25 +1,15 @@
-export type PersonalSocialPlatform = "instagram" | "threads" | "bluesky";
-
 export type PersonalSocialLink = {
-  platform: PersonalSocialPlatform;
+  platform: "instagram";
   handle: string;
   href: string;
 };
 
-export const personalSocialLinks: PersonalSocialLink[] = [
-  {
+export function instagramLink(username: string): PersonalSocialLink {
+  const handle = username.startsWith("@") ? username : `@${username}`;
+
+  return {
     platform: "instagram",
-    handle: "@yourhandle",
-    href: "https://www.instagram.com/yourhandle/",
-  },
-  {
-    platform: "threads",
-    handle: "@yourhandle",
-    href: "https://www.threads.net/@yourhandle",
-  },
-  {
-    platform: "bluesky",
-    handle: "@yourhandle.bsky.social",
-    href: "https://bsky.app/profile/yourhandle.bsky.social",
-  },
-];
+    handle,
+    href: `https://www.instagram.com/${handle.slice(1)}/`,
+  };
+}

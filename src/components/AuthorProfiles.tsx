@@ -79,7 +79,7 @@ function AuthorSelectorCard({
           <p className="mt-2 text-sm font-semibold italic text-brand-brown">
             {author.tagline}
           </p>
-          <PersonalSocialLinks stopLinkPropagation />
+          <PersonalSocialLinks links={author.socialLinks ?? []} stopLinkPropagation />
           <p className="mt-4 text-xs font-semibold text-brand-charcoal/50 group-hover:text-brand-blue-deep/70">
             Tap to read bio
           </p>
@@ -140,7 +140,7 @@ export function AuthorProfiles({ authors }: Props) {
                 <p className="mt-2 text-sm font-semibold italic text-brand-brown">
                   {selectedAuthor.tagline}
                 </p>
-                <PersonalSocialLinks align="start" />
+                <PersonalSocialLinks align="start" links={selectedAuthor.socialLinks ?? []} />
               </div>
 
               <motion.div
