@@ -47,7 +47,7 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
 
   if (!isEnabled) {
     return (
-      <div className="mt-6 rounded-2xl border border-dashed border-brand-charcoal/25 bg-cream p-4 text-sm text-brand-charcoal/70">
+      <div className="rounded-2xl border border-dashed border-brand-charcoal/25 bg-cream p-4 text-sm text-brand-charcoal/70">
         eBook checkout is almost ready. Add a Stripe Price ID for this title in{" "}
         <code className="rounded bg-cream-deep px-1">src/data/books.json</code> and
         host the PDF on Vercel Blob (<code className="rounded bg-cream-deep px-1">EBOOK_BLOB_URLS</code>)
@@ -61,7 +61,7 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4">
+    <form onSubmit={onSubmit} className="rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4">
       <p className="text-sm font-bold text-brand-charcoal">
         Buy direct eBook (instant download)
       </p>

@@ -1,6 +1,4 @@
-import { BookDescription } from "@/components/BookDescription";
-import { BookDetailPreview } from "@/components/BookDetailPreview";
-import { EbookCheckoutForm } from "@/components/EbookCheckoutForm";
+import { BookDetailContent } from "@/components/BookDetailContent";
 import { PageSection } from "@/components/PageSection";
 import { getBookById, getBooks } from "@/lib/books";
 import Image from "next/image";
@@ -23,7 +21,6 @@ export default async function BookDetailPage({ params }: Props) {
 
   const insideImages = book.insideImageUrls ?? [];
   const galleryImages = book.amazonGalleryImageUrls ?? [];
-  const hasDirectEbookCheckout = Boolean(book.stripePriceIdEbook?.trim());
 
   return (
     <main>
@@ -45,53 +42,7 @@ export default async function BookDetailPage({ params }: Props) {
       </PageSection>
 
       <PageSection tone="white">
-        <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr]">
-          <BookDetailPreview book={book} />
-
-          <article className="rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm">
-            {book.amazonStarRating ? (
-              <p className="inline-flex items-center gap-2 rounded-full bg-brand-yellow/25 px-4 py-2 text-sm font-bold text-brand-charcoal">
-                <span aria-hidden="true" className="text-brand-orange-deep">
-                  ★
-                </span>
-                {book.amazonStarRating}
-              </p>
-            ) : null}
-
-            <BookDescription book={book} className="mt-5" />
-
-            <div className="mt-7 grid gap-3 rounded-2xl border border-brand-brown/15 bg-cream-deep p-4 text-sm">
-              <p className="font-bold text-brand-charcoal">Pricing</p>
-              <p className="text-brand-charcoal/85">
-                eBook (direct): <span className="font-semibold">{book.priceEbook ?? "Set price"}</span>
-              </p>
-              <p className="text-brand-charcoal/85">
-                Paperback: <span className="font-semibold">{book.pricePaperback ?? "Set price"}</span>
-              </p>
-            </div>
-
-            {hasDirectEbookCheckout ? (
-              <EbookCheckoutForm
-                bookId={book.id}
-                ebookFileBaseName={book.ebookFileBaseName}
-                isEnabled={hasDirectEbookCheckout}
-              />
-            ) : null}
-
-            {book.amazonPaperbackUrl ? (
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <a
-                  href={book.amazonPaperbackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-5 text-sm font-bold text-section-navy transition hover:brightness-95"
-                >
-                  Paperback on Amazon
-                </a>
-              </div>
-            ) : null}
-          </article>
-        </div>
+        <BookDetailContent book={book} />
       </PageSection>
 
       {galleryImages.length ? (
