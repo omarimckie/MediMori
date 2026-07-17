@@ -6,10 +6,10 @@
 import { execFileSync } from "node:child_process";
 
 const patterns = [
-  { name: "Stripe live secret key", regex: /sk_live_[A-Za-z0-9]{20,}/ },
-  { name: "Stripe test secret key", regex: /sk_test_[A-Za-z0-9]{20,}/ },
-  { name: "Stripe restricted key", regex: /rk_(live|test)_[A-Za-z0-9]{20,}/ },
-  { name: "Vercel Blob token", regex: /vercel_blob_rw_[A-Za-z0-9_]{20,}/ },
+  { name: "Stripe live secret key", regex: /sk_live_[A-Za-z0-9]{20,}/g },
+  { name: "Stripe test secret key", regex: /sk_test_[A-Za-z0-9]{20,}/g },
+  { name: "Stripe restricted key", regex: /rk_(live|test)_[A-Za-z0-9]{20,}/g },
+  { name: "Vercel Blob token", regex: /vercel_blob_rw_[A-Za-z0-9_]{20,}/g },
 ];
 
 function listTrackedFiles() {
@@ -37,8 +37,7 @@ for (const file of listTrackedFiles()) {
   if (!content) continue;
 
   for (const pattern of patterns) {
-    const match = content.match(pattern.regex);
-    if (match) {
+    for (const match of content.matchAll(pattern.regex)) {
       findings.push({
         file,
         type: pattern.name,
