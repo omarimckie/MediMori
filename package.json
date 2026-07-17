@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "scrape:amazon": "node scripts/scrape-amazon.mjs"
+    "scrape:amazon": "node scripts/scrape-amazon.mjs",
+    "security:check": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.3.3",
