@@ -43,10 +43,18 @@ const socialLinks = [
   { label: "X", href: "https://x.com/twilightfeather", Icon: XIcon },
 ];
 
+const navigationLinks = [
+  { label: "Home", href: "/" },
+  { label: "Books", href: "/#books" },
+  { label: "Resources", href: "/blog" },
+  { label: "About Us", href: "/authors" },
+  { label: "Blog", href: "/blog" },
+];
+
 export function SiteHeader() {
   return (
     <header className="border-b border-brand-brown/15 bg-cream/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-1">
           <Link href="/" className="flex items-center gap-3">
             <Image
@@ -84,24 +92,24 @@ export function SiteHeader() {
             ))}
           </div>
         </div>
-        <nav className="flex items-center gap-2 text-sm font-semibold">
+        <nav
+          aria-label="Primary navigation"
+          className="flex flex-wrap items-center justify-end gap-1 text-sm font-semibold"
+        >
+          {navigationLinks.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="rounded-full px-3 py-2 text-brand-charcoal transition hover:bg-brand-blue/15"
+            >
+              {item.label}
+            </Link>
+          ))}
           <Link
-            href="/"
-            className="rounded-full px-4 py-2 text-brand-charcoal transition hover:bg-brand-blue/15"
+            href="/#books"
+            className="ml-1 rounded-xl bg-[#7050a5] px-5 py-2.5 font-extrabold text-white shadow-sm transition hover:brightness-95"
           >
-            Home
-          </Link>
-          <Link
-            href="/authors"
-            className="rounded-full px-4 py-2 text-brand-charcoal transition hover:bg-brand-green/15"
-          >
-            About Authors
-          </Link>
-          <Link
-            href="/blog"
-            className="rounded-full px-4 py-2 text-brand-charcoal transition hover:bg-brand-orange/20"
-          >
-            Blog
+            Shop Books
           </Link>
         </nav>
       </div>
