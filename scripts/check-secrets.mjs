@@ -3,7 +3,7 @@
  * Scans git-tracked files for common secret patterns.
  * Run: npm run security:check
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const patterns = [
   { name: "Stripe live secret key", regex: /sk_live_[A-Za-z0-9]{20,}/ },
@@ -13,17 +13,18 @@ const patterns = [
 ];
 
 function listTrackedFiles() {
-  const output = execSync("git ls-files", { encoding: "utf8" });
+  // -z emits null-delimited, unquoted paths, so filenames with spaces or
+  // special characters arrive as literal data.
+  const output = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" });
   return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
+    .split("\0")
     .filter(Boolean)
     .filter((file) => !file.startsWith("node_modules/"));
 }
 
 function readTrackedFile(file) {
   try {
-    return execSync(`git show HEAD:${file}`, { encoding: "utf8" });
+    return execFileSync("git", ["show", `HEAD:${file}`], { encoding: "utf8" });
   } catch {
     return "";
   }
