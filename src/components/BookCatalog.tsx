@@ -1,31 +1,29 @@
 "use client";
 
-import { BookDetailContent } from "@/components/BookDetailContent";
 import { BookCoverImage } from "@/components/BookCoverImage";
 import type { Book } from "@/lib/books";
-import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { motion } from "framer-motion";
+import Link from "next/link";
 
 type Props = {
   books: Book[];
 };
 
-function BookCover({
-  book,
-  className = "mx-auto",
-  compact = false,
-}: {
-  book: Book;
-  className?: string;
-  compact?: boolean;
-}) {
-  const maxWidth = compact ? "max-w-[120px]" : "max-w-[220px]";
+const accentStyles = {
+  purple: {
+    title: "text-[#7050a5]",
+    button: "bg-[#7050a5] hover:brightness-95",
+  },
+  blue: {
+    title: "text-brand-blue-deep",
+    button: "bg-brand-blue-deep hover:brightness-95",
+  },
+};
 
+function BookCover({ book }: { book: Book }) {
   if (!book.coverImageUrl) {
     return (
-      <div
-        className={`flex aspect-[2/3] w-full ${maxWidth} items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45 ${className}`}
-      >
+      <div className="flex aspect-[2/3] w-full max-w-[161px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45">
         Cover coming soon
       </div>
     );
@@ -37,145 +35,61 @@ function BookCover({
       alt={`${book.title} cover`}
       width={book.coverWidth ?? 700}
       height={book.coverHeight ?? 1000}
-      maxWidthClass={maxWidth}
-      className={className}
+      maxWidthClass="max-w-[161px]"
+      className="mx-auto"
     />
   );
 }
 
-function BookSelectorCard({
-  book,
-  onSelect,
-  compact = false,
-}: {
-  book: Book;
-  onSelect: () => void;
-  compact?: boolean;
-}) {
-  if (compact) {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="group w-full cursor-pointer rounded-3xl border border-transparent p-4 text-center transition hover:border-brand-blue/20 hover:bg-brand-blue/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
-      >
-        <motion.div layoutId={`book-cover-${book.id}`}>
-          <BookCover book={book} compact className="mx-auto" />
-        </motion.div>
-        <motion.h3
-          layoutId={`book-title-${book.id}`}
-          className="mt-3 text-lg font-extrabold text-brand-charcoal"
-        >
-          {book.title}
-        </motion.h3>
-        <p className="mt-2 text-xs font-semibold text-brand-charcoal/60 group-hover:text-brand-blue-deep">
-          View book
-        </p>
-      </button>
-    );
-  }
+function BookCard({ book }: { book: Book }) {
+  const styles = accentStyles[book.accent ?? "purple"];
+  const tagline =
+    book.tagline ??
+    book.description.split(/(?<=[.!?])\s+/)[0] ??
+    book.description;
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="group w-full cursor-pointer rounded-3xl border border-transparent p-2 text-center transition hover:border-brand-blue/20 hover:bg-brand-blue/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
-    >
-      <motion.div layoutId={`book-cover-${book.id}`}>
-        <BookCover book={book} className="mx-auto" />
-      </motion.div>
-      <motion.h3
-        layoutId={`book-title-${book.id}`}
-        className="mt-6 text-xl font-extrabold text-brand-charcoal sm:text-2xl"
-      >
-        {book.title}
-      </motion.h3>
-      {book.subtitle ? (
-        <p className="mt-2 text-sm font-semibold text-brand-green-deep">
-          {book.subtitle}
+    <article className="grid min-h-[240px] grid-cols-[42%_1fr] items-center gap-4 rounded-3xl border border-brand-brown/10 bg-white/70 p-4 shadow-sm sm:gap-5 sm:p-5">
+      <div className="flex justify-center">
+        <BookCover book={book} />
+      </div>
+      <div className="flex h-full flex-col justify-center py-1">
+        <h3 className={`text-lg font-extrabold leading-snug sm:text-xl ${styles.title}`}>
+          {book.title}
+        </h3>
+        {book.cardSubtitle ? (
+          <p className={`mt-1 text-sm font-bold ${styles.title}`}>
+            {book.cardSubtitle}
+          </p>
+        ) : null}
+        <p className="mt-3 text-sm leading-relaxed text-brand-charcoal/75">
+          {tagline}
         </p>
-      ) : null}
-      <p className="mt-4 text-xs font-semibold text-brand-charcoal/50 group-hover:text-brand-blue-deep/70">
-        Tap cover or title for details
-      </p>
-    </button>
+        <Link
+          href={`/books/${book.id}`}
+          className={`mt-5 inline-flex w-fit items-center justify-center rounded-full px-5 py-2.5 text-sm font-extrabold text-white transition ${styles.button}`}
+        >
+          View Book
+        </Link>
+      </div>
+    </article>
   );
 }
 
 export function BookCatalog({ books }: Props) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectedBook = books.find((book) => book.id === selectedId);
-  const otherBooks = books.filter((book) => book.id !== selectedId);
-
   return (
-    <div>
-      <AnimatePresence mode="wait">
-        {!selectedBook ? (
-          <motion.div
-            key="grid"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="grid gap-10 md:grid-cols-2 lg:grid-cols-3"
-          >
-            {books.map((book) => (
-              <BookSelectorCard
-                key={book.id}
-                book={book}
-                onSelect={() => setSelectedId(book.id)}
-              />
-            ))}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="detail"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-          >
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              className="mb-8 inline-flex items-center rounded-full border border-brand-brown/20 bg-cream-deep px-4 py-2 text-sm font-bold text-brand-charcoal transition hover:bg-white"
-            >
-              ← Back to all books
-            </button>
-
-            <motion.div layoutId={`book-title-${selectedBook.id}`} className="mb-8">
-              <h3 className="text-3xl font-extrabold text-brand-charcoal sm:text-4xl">
-                {selectedBook.title}
-              </h3>
-              {selectedBook.subtitle ? (
-                <p className="mt-2 text-base font-semibold text-brand-green-deep">
-                  {selectedBook.subtitle}
-                </p>
-              ) : null}
-            </motion.div>
-
-            <BookDetailContent book={selectedBook} />
-
-            {otherBooks.length ? (
-              <div className="mt-12 border-t border-brand-brown/15 pt-10">
-                <p className="mb-6 text-center text-sm font-semibold text-brand-charcoal/60">
-                  Browse our other books
-                </p>
-                <div className="mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">
-                  {otherBooks.map((book) => (
-                    <BookSelectorCard
-                      key={book.id}
-                      book={book}
-                      compact
-                      onSelect={() => setSelectedId(book.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="grid gap-6 lg:grid-cols-3">
+      {books.map((book, index) => (
+        <motion.div
+          key={book.id}
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.45, delay: index * 0.08, ease: "easeOut" }}
+        >
+          <BookCard book={book} />
+        </motion.div>
+      ))}
     </div>
   );
 }

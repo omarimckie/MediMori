@@ -75,6 +75,19 @@ export default function Home() {
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 select-none"
         >
+          {/* Watercolor cloud bank behind the children */}
+          <div className="absolute bottom-0 right-0 h-[72%] w-full sm:w-[70%] lg:w-[60%]">
+            <span className="absolute bottom-[6%] left-[8%] h-[45%] w-[62%] rounded-full bg-white/90 blur-2xl" />
+            <span className="absolute bottom-[18%] right-[2%] h-[48%] w-[58%] rounded-full bg-[#e6dcf6]/80 blur-2xl" />
+            <span className="absolute bottom-[30%] left-[24%] h-[40%] w-[52%] rounded-full bg-white/75 blur-3xl" />
+            <span className="absolute bottom-0 right-[16%] h-[34%] w-[64%] rounded-full bg-[#efe7fa]/90 blur-xl" />
+            <span className="absolute bottom-[42%] right-[6%] h-[30%] w-[38%] rounded-full bg-[#dfd2f2]/70 blur-2xl" />
+            <span className="absolute bottom-[8%] left-0 h-[30%] w-[36%] rounded-full bg-[#f6eefe]/85 blur-xl" />
+          </div>
+          {/* Smaller drifting puffs near the moon */}
+          <span className="absolute right-[2%] top-[10%] h-14 w-40 rounded-full bg-white/70 blur-xl" />
+          <span className="absolute right-[20%] top-[22%] hidden h-12 w-32 rounded-full bg-[#eae0f8]/70 blur-xl sm:block" />
+
           <span className="absolute left-[2%] top-[7%] text-2xl text-brand-yellow">
             ✦
           </span>

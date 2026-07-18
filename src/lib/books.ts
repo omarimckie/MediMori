@@ -4,6 +4,12 @@ export type Book = {
   id: string;
   title: string;
   subtitle?: string;
+  /** Short marketing line shown on homepage book cards. */
+  tagline?: string;
+  /** Optional second line under the title on homepage cards. */
+  cardSubtitle?: string;
+  /** Card accent used for title/button color on the homepage. */
+  accent?: "purple" | "blue";
   description: string;
   /** Amazon book description HTML (paragraphs + bullet lists). */
   descriptionHtml?: string;
@@ -26,7 +32,7 @@ export type Book = {
 };
 
 export function getBooks(): Book[] {
-  return booksData.books;
+  return booksData.books as Book[];
 }
 
 export function getBookById(id: string): Book | undefined {
