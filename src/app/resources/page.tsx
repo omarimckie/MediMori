@@ -30,7 +30,7 @@ export default async function ResourcesPage() {
         </p>
       </PageSection>
 
-      <PageSection tone="white">
+      <PageSection tone="white" cloudTop="navy">
         {posts.length ? (
           <div className="grid gap-7 md:grid-cols-2 lg:grid-cols-3">
             {posts.map((post) => (
@@ -44,7 +44,7 @@ export default async function ResourcesPage() {
         )}
       </PageSection>
 
-      <PageSection tone="cream" containerClassName="mx-auto max-w-3xl text-center">
+      <PageSection tone="cream" cloudTop="white" containerClassName="mx-auto max-w-3xl text-center">
         <h2 className="text-2xl font-extrabold text-brand-charcoal sm:text-3xl">
           Looking for our own stories?
         </h2>

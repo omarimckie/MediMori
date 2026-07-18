@@ -55,15 +55,26 @@ export default async function FriendPage({ params }: Props) {
           className={`absolute -left-16 top-6 h-52 w-52 rounded-full blur-3xl ${accent.glow}`}
         />
         <div className="relative mx-auto aspect-[4/5] w-full max-w-sm overflow-hidden rounded-[2rem] border border-brand-brown/10 bg-white shadow-xl">
-          <Image
-            src="/children-reading.png"
-            alt={friend.name}
-            fill
-            priority
-            sizes="(min-width: 1024px) 35vw, 90vw"
-            className="scale-[1.38] object-cover"
-            style={{ objectPosition: friend.imagePosition }}
-          />
+          {friend.imageSrc ? (
+            <Image
+              src={friend.imageSrc}
+              alt={friend.name}
+              fill
+              priority
+              sizes="(min-width: 1024px) 35vw, 90vw"
+              className="object-contain object-bottom p-6"
+            />
+          ) : (
+            <Image
+              src="/children-reading.png"
+              alt={friend.name}
+              fill
+              priority
+              sizes="(min-width: 1024px) 35vw, 90vw"
+              className="scale-[1.38] object-cover"
+              style={{ objectPosition: friend.imagePosition }}
+            />
+          )}
         </div>
 
         <div className="relative text-center lg:text-left">
@@ -91,7 +102,7 @@ export default async function FriendPage({ params }: Props) {
         </div>
       </PageSection>
 
-      <PageSection tone="navy" containerClassName="mx-auto max-w-3xl text-center">
+      <PageSection tone="navy" cloudTop="cream" containerClassName="mx-auto max-w-3xl text-center">
         <span aria-hidden="true" className="text-3xl text-brand-yellow-bright">
           ✦
         </span>

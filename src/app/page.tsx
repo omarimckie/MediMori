@@ -194,14 +194,14 @@ export default function Home() {
         </div>
       </PageSection>
 
-      <PageSection tone="cream" className="relative overflow-hidden">
+      <PageSection tone="cream" cloudTop="white" className="relative overflow-hidden">
         <ScrollingPlanet />
         <div className="relative z-10">
           <EmailSignup />
         </div>
       </PageSection>
 
-      <PageSection tone="navy">
+      <PageSection tone="navy" cloudTop="cream">
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-sm font-extrabold uppercase tracking-wider text-brand-yellow-bright">
             From our blog

@@ -4,6 +4,11 @@ export type Friend = {
   tagline: string;
   introduction: string;
   personality: string;
+  /** Standalone artwork with transparent background, shown full-figure. */
+  imageSrc?: string;
+  /** Crop card artwork to the upper torso, letting the raised hand overflow the card. */
+  torsoCrop?: boolean;
+  /** Crop position used when falling back to the shared children artwork. */
   imagePosition: string;
   accent: "purple" | "blue";
 };
@@ -17,6 +22,8 @@ export const friends: Friend[] = [
       "Amara loves discovering how things work, asking thoughtful questions, and sharing what she learns with the people around her.",
     personality:
       "Whether she is opening a new book or helping a friend, Amara brings curiosity, patience, and a big heart to every adventure.",
+    imageSrc: "/amara-waving.png",
+    torsoCrop: true,
     imagePosition: "82% center",
     accent: "purple",
   },
@@ -28,6 +35,8 @@ export const friends: Friend[] = [
       "AJ is energetic, imaginative, and always ready to turn an ordinary day into a new adventure.",
     personality:
       "He believes being brave also means being kind. AJ enjoys solving problems, cheering on his friends, and finding fun ways to lend a hand.",
+    imageSrc: "/aj-waving.png",
+    torsoCrop: true,
     imagePosition: "18% center",
     accent: "blue",
   },

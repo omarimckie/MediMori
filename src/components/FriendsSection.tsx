@@ -20,6 +20,7 @@ export function FriendsSection() {
   return (
     <PageSection
       tone="white"
+      cloudTop="cream"
       className="relative overflow-hidden"
       containerClassName="relative mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.35fr_0.8fr] lg:items-end"
     >
@@ -54,19 +55,45 @@ export function FriendsSection() {
               <Link
                 key={friend.id}
                 href={`/friends/${friend.id}`}
-                className={`group grid min-h-52 grid-cols-[42%_1fr] overflow-hidden rounded-3xl border shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${styles.card}`}
+                className={`group grid min-h-52 grid-cols-[42%_1fr] rounded-3xl border shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
+                  friend.torsoCrop ? "" : "overflow-hidden"
+                } ${styles.card}`}
                 aria-label={`Meet ${friend.name}`}
               >
-                <div className="relative min-h-52 overflow-hidden bg-white">
-                  <Image
-                    src="/children-reading.png"
-                    alt={friend.name}
-                    fill
-                    sizes="(min-width: 640px) 18vw, 42vw"
-                    className="scale-[1.42] object-cover"
-                    style={{ objectPosition: friend.imagePosition }}
-                  />
-                </div>
+                {friend.torsoCrop && friend.imageSrc ? (
+                  <div className="relative min-h-52">
+                    <div className="absolute inset-x-1 -top-6 bottom-0 overflow-hidden rounded-b-[1.4rem]">
+                      <Image
+                        src={friend.imageSrc}
+                        alt={friend.name}
+                        fill
+                        sizes="(min-width: 640px) 18vw, 42vw"
+                        className="object-cover object-top"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative min-h-52 overflow-hidden bg-white">
+                    {friend.imageSrc ? (
+                      <Image
+                        src={friend.imageSrc}
+                        alt={friend.name}
+                        fill
+                        sizes="(min-width: 640px) 18vw, 42vw"
+                        className="object-contain object-bottom p-2"
+                      />
+                    ) : (
+                      <Image
+                        src="/children-reading.png"
+                        alt={friend.name}
+                        fill
+                        sizes="(min-width: 640px) 18vw, 42vw"
+                        className="scale-[1.42] object-cover"
+                        style={{ objectPosition: friend.imagePosition }}
+                      />
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-col items-start justify-center p-5">
                   <h3 className={`text-2xl font-extrabold ${styles.title}`}>
                     {friend.name}

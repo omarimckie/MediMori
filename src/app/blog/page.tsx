@@ -27,7 +27,7 @@ export default async function BlogPage() {
         </p>
       </PageSection>
 
-      <PageSection tone="white">
+      <PageSection tone="white" cloudTop="navy">
         <div className="grid gap-7 md:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
             <BlogPostCard key={post.slug} post={post} />
@@ -35,7 +35,7 @@ export default async function BlogPage() {
         </div>
       </PageSection>
 
-      <PageSection tone="cream" containerClassName="mx-auto max-w-3xl text-center">
+      <PageSection tone="cream" cloudTop="white" containerClassName="mx-auto max-w-3xl text-center">
         <h2 className="text-2xl font-extrabold text-brand-charcoal sm:text-3xl">
           Ready to read together?
         </h2>

@@ -107,7 +107,7 @@ export default async function BlogPostPage({ params }: Props) {
         <p className="mt-4 text-base leading-relaxed text-white/85">{post.excerpt}</p>
       </PageSection>
 
-      <PageSection tone="white" containerClassName="mx-auto max-w-3xl">
+      <PageSection tone="white" cloudTop="navy" containerClassName="mx-auto max-w-3xl">
         <article className="rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm sm:p-8">
           <BlogPostBody post={post} />
         </article>

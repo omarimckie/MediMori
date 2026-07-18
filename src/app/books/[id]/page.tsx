@@ -41,7 +41,7 @@ export default async function BookDetailPage({ params }: Props) {
         ) : null}
       </PageSection>
 
-      <PageSection tone="white">
+      <PageSection tone="white" cloudTop="navy">
         <BookDetailContent book={book} />
       </PageSection>
 

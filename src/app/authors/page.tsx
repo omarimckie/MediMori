@@ -22,11 +22,11 @@ export default async function AuthorsPage({ searchParams }: Props) {
         </p>
       </PageSection>
 
-      <PageSection tone="white">
+      <PageSection tone="white" cloudTop="navy">
         <AuthorProfiles authors={authors} initialAuthorId={author} />
       </PageSection>
 
-      <PageSection tone="navy">
+      <PageSection tone="navy" cloudTop="white">
         <h2 className="text-2xl font-extrabold text-white sm:text-3xl">Our Story</h2>
         <hr className="mt-4 border-white/20" />
         <p className="mt-6 text-sm leading-relaxed text-white/85 sm:text-base">
