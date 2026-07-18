@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useState } from "react";
 
 type SignupResponse = {
@@ -50,23 +51,52 @@ export function EmailSignup() {
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm shadow-brand-brown/10 sm:p-8">
+    <div className="relative overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#efe6fb_0%,#f6effc_45%,#fdf6e3_100%)] p-4 sm:p-6">
+      {/* Decorative watercolor feather leaning against the right edge */}
+      <Image
+        aria-hidden="true"
+        src="/feather-accent.png"
+        alt=""
+        width={483}
+        height={760}
+        className="pointer-events-none absolute -bottom-2 right-0 h-44 w-auto select-none sm:right-1 sm:h-56"
+      />
+
+      <div className="relative rounded-3xl bg-white/95 p-6 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-8">
+        <span
+          aria-hidden="true"
+          className="absolute right-6 top-5 text-2xl text-[#7050a5]"
+        >
+          ♥
+        </span>
+
         <div className="grid gap-6 md:grid-cols-[1.3fr_1fr] md:items-center">
           <div>
-            <p className="text-sm font-extrabold uppercase tracking-wider text-brand-green-deep">
-              Join the Twilight.Feather list
+            <p className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-section-navy">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-5 w-5 text-brand-charcoal/70"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+              Join the Twilight Feather list
             </p>
-            <h2 className="mt-2 text-3xl font-extrabold text-brand-charcoal">
+            <h2 className="mt-3 text-3xl font-extrabold text-section-navy">
               Get 10% off your purchase
             </h2>
             <p className="mt-3 text-brand-charcoal/80">
-              Sign up with your email and we will unlock your discount code right
-              away. We also send occasional updates when new books are released.
+              Sign up with your email and we&apos;ll send you exclusive deals,
+              new books, and resources.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            <label htmlFor="email" className="text-sm font-semibold text-brand-charcoal">
+            <label htmlFor="email" className="sr-only">
               Email address
             </label>
             <input
@@ -75,7 +105,7 @@ export function EmailSignup() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
+              placeholder="Email address"
               required
               className="h-12 rounded-2xl border border-brand-brown/20 bg-white px-4 text-brand-charcoal outline-none ring-brand-green transition focus:ring-2"
             />
@@ -101,6 +131,7 @@ export function EmailSignup() {
             </p>
           </div>
         ) : null}
+      </div>
     </div>
   );
 }

@@ -33,11 +33,40 @@ const highlights = [
     icon: (
       <span
         aria-hidden="true"
-        className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-brand-blue/25"
+        className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-blue/15"
       >
-        <span className="absolute inset-x-1 top-2 h-2 rounded-full bg-brand-green/70" />
-        <span className="absolute inset-y-2 left-1 w-2 rounded-full bg-brand-blue-deep/55" />
-        <span className="absolute bottom-2 right-1.5 h-2.5 w-3 rounded-full bg-brand-green/55" />
+        <svg viewBox="0 0 24 24" className="h-7 w-7">
+          <circle cx="12" cy="12" r="9" fill="#7ec3e8" />
+          {/* Continents */}
+          <path
+            d="M6.5 7.5c1.4-.9 3-.6 4 .3.8.7.6 1.9-.3 2.4-1.2.6-2.8.4-3.7-.5-.7-.7-.8-1.6 0-2.2Z"
+            fill="#6aa84f"
+          />
+          <path
+            d="M13.5 12.2c1.6-.4 3.3.2 4.1 1.4.6 1-.1 2.2-1.2 2.5-1.4.4-3-.1-3.8-1.2-.6-.9-.2-2.3.9-2.7Z"
+            fill="#6aa84f"
+          />
+          <path
+            d="M8 14.5c.9-.2 1.8.3 2 1.1.2.8-.4 1.6-1.3 1.7-.9.1-1.7-.4-1.9-1.2-.2-.7.4-1.4 1.2-1.6Z"
+            fill="#6aa84f"
+          />
+          <circle
+            cx="12"
+            cy="12"
+            r="9"
+            fill="none"
+            stroke="#2f6690"
+            strokeWidth="1.2"
+          />
+          {/* Meridian and equator hints */}
+          <path
+            d="M12 3a14.5 14.5 0 0 1 0 18M12 3a14.5 14.5 0 0 0 0 18M3.6 9.5h16.8M3.6 14.5h16.8"
+            fill="none"
+            stroke="#2f6690"
+            strokeWidth="0.8"
+            opacity="0.55"
+          />
+        </svg>
       </span>
     ),
   },
@@ -47,20 +76,20 @@ export function BookHighlights() {
   return (
     <div className="mt-14 border-t border-brand-brown/15 pt-10">
       <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
-        {highlights.map((item, index) => (
+        {highlights.map((item) => (
           <div
             key={item.title}
-            className={`flex flex-col items-center px-4 text-center lg:px-6 ${
-              index > 0 ? "lg:border-l lg:border-brand-brown/15" : ""
-            }`}
+            className="flex items-start gap-4 px-4 text-left lg:px-6"
           >
-            {item.icon}
-            <h3 className="mt-4 text-lg font-extrabold text-section-navy">
-              {item.title}
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-brand-charcoal/75">
-              {item.description}
-            </p>
+            <div className="shrink-0">{item.icon}</div>
+            <div>
+              <h3 className="text-lg font-extrabold text-section-navy">
+                {item.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-brand-charcoal/75">
+                {item.description}
+              </p>
+            </div>
           </div>
         ))}
       </div>
