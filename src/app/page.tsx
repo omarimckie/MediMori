@@ -198,6 +198,7 @@ export default function Home() {
         cloudTop="white"
         id="books"
         className="relative scroll-mt-24 overflow-hidden"
+        containerClassName="mx-auto max-w-7xl"
       >
         <ScrollingRocket />
         <span

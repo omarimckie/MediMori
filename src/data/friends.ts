@@ -6,8 +6,12 @@ export type Friend = {
   personality: string;
   /** Standalone artwork with transparent background, shown full-figure. */
   imageSrc?: string;
+  /** Optional tighter crop used only on the homepage friend cards. */
+  cardImageSrc?: string;
   /** Crop card artwork to the upper torso, letting the raised hand overflow the card. */
   torsoCrop?: boolean;
+  /** object-position for torso-crop cards (keeps the crown above the card edge). */
+  cardObjectPosition?: string;
   /** Crop position used when falling back to the shared children artwork. */
   imagePosition: string;
   accent: "purple" | "blue";
@@ -36,6 +40,7 @@ export const friends: Friend[] = [
     personality:
       "He believes being brave also means being kind. AJ enjoys solving problems, cheering on his friends, and finding fun ways to lend a hand.",
     imageSrc: "/aj-waving.png",
+    cardImageSrc: "/aj-card.png",
     torsoCrop: true,
     imagePosition: "18% center",
     accent: "blue",

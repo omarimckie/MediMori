@@ -23,7 +23,7 @@ const accentStyles = {
 function BookCover({ book }: { book: Book }) {
   if (!book.coverImageUrl) {
     return (
-      <div className="flex aspect-[2/3] w-full max-w-[161px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45">
+      <div className="flex aspect-[2/3] w-full max-w-[253px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45">
         Cover coming soon
       </div>
     );
@@ -35,7 +35,7 @@ function BookCover({ book }: { book: Book }) {
       alt={`${book.title} cover`}
       width={book.coverWidth ?? 700}
       height={book.coverHeight ?? 1000}
-      maxWidthClass="max-w-[161px]"
+      maxWidthClass="max-w-[253px]"
       className="mx-auto"
     />
   );
@@ -49,7 +49,7 @@ function BookCard({ book }: { book: Book }) {
     book.description;
 
   return (
-    <article className="grid min-h-[240px] grid-cols-[42%_1fr] items-center gap-4 rounded-3xl border border-brand-brown/10 bg-white/70 p-4 shadow-sm sm:gap-5 sm:p-5">
+    <article className="grid min-h-[280px] grid-cols-[45%_1fr] items-center gap-4 rounded-3xl border border-brand-brown/10 bg-white/70 p-4 shadow-sm sm:gap-5 sm:p-5">
       <div className="flex justify-center">
         <BookCover book={book} />
       </div>
@@ -77,8 +77,10 @@ function BookCard({ book }: { book: Book }) {
 }
 
 export function BookCatalog({ books }: Props) {
+  const lastIsAlone = books.length % 2 === 1;
+
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="grid gap-6 lg:grid-cols-2">
       {books.map((book, index) => (
         <motion.div
           key={book.id}
@@ -86,6 +88,11 @@ export function BookCatalog({ books }: Props) {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.45, delay: index * 0.08, ease: "easeOut" }}
+          className={
+            lastIsAlone && index === books.length - 1
+              ? "lg:col-span-2 lg:mx-auto lg:w-[calc(50%-0.75rem)]"
+              : undefined
+          }
         >
           <BookCard book={book} />
         </motion.div>
