@@ -1,6 +1,7 @@
 "use client";
 
 import { BookCatalog } from "@/components/BookCatalog";
+import { BookHighlights } from "@/components/BookHighlights";
 import { EmailSignup } from "@/components/EmailSignup";
 import { FriendsSection } from "@/components/FriendsSection";
 import { PageSection } from "@/components/PageSection";
@@ -180,28 +181,56 @@ export default function Home() {
       </div>
 
       <PageSection
-        tone="white"
+        tone="cream"
+        cloudTop="white"
         id="books"
         className="relative scroll-mt-24 overflow-hidden"
       >
         <ScrollingRocket />
+        <span
+          aria-hidden="true"
+          className="absolute left-[8%] top-16 text-2xl text-brand-yellow"
+        >
+          ✦
+        </span>
+        <span
+          aria-hidden="true"
+          className="absolute right-[26%] top-20 hidden text-xl text-brand-orange sm:block"
+        >
+          ★
+        </span>
+        <span
+          aria-hidden="true"
+          className="absolute bottom-14 left-[4%] hidden text-xl text-[#8f76bc]/70 sm:block"
+        >
+          ★
+        </span>
         <div className="relative z-10">
           <div className="mb-10 text-center">
-            <h2 className="text-3xl font-extrabold text-brand-charcoal">Our books</h2>
+            <div className="flex items-center justify-center gap-3">
+              <span aria-hidden="true" className="text-2xl text-brand-yellow">
+                ✦
+              </span>
+              <h2 className="text-3xl font-extrabold text-section-navy">Our books</h2>
+              <span aria-hidden="true" className="text-2xl text-brand-yellow">
+                ✦
+              </span>
+            </div>
             <p className="mt-2 text-brand-charcoal/75">Three titles today — more stories on the way.</p>
           </div>
           <BookCatalog books={books} />
+          <BookHighlights />
         </div>
       </PageSection>
 
-      <PageSection tone="cream" cloudTop="white" className="relative overflow-hidden">
+      <PageSection tone="white" cloudTop="cream" className="relative overflow-hidden">
         <ScrollingPlanet />
         <div className="relative z-10">
           <EmailSignup />
         </div>
       </PageSection>
 
-      <PageSection tone="navy" cloudTop="cream">
+      <PageSection tone="navy" cloudTop="white">
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-sm font-extrabold uppercase tracking-wider text-brand-yellow-bright">
             From our blog
