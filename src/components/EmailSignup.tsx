@@ -31,7 +31,13 @@ export function EmailSignup() {
         body: JSON.stringify({ email }),
       });
 
-      const data = (await response.json()) as SignupResponse;
+      let data: SignupResponse;
+      try {
+        data = (await response.json()) as SignupResponse;
+      } catch {
+        setError("We could not save your email. Please try again in a moment.");
+        return;
+      }
 
       if (!response.ok || !data.ok) {
         setError(data.message ?? "We could not save your email. Please try again.");
