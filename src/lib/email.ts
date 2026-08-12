@@ -14,38 +14,61 @@ export function isConfirmationEmailConfigured(): boolean {
   return Boolean(getResendClient() && getFromAddress());
 }
 
-/** Adds the signup as a Resend Contact (and optional Segment/Topic). */
+/** Adds the signup as a Resend Contact and attaches it to the newsletter segment. */
 export async function addContactToNewsletterAudience(
   email: string,
 ): Promise<void> {
   const resend = getResendClient();
   if (!resend) return;
 
-  // Prefer the newsletter-specific segment ID the user set in Vercel.
+  // Prefer the newsletter-specific segment ID set in Vercel.
   const segmentId =
     process.env.RESEND_NEWSLETTER_ID?.trim() ||
-    process.env.RESEND_SEGMENT_ID?.trim();
-  // Keep supporting the old env name if someone already set it.
-  const legacyAudienceId = process.env.RESEND_AUDIENCE_ID?.trim();
+    process.env.RESEND_SEGMENT_ID?.trim() ||
+    process.env.RESEND_AUDIENCE_ID?.trim();
   const topicId = process.env.RESEND_TOPIC_ID?.trim();
 
-  const { error } = await resend.contacts.create({
+  if (!segmentId) {
+    console.warn(
+      "RESEND_NEWSLETTER_ID is not set — contact will be created without a newsletter segment.",
+    );
+  }
+
+  const { data, error } = await resend.contacts.create({
     email,
     unsubscribed: false,
-    ...(segmentId
-      ? { segments: [{ id: segmentId }] }
-      : legacyAudienceId
-        ? { audienceId: legacyAudienceId }
-        : {}),
+    ...(segmentId ? { segments: [{ id: segmentId }] } : {}),
     ...(topicId
       ? { topics: [{ id: topicId, subscription: "opt_in" as const }] }
       : {}),
   });
 
-  // Already on the list is fine.
-  if (error && !/already|exists|conflict/i.test(error.message ?? "")) {
+  const alreadyExists =
+    Boolean(error) && /already|exists|conflict/i.test(error?.message ?? "");
+
+  if (error && !alreadyExists) {
     throw new Error(error.message || "Could not add contact to Resend.");
   }
+
+  // Always attach to the newsletter segment explicitly.
+  // contacts.create may skip segments when the contact already exists.
+  if (segmentId) {
+    const { error: segmentError } = await resend.contacts.segments.add({
+      email,
+      segmentId,
+    });
+
+    if (
+      segmentError &&
+      !/already|exists|conflict/i.test(segmentError.message ?? "")
+    ) {
+      throw new Error(
+        segmentError.message || "Could not add contact to newsletter segment.",
+      );
+    }
+  }
+
+  void data;
 }
 
 export async function sendSignupConfirmationEmail(
