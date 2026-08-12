@@ -42,9 +42,24 @@ export async function POST(request: Request) {
   try {
     const { alreadySignedUp } = await upsertLead(email);
 
-    await addContactToNewsletterAudience(email).catch((error) => {
-      console.error("Failed to add contact to newsletter audience:", error);
-    });
+    const contactResult = await addContactToNewsletterAudience(email).catch(
+      (error) => {
+        console.error("Failed to add contact to newsletter audience:", error);
+        return {
+          ok: false,
+          contactCreated: false,
+          segmentAttached: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not sync contact to Resend.",
+        };
+      },
+    );
+
+    if (!contactResult.ok) {
+      console.error("Resend contact sync issue:", contactResult.message);
+    }
 
     let confirmationEmailSent = false;
     if (isConfirmationEmailConfigured()) {
@@ -72,6 +87,8 @@ export async function POST(request: Request) {
       ok: true,
       discountCode,
       confirmationEmailSent,
+      contactSynced: contactResult.ok,
+      segmentAttached: contactResult.segmentAttached,
       message: `${baseMessage}${emailNote}`,
     });
   } catch (error) {

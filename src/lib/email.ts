@@ -1,6 +1,13 @@
 import { getNewsletterDiscountCode } from "@/lib/newsletter-constants";
 import { Resend } from "resend";
 
+export type NewsletterContactResult = {
+  ok: boolean;
+  contactCreated: boolean;
+  segmentAttached: boolean;
+  message?: string;
+};
+
 function getResendClient(): Resend | null {
   const key = process.env.RESEND_API_KEY?.trim();
   return key ? new Resend(key) : null;
@@ -14,18 +21,33 @@ export function isConfirmationEmailConfigured(): boolean {
   return Boolean(getResendClient() && getFromAddress());
 }
 
-/** Adds the signup as a Resend Contact and attaches it to the newsletter segment. */
-export async function addContactToNewsletterAudience(
-  email: string,
-): Promise<void> {
-  const resend = getResendClient();
-  if (!resend) return;
-
-  // Prefer the newsletter-specific segment ID set in Vercel.
-  const segmentId =
+function getNewsletterSegmentId(): string | null {
+  return (
     process.env.RESEND_NEWSLETTER_ID?.trim() ||
     process.env.RESEND_SEGMENT_ID?.trim() ||
-    process.env.RESEND_AUDIENCE_ID?.trim();
+    process.env.RESEND_AUDIENCE_ID?.trim() ||
+    null
+  );
+}
+
+/**
+ * Adds the signup as a Resend Contact and attaches it to the newsletter segment.
+ * Requires a Resend API key with Full Access (not sending-only).
+ */
+export async function addContactToNewsletterAudience(
+  email: string,
+): Promise<NewsletterContactResult> {
+  const resend = getResendClient();
+  if (!resend) {
+    return {
+      ok: false,
+      contactCreated: false,
+      segmentAttached: false,
+      message: "RESEND_API_KEY is not set.",
+    };
+  }
+
+  const segmentId = getNewsletterSegmentId();
   const topicId = process.env.RESEND_TOPIC_ID?.trim();
 
   if (!segmentId) {
@@ -34,7 +56,7 @@ export async function addContactToNewsletterAudience(
     );
   }
 
-  const { data, error } = await resend.contacts.create({
+  const { error } = await resend.contacts.create({
     email,
     unsubscribed: false,
     ...(segmentId ? { segments: [{ id: segmentId }] } : {}),
@@ -47,11 +69,25 @@ export async function addContactToNewsletterAudience(
     Boolean(error) && /already|exists|conflict/i.test(error?.message ?? "");
 
   if (error && !alreadyExists) {
-    throw new Error(error.message || "Could not add contact to Resend.");
+    const message = error.message || "Could not add contact to Resend.";
+    console.error("Resend contacts.create failed:", {
+      message,
+      name: error.name,
+      statusCode: "statusCode" in error ? error.statusCode : undefined,
+    });
+    return {
+      ok: false,
+      contactCreated: false,
+      segmentAttached: false,
+      message:
+        /forbidden|permission|unauthorized|access/i.test(message)
+          ? "Resend API key cannot manage Contacts. Create a Full Access API key in Resend and set RESEND_API_KEY in Vercel."
+          : message,
+    };
   }
 
-  // Always attach to the newsletter segment explicitly.
-  // contacts.create may skip segments when the contact already exists.
+  let segmentAttached = false;
+
   if (segmentId) {
     const { error: segmentError } = await resend.contacts.segments.add({
       email,
@@ -62,13 +98,25 @@ export async function addContactToNewsletterAudience(
       segmentError &&
       !/already|exists|conflict/i.test(segmentError.message ?? "")
     ) {
-      throw new Error(
-        segmentError.message || "Could not add contact to newsletter segment.",
-      );
+      console.error("Resend contacts.segments.add failed:", segmentError);
+      return {
+        ok: false,
+        contactCreated: !error || alreadyExists,
+        segmentAttached: false,
+        message:
+          segmentError.message ||
+          "Could not add contact to newsletter segment.",
+      };
     }
+
+    segmentAttached = true;
   }
 
-  void data;
+  return {
+    ok: true,
+    contactCreated: !alreadyExists,
+    segmentAttached,
+  };
 }
 
 export async function sendSignupConfirmationEmail(
