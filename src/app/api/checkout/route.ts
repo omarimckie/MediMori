@@ -1,4 +1,5 @@
 import { getBookById } from "@/lib/books";
+import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -93,12 +94,19 @@ export async function POST(request: Request) {
   const stripe = new Stripe(secret);
 
   try {
+    // Make sure TWILIGHTFEATHER10 (or NEWSLETTER_DISCOUNT_CODE) exists and is active.
+    await ensureNewsletterPromotionCode(stripe).catch((error) => {
+      console.error("Could not ensure newsletter promotion code:", error);
+    });
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${siteUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/#books`,
       customer_email: customerEmail,
+      // Visitor can enter their list-signup code (e.g. TWILIGHTFEATHER10) on Stripe Checkout.
+      allow_promotion_codes: true,
       metadata: {
         bookId: book.id,
         customerName,

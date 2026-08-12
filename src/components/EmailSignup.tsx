@@ -11,6 +11,8 @@ type SignupResponse = {
 
 const DEFAULT_CODE = "TWILIGHTFEATHER10";
 
+// Shown after signup; the same code is enabled on Stripe ebook checkout.
+
 export function EmailSignup() {
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -134,6 +136,10 @@ export function EmailSignup() {
             <p className="text-sm font-semibold text-brand-charcoal">{successMessage}</p>
             <p className="mt-2 text-lg font-extrabold text-brand-green-deep">
               Discount code: {discountCode}
+            </p>
+            <p className="mt-2 text-xs text-brand-charcoal/70">
+              Enter this code in the promotion field when you buy an eBook on
+              this site.
             </p>
           </div>
         ) : null}

@@ -24,6 +24,18 @@ export function AdminShell({
           <div className="flex flex-wrap items-center gap-2">
             {actions}
             <Link
+              href="/admin"
+              className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal transition hover:bg-cream-deep"
+            >
+              Blog
+            </Link>
+            <Link
+              href="/admin/subscribers"
+              className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal transition hover:bg-cream-deep"
+            >
+              Email list
+            </Link>
+            <Link
               href="/blog"
               className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal transition hover:bg-cream-deep"
             >
