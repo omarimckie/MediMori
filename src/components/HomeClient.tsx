@@ -165,17 +165,17 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.35, ease: "easeOut" }}
-            className="mt-7 flex flex-wrap justify-center gap-3 lg:justify-start"
+            className="mt-7 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-start"
           >
             <Link
               href="/#books"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-[#7050a5] px-5 text-sm font-extrabold text-white transition hover:brightness-95"
+              className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[#7050a5] px-5 text-sm font-extrabold text-white transition hover:brightness-95 sm:h-11 sm:w-auto"
             >
               Explore Our Books
             </Link>
             <Link
               href="/resources"
-              className="inline-flex h-11 items-center justify-center rounded-xl border-2 border-[#7050a5] bg-white/65 px-5 text-sm font-extrabold text-[#7050a5] transition hover:bg-white"
+              className="inline-flex h-12 w-full items-center justify-center rounded-xl border-2 border-[#7050a5] bg-white/65 px-5 text-sm font-extrabold text-[#7050a5] transition hover:bg-white sm:h-11 sm:w-auto"
             >
               Learn &amp; Grow Together
             </Link>
@@ -270,7 +270,7 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
           </p>
           <Link
             href="/blog"
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-brand-yellow-bright px-6 text-sm font-bold text-section-navy transition hover:brightness-95"
+            className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl bg-brand-yellow-bright px-6 text-sm font-bold text-section-navy transition hover:brightness-95 sm:h-11 sm:w-auto"
           >
             Open Blog
           </Link>

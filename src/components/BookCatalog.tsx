@@ -49,11 +49,11 @@ function BookCard({ book }: { book: Book }) {
     book.description;
 
   return (
-    <article className="grid min-h-[320px] grid-cols-[45%_1fr] items-center gap-5 rounded-3xl border border-brand-brown/10 bg-white/70 p-6 shadow-sm sm:gap-6 sm:p-7">
+    <article className="grid grid-cols-1 items-center gap-4 rounded-3xl border border-brand-brown/10 bg-white/70 p-5 shadow-sm sm:min-h-[320px] sm:grid-cols-[45%_1fr] sm:gap-6 sm:p-7">
       <div className="flex justify-center">
         <BookCover book={book} />
       </div>
-      <div className="flex h-full flex-col justify-center py-1">
+      <div className="flex h-full flex-col justify-center py-1 text-center sm:text-left">
         <h3 className={`text-lg font-extrabold leading-snug sm:text-xl ${styles.title}`}>
           {book.title}
         </h3>
@@ -67,7 +67,7 @@ function BookCard({ book }: { book: Book }) {
         </p>
         <Link
           href={`/books/${book.id}`}
-          className={`mt-5 inline-flex w-fit items-center justify-center rounded-full px-5 py-2.5 text-sm font-extrabold text-white transition ${styles.button}`}
+          className={`mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-full px-5 py-2.5 text-sm font-extrabold text-white transition sm:w-fit ${styles.button}`}
         >
           View Book
         </Link>

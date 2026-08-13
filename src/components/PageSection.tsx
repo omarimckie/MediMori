@@ -62,7 +62,7 @@ export function PageSection({
   return (
     <section
       id={id}
-      className={`relative px-5 py-20 sm:px-8 sm:py-28 lg:px-10 lg:py-32 ${toneStyles[tone]} ${className}`}
+      className={`relative px-4 py-12 sm:px-8 sm:py-24 lg:px-10 lg:py-32 ${toneStyles[tone]} ${className}`}
     >
       {cloudTop ? <CloudEdge tone={cloudTop} /> : null}
       <div className={`relative ${containerClassName}`}>{children}</div>

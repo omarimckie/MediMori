@@ -52,10 +52,10 @@
 
   /* —— Layout scale —— */
   --page-max: 80rem; /* ~max-w-7xl */
-  --page-gutter: 1.25rem;
-  --section-y: 5rem;
-  --card-pad: 1.75rem;
-  --cover-max: 18.25rem; /* major book cover scale */
+  --page-gutter: 1rem;
+  --section-y: 3rem;
+  --card-pad: 1.25rem;
+  --cover-max: 14rem; /* mobile-friendly cover scale */
 
   /* —— Type scale —— */
   --text-body: 1.0625rem;
@@ -116,6 +116,15 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (min-width: 640px) {
+  :root {
+    --page-gutter: 1.75rem;
+    --section-y: 5rem;
+    --card-pad: 1.75rem;
+    --cover-max: 18.25rem;
+  }
+}
+
 /* Desktop: slightly larger root so rem-based UI feels less compressed */
 @media (min-width: 1024px) {
   html {
@@ -147,6 +156,7 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-body);
   line-height: var(--leading-body);
+  overflow-x: hidden;
 }
 
 @media (min-width: 1024px) {

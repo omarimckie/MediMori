@@ -67,10 +67,10 @@ export function EmailSignup() {
         alt=""
         width={483}
         height={760}
-        className="pointer-events-none absolute -bottom-2 right-0 h-44 w-auto select-none sm:right-1 sm:h-56"
+        className="pointer-events-none absolute -bottom-2 right-0 hidden h-44 w-auto select-none sm:block sm:right-1 sm:h-56"
       />
 
-      <div className="relative rounded-3xl bg-white/95 p-7 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-10">
+      <div className="relative rounded-3xl bg-white/95 p-5 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-10">
         <span
           aria-hidden="true"
           className="absolute right-6 top-5 text-2xl text-[#7050a5]"
