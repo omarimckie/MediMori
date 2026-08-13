@@ -4,6 +4,7 @@ import { BookCatalog } from "@/components/BookCatalog";
 import { BookHighlights } from "@/components/BookHighlights";
 import { EmailSignup } from "@/components/EmailSignup";
 import { FriendsSection } from "@/components/FriendsSection";
+import { Hero } from "@/components/Hero";
 import { PageSection } from "@/components/PageSection";
 import { getBooks } from "@/lib/books";
 import { motion } from "framer-motion";
@@ -77,128 +78,7 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
 
   return (
     <main>
-      <PageSection
-        tone="cream"
-        className="relative overflow-hidden bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.95),transparent_38%),radial-gradient(circle_at_85%_15%,rgba(216,205,241,0.55),transparent_34%)]"
-        containerClassName="relative mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12"
-      >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 select-none"
-        >
-          {/* Watercolor cloud bank behind the children */}
-          <div className="absolute bottom-0 right-0 h-[72%] w-full sm:w-[70%] lg:w-[60%]">
-            <span className="absolute bottom-[6%] left-[8%] h-[45%] w-[62%] rounded-full bg-white/90 blur-2xl" />
-            <span className="absolute bottom-[18%] right-[2%] h-[48%] w-[58%] rounded-full bg-[#e6dcf6]/80 blur-2xl" />
-            <span className="absolute bottom-[30%] left-[24%] h-[40%] w-[52%] rounded-full bg-white/75 blur-3xl" />
-            <span className="absolute bottom-0 right-[16%] h-[34%] w-[64%] rounded-full bg-[#efe7fa]/90 blur-xl" />
-            <span className="absolute bottom-[42%] right-[6%] h-[30%] w-[38%] rounded-full bg-[#dfd2f2]/70 blur-2xl" />
-            <span className="absolute bottom-[8%] left-0 h-[30%] w-[36%] rounded-full bg-[#f6eefe]/85 blur-xl" />
-          </div>
-          {/* Smaller drifting puffs near the moon */}
-          <span className="absolute right-[2%] top-[10%] h-14 w-40 rounded-full bg-white/70 blur-xl" />
-          <span className="absolute right-[20%] top-[22%] hidden h-12 w-32 rounded-full bg-[#eae0f8]/70 blur-xl sm:block" />
-
-          <span className="absolute left-[2%] top-[7%] text-2xl text-brand-yellow">
-            ✦
-          </span>
-          <span className="absolute left-[43%] top-[4%] text-xl text-brand-orange/70">
-            ★
-          </span>
-          <span className="absolute left-[47%] top-[24%] hidden text-2xl text-[#8f76bc]/65 sm:block">
-            ✦
-          </span>
-          <span className="absolute bottom-[20%] left-[45%] text-xl text-brand-blue/65">
-            ★
-          </span>
-          <span className="absolute right-[4%] top-[38%] text-2xl text-brand-yellow/80">
-            ✦
-          </span>
-          <span className="absolute bottom-[8%] right-[1%] hidden text-xl text-brand-orange/60 sm:block">
-            ★
-          </span>
-
-          <div className="absolute right-[7%] top-[2%] h-14 w-14 rounded-full border-l-[12px] border-brand-yellow/70 sm:h-16 sm:w-16" />
-          <div className="absolute right-[38%] top-[12%] hidden h-9 w-9 rounded-full bg-brand-blue/35 shadow-[inset_-7px_-5px_0_rgba(112,80,165,0.2)] sm:block">
-            <div className="absolute -inset-x-3 top-3 h-3 rotate-[-18deg] rounded-[50%] border-2 border-brand-orange/45" />
-          </div>
-          <span className="absolute right-[29%] top-[7%] h-2.5 w-2.5 rounded-full bg-brand-orange/60" />
-          <span className="absolute bottom-[29%] right-[43%] h-3 w-3 rounded-full bg-brand-green/55" />
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 28 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="relative z-10 text-center lg:text-left"
-        >
-          <motion.h1
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
-            className="text-4xl font-extrabold tracking-tight text-section-navy sm:text-5xl lg:text-6xl"
-          >
-            Stories that help little ones{" "}
-            <span className="inline-block text-[1.16em] leading-none text-brand-orange-deep sm:text-[1.2em]">
-              grow
-            </span>
-            ,{" "}
-            <span className="inline-block text-[1.16em] leading-none text-[#7050a5] sm:text-[1.2em]">
-              heal
-            </span>
-            , and feel{" "}
-            <span className="inline-block text-[1.16em] leading-none text-brand-blue-deep sm:text-[1.2em]">
-              brave
-            </span>
-            .
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25, ease: "easeOut" }}
-            className="mt-6 text-lg leading-relaxed text-brand-charcoal/80"
-          >
-            Twilight.Feather publishes gentle, colorful children&apos;s books rooted in wellness
-            and care.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.35, ease: "easeOut" }}
-            className="mt-7 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-start"
-          >
-            <Link
-              href="/#books"
-              className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[#7050a5] px-5 text-sm font-extrabold text-white transition hover:brightness-95 sm:h-11 sm:w-auto"
-            >
-              Explore Our Books
-            </Link>
-            <Link
-              href="/resources"
-              className="inline-flex h-12 w-full items-center justify-center rounded-xl border-2 border-[#7050a5] bg-white/65 px-5 text-sm font-extrabold text-[#7050a5] transition hover:bg-white sm:h-11 sm:w-auto"
-            >
-              Learn &amp; Grow Together
-            </Link>
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, x: 32 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, delay: 0.15, ease: "easeOut" }}
-          className="relative z-10 -mb-10 mix-blend-multiply sm:-mb-14 lg:-mb-20 lg:-mt-10"
-        >
-          <Image
-            src="/children-reading.png"
-            alt="Two children sitting together and reading a picture book"
-            width={1024}
-            height={819}
-            priority
-            sizes="(min-width: 1024px) 55vw, 100vw"
-            className="h-auto w-full"
-          />
-        </motion.div>
-      </PageSection>
+      <Hero />
 
       <div id="friends" className="scroll-mt-24">
         <FriendsSection />
