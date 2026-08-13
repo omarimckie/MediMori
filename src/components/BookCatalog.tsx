@@ -23,7 +23,7 @@ const accentStyles = {
 function BookCover({ book }: { book: Book }) {
   if (!book.coverImageUrl) {
     return (
-      <div className="flex aspect-[2/3] w-full max-w-[253px] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45">
+      <div className="flex aspect-[2/3] w-full max-w-[var(--cover-max)] items-center justify-center rounded-2xl border-2 border-dashed border-brand-brown/30 bg-brand-charcoal/[0.03] text-sm font-medium text-brand-charcoal/45">
         Cover coming soon
       </div>
     );
@@ -35,7 +35,7 @@ function BookCover({ book }: { book: Book }) {
       alt={`${book.title} cover`}
       width={book.coverWidth ?? 700}
       height={book.coverHeight ?? 1000}
-      maxWidthClass="max-w-[253px]"
+      maxWidthClass="max-w-[var(--cover-max)]"
       className="mx-auto"
     />
   );
@@ -49,7 +49,7 @@ function BookCard({ book }: { book: Book }) {
     book.description;
 
   return (
-    <article className="grid min-h-[280px] grid-cols-[45%_1fr] items-center gap-4 rounded-3xl border border-brand-brown/10 bg-white/70 p-4 shadow-sm sm:gap-5 sm:p-5">
+    <article className="grid min-h-[320px] grid-cols-[45%_1fr] items-center gap-5 rounded-3xl border border-brand-brown/10 bg-white/70 p-6 shadow-sm sm:gap-6 sm:p-7">
       <div className="flex justify-center">
         <BookCover book={book} />
       </div>

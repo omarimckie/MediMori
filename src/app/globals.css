@@ -34,7 +34,7 @@
   --orange: #d99b9b;
   --orange-deep: #a86a6a;
 
-  /* —— Spacing scale —— */
+  /* —— Spacing scale (Phase 1.5: more editorial breathing room) —— */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -47,6 +47,20 @@
   --space-16: 4rem;
   --space-20: 5rem;
   --space-24: 6rem;
+  --space-28: 7rem;
+  --space-32: 8rem;
+
+  /* —— Layout scale —— */
+  --page-max: 80rem; /* ~max-w-7xl */
+  --page-gutter: 1.25rem;
+  --section-y: 5rem;
+  --card-pad: 1.75rem;
+  --cover-max: 18.25rem; /* major book cover scale */
+
+  /* —— Type scale —— */
+  --text-body: 1.0625rem;
+  --text-body-lg: 1.125rem;
+  --leading-body: 1.7;
 
   /* —— Shape / elevation —— */
   --radius-sm: 0.75rem;
@@ -102,10 +116,43 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Desktop: slightly larger root so rem-based UI feels less compressed */
+@media (min-width: 1024px) {
+  html {
+    font-size: 106.25%; /* 17px */
+  }
+
+  :root {
+    --page-gutter: 2.5rem;
+    --section-y: 7.5rem;
+    --card-pad: 2.25rem;
+    --cover-max: 20rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  html {
+    font-size: 112.5%; /* 18px */
+  }
+
+  :root {
+    --page-gutter: 3rem;
+    --section-y: 8.5rem;
+  }
+}
+
 body {
   background: var(--cream);
   color: var(--charcoal);
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+@media (min-width: 1024px) {
+  body {
+    font-size: var(--text-body-lg);
+  }
 }
 
 /* Editorial headings use Cormorant Garamond globally.
@@ -115,13 +162,26 @@ h2,
 .tf-display {
   font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
 }
 
 h3,
 h4 {
   font-family: var(--font-display);
   font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Strengthen major heading presence without rewriting section markup */
+@media (min-width: 1024px) {
+  main h1 {
+    font-size: clamp(2.75rem, 4.2vw, 4rem);
+  }
+
+  main h2 {
+    font-size: clamp(2rem, 2.8vw, 2.85rem);
+  }
 }
 
 /* Accessible focus defaults for interactive controls */
@@ -150,12 +210,12 @@ h4 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
-  padding: 0.65rem 1.25rem;
+  min-height: 3rem;
+  padding: 0.75rem 1.4rem;
   border-radius: var(--radius-lg);
   border: 1px solid transparent;
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   line-height: 1.2;
   text-decoration: none;
@@ -216,7 +276,7 @@ h4 {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-card);
-  padding: var(--space-6);
+  padding: var(--card-pad);
 }
 
 .tf-card-cream {
@@ -281,30 +341,25 @@ h4 {
 
 .tf-lede {
   font-family: var(--font-sans);
-  font-size: 1.0625rem;
-  line-height: 1.65;
+  font-size: var(--text-body-lg);
+  line-height: var(--leading-body);
   color: color-mix(in srgb, var(--charcoal) 80%, transparent);
 }
 
 .tf-container {
   width: 100%;
   margin-inline: auto;
-  padding-inline: var(--space-4);
-  max-width: 72rem;
-}
-
-@media (min-width: 640px) {
-  .tf-container {
-    padding-inline: var(--space-6);
-  }
+  padding-inline: var(--page-gutter);
+  max-width: var(--page-max);
 }
 
 .tf-section-space {
-  padding-block: var(--space-16);
+  padding-block: var(--section-y);
 }
 
-@media (min-width: 640px) {
-  .tf-section-space {
-    padding-block: var(--space-20);
-  }
+/* Shared page chrome width used by header/footer/section defaults */
+.tf-page-width {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
 }

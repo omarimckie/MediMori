@@ -54,7 +54,7 @@ const navigationLinks = [
 export function SiteHeader() {
   return (
     <header className="border-b border-brand-brown/15 bg-cream/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <div className="tf-page-width flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-8 lg:px-10">
         <div className="flex flex-col gap-1">
           <Link href="/" className="flex items-center gap-3">
             <Image

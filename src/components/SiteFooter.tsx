@@ -78,7 +78,7 @@ export function SiteFooter() {
         ★
       </span>
 
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-7 px-4 pb-10 pt-6 sm:px-6 lg:flex-row lg:justify-between lg:gap-6">
+      <div className="tf-page-width flex flex-col items-center gap-8 px-5 pb-12 pt-8 sm:px-8 lg:flex-row lg:justify-between lg:gap-8 lg:px-10">
         {/* Feather + thank-you note */}
         <div className="flex items-center gap-3">
           <Image

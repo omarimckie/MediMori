@@ -59,7 +59,7 @@ export function EmailSignup() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#efe6fb_0%,#f6effc_45%,#fdf6e3_100%)] p-4 sm:p-6">
+    <div className="relative overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#efe6fb_0%,#f6effc_45%,#fdf6e3_100%)] p-5 sm:p-8">
       {/* Decorative watercolor feather leaning against the right edge */}
       <Image
         aria-hidden="true"
@@ -70,7 +70,7 @@ export function EmailSignup() {
         className="pointer-events-none absolute -bottom-2 right-0 h-44 w-auto select-none sm:right-1 sm:h-56"
       />
 
-      <div className="relative rounded-3xl bg-white/95 p-6 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-8">
+      <div className="relative rounded-3xl bg-white/95 p-7 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-10">
         <span
           aria-hidden="true"
           className="absolute right-6 top-5 text-2xl text-[#7050a5]"

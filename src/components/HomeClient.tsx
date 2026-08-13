@@ -80,7 +80,7 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
       <PageSection
         tone="cream"
         className="relative overflow-hidden bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.95),transparent_38%),radial-gradient(circle_at_85%_15%,rgba(216,205,241,0.55),transparent_34%)]"
-        containerClassName="relative mx-auto grid max-w-6xl items-center gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-8"
+        containerClassName="relative mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12"
       >
         <div
           aria-hidden="true"
@@ -258,7 +258,7 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
       <PageSection
         tone="navy"
         cloudTop="white"
-        containerClassName="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.9fr_2.1fr] lg:items-start"
+        containerClassName="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_2.1fr] lg:items-start"
       >
         <div className="text-center lg:text-left">
           <h2 className="text-2xl font-extrabold text-white sm:text-3xl">

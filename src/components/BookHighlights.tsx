@@ -74,12 +74,12 @@ const highlights = [
 
 export function BookHighlights() {
   return (
-    <div className="mt-14 border-t border-brand-brown/15 pt-10">
-      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
+    <div className="mt-16 border-t border-brand-brown/15 pt-12 sm:mt-20 sm:pt-14">
+      <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
         {highlights.map((item) => (
           <div
             key={item.title}
-            className="flex items-start gap-4 px-4 text-left lg:px-6"
+            className="flex items-start gap-4 px-4 text-left lg:px-5"
           >
             <div className="shrink-0">{item.icon}</div>
             <div>

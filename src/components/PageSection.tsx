@@ -56,13 +56,13 @@ export function PageSection({
   children,
   className = "",
   id,
-  containerClassName = "mx-auto max-w-5xl",
+  containerClassName = "tf-page-width",
   cloudTop,
 }: Props) {
   return (
     <section
       id={id}
-      className={`relative px-4 py-16 sm:px-6 sm:py-20 ${toneStyles[tone]} ${className}`}
+      className={`relative px-5 py-20 sm:px-8 sm:py-28 lg:px-10 lg:py-32 ${toneStyles[tone]} ${className}`}
     >
       {cloudTop ? <CloudEdge tone={cloudTop} /> : null}
       <div className={`relative ${containerClassName}`}>{children}</div>
