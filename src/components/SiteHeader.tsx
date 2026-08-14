@@ -54,28 +54,29 @@ const navigationLinks = [
 export function SiteHeader() {
   return (
     <header className="border-b border-brand-brown/15 bg-cream/95 backdrop-blur-md">
-      <div className="tf-page-width flex flex-col gap-3 px-4 py-3 sm:gap-4 sm:px-8 sm:py-5 lg:px-10">
-        <div className="flex items-start justify-between gap-3">
-          <Link href="/" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-            <Image
-              src="/logo.png"
-              alt="Twilight.Feather"
-              width={56}
-              height={56}
-              className="h-11 w-11 shrink-0 rounded-full border-2 border-brand-orange/40 object-cover shadow-sm sm:h-14 sm:w-14"
-              priority
-            />
-            <div className="min-w-0 leading-tight">
-              <span className="block text-lg font-extrabold tracking-tight sm:text-xl">
-                <span className="text-brand-blue-deep">Twilight</span>
-                <span className="text-brand-green-deep">.Feather</span>
-              </span>
-              <span className="mt-0.5 hidden text-xs font-medium text-brand-charcoal/70 sm:block">
-                Empowering Little Minds, Nurturing Wellness
-              </span>
-            </div>
-          </Link>
+      <div className="px-4 py-3 sm:px-8 sm:py-5 lg:px-10">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+        <Link href="/" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+          <Image
+            src="/logo.png"
+            alt="Twilight.Feather"
+            width={56}
+            height={56}
+            className="h-11 w-11 shrink-0 rounded-full border-2 border-brand-orange/40 object-cover shadow-sm sm:h-14 sm:w-14"
+            priority
+          />
+          <div className="min-w-0 leading-tight">
+            <span className="block text-lg font-extrabold tracking-tight sm:text-xl">
+              <span className="text-brand-blue-deep">Twilight</span>
+              <span className="text-brand-green-deep">.Feather</span>
+            </span>
+            <span className="mt-0.5 hidden text-xs font-medium text-brand-charcoal/70 sm:block">
+              Empowering Little Minds, Nurturing Wellness
+            </span>
+          </div>
+        </Link>
 
+        <div className="flex min-w-0 flex-col gap-2 sm:items-end">
           <div className="hidden flex-wrap items-center justify-end gap-1.5 sm:flex">
             {socialLinks.map((social) => (
               <a
@@ -92,28 +93,29 @@ export function SiteHeader() {
               </a>
             ))}
           </div>
-        </div>
 
-        <nav
-          aria-label="Primary navigation"
-          className="flex flex-wrap items-center gap-1 text-xs font-semibold sm:justify-end sm:text-sm"
-        >
-          {navigationLinks.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="rounded-full px-2.5 py-2 text-brand-charcoal transition hover:bg-brand-blue/15 sm:px-3"
-            >
-              {item.label}
-            </Link>
-          ))}
-          <Link
-            href="/#books"
-            className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-[#7050a5] px-4 py-2.5 font-extrabold text-white shadow-sm transition hover:brightness-95 sm:ml-1 sm:flex-none sm:px-5"
+          <nav
+            aria-label="Primary navigation"
+            className="flex flex-wrap items-center gap-1 text-xs font-semibold sm:justify-end sm:text-sm"
           >
-            Shop Books
-          </Link>
-        </nav>
+            {navigationLinks.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="rounded-full px-2.5 py-2 text-brand-charcoal transition hover:bg-brand-blue/15 sm:px-3"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <Link
+              href="/#books"
+              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-[#7050a5] px-4 py-2.5 font-extrabold text-white shadow-sm transition hover:brightness-95 sm:ml-1 sm:flex-none sm:px-5"
+            >
+              Shop Books
+            </Link>
+          </nav>
+        </div>
+        </div>
       </div>
     </header>
   );

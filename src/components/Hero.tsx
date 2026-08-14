@@ -11,7 +11,7 @@ function HeroRocket() {
       initial={{ opacity: 0, x: 28, y: 36, rotate: 18 }}
       animate={{ opacity: 0.72, x: 0, y: 0, rotate: 10 }}
       transition={{ duration: 1.1, delay: 0.45, ease: "easeOut" }}
-      className="pointer-events-none absolute right-0 top-[4%] z-[1] hidden w-[4.25rem] select-none sm:block md:right-1 md:top-[2%] lg:right-[1%] lg:top-0 lg:w-[5rem]"
+      className="pointer-events-none absolute right-0 top-[4%] z-[1] hidden w-[4.25rem] select-none lg:right-[1%] lg:top-0 lg:block lg:w-[5rem]"
     >
       <svg viewBox="0 0 100 150" role="presentation" className="h-auto w-full drop-shadow-sm">
         <path
