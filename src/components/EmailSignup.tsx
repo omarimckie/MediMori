@@ -59,28 +59,28 @@ export function EmailSignup() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#efe6fb_0%,#f6effc_45%,#fdf6e3_100%)] p-5 sm:p-8">
-      {/* Decorative watercolor feather leaning against the right edge */}
+    <div id="signup" className="relative overflow-visible rounded-3xl bg-[linear-gradient(120deg,#efe6fb_0%,#f6effc_45%,#fdf6e3_100%)] p-5 sm:p-8">
       <Image
         aria-hidden="true"
         src="/feather-accent.png"
         alt=""
         width={483}
         height={760}
-        className="pointer-events-none absolute -bottom-2 right-0 hidden h-44 w-auto select-none sm:block sm:right-1 sm:h-56"
+        unoptimized
+        className="pointer-events-none absolute -bottom-8 -right-6 hidden w-auto rotate-[10deg] select-none md:block md:h-52 lg:-right-4 lg:h-64"
       />
 
-      <div className="relative rounded-3xl bg-white/95 p-5 shadow-sm shadow-brand-brown/10 sm:mr-24 sm:p-10">
+      <div className="relative rounded-3xl bg-white/95 p-5 shadow-sm shadow-brand-brown/10 md:mr-28 md:p-10 lg:mr-32">
         <span
           aria-hidden="true"
-          className="absolute right-6 top-5 text-2xl text-[#7050a5]"
+          className="absolute right-3 top-3 text-2xl text-[#7050a5] md:right-6 md:top-5"
         >
           ♥
         </span>
 
         <div className="grid gap-6 md:grid-cols-[1.3fr_1fr] md:items-center">
           <div>
-            <p className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-section-navy">
+            <p className="flex items-center gap-2 pr-9 text-sm font-extrabold uppercase tracking-wider text-section-navy md:pr-0">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 24 24"
@@ -94,10 +94,10 @@ export function EmailSignup() {
               </svg>
               Join the Twilight Feather list
             </p>
-            <h2 className="mt-3 text-3xl font-extrabold text-section-navy">
-              Get 10% off your purchase
+            <h2 className="mt-3 text-[2.3rem] font-extrabold leading-tight text-section-navy">
+              Get 10% off your eBook purchase
             </h2>
-            <p className="mt-3 text-brand-charcoal/80">
+            <p className="mt-3 text-[1.0625rem] leading-relaxed text-brand-charcoal/80 sm:text-lg">
               Sign up with your email and we&apos;ll send you exclusive deals,
               new books, and resources.
             </p>
@@ -115,15 +115,18 @@ export function EmailSignup() {
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Email address"
               required
-              className="h-12 rounded-2xl border border-brand-brown/20 bg-white px-4 text-brand-charcoal outline-none ring-brand-green transition focus:ring-2"
+              className="h-12 min-h-12 rounded-2xl border border-brand-brown/20 bg-white px-4 text-base text-brand-charcoal outline-none ring-brand-green transition focus:ring-2"
             />
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-yellow-bright px-5 font-bold text-section-navy transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-12 min-h-12 items-center justify-center rounded-2xl bg-brand-yellow-bright px-5 font-bold text-section-navy transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
             >
               {isSubmitting ? "Saving..." : "Get 10% Off"}
             </button>
+            <p className="text-xs leading-relaxed text-brand-charcoal/55">
+              10% off eBook purchases only.
+            </p>
           </form>
         </div>
 
