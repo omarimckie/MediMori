@@ -1,0 +1,31 @@
+{
+  "resources": [
+    {
+      "id": "aap-ask-the-pediatrician",
+      "category": "Parenting & Health",
+      "title": "Ask the Pediatrician",
+      "description": "Trusted answers to common child-health questions from pediatricians and pediatric specialists, covering topics families encounter as children grow.",
+      "source": "American Academy of Pediatrics",
+      "cta": "Read more →",
+      "url": "https://www.healthychildren.org/English/tips-tools/ask-the-pediatrician/Pages/default.aspx"
+    },
+    {
+      "id": "cdc-act-early",
+      "category": "Child Development",
+      "title": "Learn the Signs. Act Early.",
+      "description": "Free, parent-friendly tools from the CDC to help families track developmental milestones and know when to talk with a healthcare professional.",
+      "source": "Centers for Disease Control and Prevention",
+      "cta": "Explore the resource →",
+      "url": "https://www.cdc.gov/act-early/"
+    },
+    {
+      "id": "medlineplus-childrens-health",
+      "category": "Children's Health",
+      "title": "Children's Health",
+      "description": "A broad collection of trusted children's health information covering prevention, nutrition, development, common conditions, treatments, and more.",
+      "source": "MedlinePlus — U.S. National Library of Medicine",
+      "cta": "Explore the resource →",
+      "url": "https://medlineplus.gov/childrenshealth.html"
+    }
+  ]
+}
