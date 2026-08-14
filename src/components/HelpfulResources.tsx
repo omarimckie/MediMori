@@ -1,4 +1,3 @@
-import { TfButton } from "@/components/ui/TfButton";
 import { PageSection } from "@/components/PageSection";
 import Link from "next/link";
 
@@ -76,7 +75,7 @@ export function HelpfulResources() {
       tone="white"
       cloudTop="white"
       id="helpful-resources"
-      className="relative -mb-px overflow-x-clip"
+      className="relative -mb-px overflow-x-clip !py-9 sm:!py-20 lg:!py-28"
       containerClassName="relative mx-auto max-w-7xl"
     >
       <div
@@ -97,13 +96,13 @@ export function HelpfulResources() {
             Helpful Resources
           </h2>
         </div>
-        <p className="mt-4 text-base leading-relaxed text-brand-charcoal/80 sm:text-lg">
+        <p className="mt-3 text-base leading-relaxed text-brand-charcoal/80 sm:mt-4 sm:text-lg">
           Trusted information, activities, and ideas to help families learn,
           grow, and navigate children&apos;s wellness together.
         </p>
       </div>
 
-      <div className="relative z-10 mt-10 grid gap-8 sm:mt-12 sm:grid-cols-3 sm:gap-10">
+      <div className="relative z-10 mt-6 grid gap-5 sm:mt-12 sm:grid-cols-3 sm:gap-10">
         {categories.map((category) => (
           <Link
             key={category.name}
@@ -123,10 +122,13 @@ export function HelpfulResources() {
         ))}
       </div>
 
-      <div className="relative z-10 mt-10 text-center sm:mt-12">
-        <TfButton href="/resources" variant="ghost" className="w-full sm:w-auto">
+      <div className="relative z-10 mt-7 text-center sm:mt-12">
+        <Link
+          href="/resources"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#7050a5] px-6 py-3 font-extrabold text-white shadow-sm transition hover:brightness-95 sm:w-auto sm:min-w-[14rem] sm:px-8"
+        >
           Explore Resources
-        </TfButton>
+        </Link>
       </div>
     </PageSection>
   );
