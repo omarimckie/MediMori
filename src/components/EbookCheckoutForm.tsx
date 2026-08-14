@@ -67,8 +67,7 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       </p>
       <p className="mt-1 text-xs text-brand-charcoal/70">
         Enter your name and email, complete payment, and your download starts on
-        the success page. Email subscribers receive an exclusive 10% off eBook
-        offer.
+        the success page. Email subscribers receive 10% off eBook purchases.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
