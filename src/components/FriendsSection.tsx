@@ -20,7 +20,7 @@ export function FriendsSection() {
   return (
     <PageSection
       tone="white"
-      cloudTop="cream"
+      cloudTop="white"
       className="relative overflow-visible"
       containerClassName="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.35fr_0.8fr] lg:items-end"
     >
