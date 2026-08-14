@@ -42,6 +42,7 @@ function BookCover({ book }: { book: Book }) {
       height={book.coverHeight ?? 1000}
       maxWidthClass="max-w-none"
       className="mx-auto"
+      loading="eager"
     />
   );
 }

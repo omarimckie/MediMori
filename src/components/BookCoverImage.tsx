@@ -8,6 +8,7 @@ type Props = {
   maxWidthClass?: string;
   className?: string;
   priority?: boolean;
+  loading?: "eager" | "lazy";
 };
 
 export function BookCoverImage({
@@ -18,6 +19,7 @@ export function BookCoverImage({
   maxWidthClass = "max-w-[220px]",
   className = "",
   priority = false,
+  loading,
 }: Props) {
   return (
     <Image
@@ -26,6 +28,7 @@ export function BookCoverImage({
       width={width}
       height={height}
       priority={priority}
+      loading={priority ? undefined : loading}
       className={`h-auto w-full rounded-2xl border border-brand-brown/20 bg-white shadow-sm ${maxWidthClass} ${className}`.trim()}
     />
   );
