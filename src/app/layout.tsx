@@ -31,8 +31,12 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${nunitoSans.variable} ${cormorant.variable} h-full`}
+      suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col font-sans antialiased">
+      <body
+        className="flex min-h-full flex-col font-sans antialiased"
+        suppressHydrationWarning
+      >
         <SiteHeader />
         <div className="flex-1">{children}</div>
         <SiteFooter />
