@@ -57,7 +57,7 @@ function BookCard({ book }: { book: Book }) {
       <div className="flex w-full items-center justify-center">
         <BookCover book={book} />
       </div>
-      <div className="mt-5 flex w-full flex-1 flex-col items-center lg:mt-4">
+      <div className="mt-5 flex w-full flex-col items-center lg:mt-4">
         <h3 className="text-xl font-semibold leading-snug text-brand-navy sm:text-2xl">
           {book.title}
         </h3>
@@ -71,11 +71,12 @@ function BookCard({ book }: { book: Book }) {
         </p>
         <TfButton
           href={`/books/${book.id}`}
-          className="mt-auto w-full pt-5 sm:w-auto lg:pt-4"
+          className="mt-4 w-full sm:w-auto lg:mt-3.5"
         >
           View Book
         </TfButton>
       </div>
+      <div className="hidden w-full flex-1 lg:block" aria-hidden="true" />
     </TfCard>
   );
 }
@@ -88,9 +89,9 @@ export function BookCatalog({ books }: Props) {
       {catalog.map((book, index) => (
         <motion.div
           key={book.id}
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 1, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.25 }}
+          viewport={{ once: true, amount: 0.05 }}
           transition={{ duration: 0.45, delay: index * 0.08, ease: "easeOut" }}
           className={
             catalog.length === 3 && index === 2
