@@ -24,7 +24,7 @@ export default async function BookDetailPage({ params }: Props) {
 
   return (
     <main>
-      <PageSection tone="navy" className="py-12 sm:py-14">
+      <PageSection tone="navy" className="!py-12 sm:!py-14 lg:!py-24">
         <Link
           href="/#books"
           className="inline-flex items-center rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"

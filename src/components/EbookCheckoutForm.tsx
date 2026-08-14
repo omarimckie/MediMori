@@ -67,9 +67,8 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       </p>
       <p className="mt-1 text-xs text-brand-charcoal/70">
         Enter your name and email, complete payment, and your download starts on
-        the success page. Have a code from our email list? Enter{" "}
-        <span className="font-semibold">TWILIGHTFEATHER10</span> in the promotion
-        field on the Stripe checkout page for 10% off.
+        the success page. Email subscribers receive an exclusive 10% off eBook
+        offer.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

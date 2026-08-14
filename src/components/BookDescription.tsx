@@ -15,6 +15,42 @@ function decodeHtmlEntities(text: string) {
     .replace(/&nbsp;/g, " ");
 }
 
+function leftoverPlainText(html: string) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function paragraphPlainText(nodes: ReactNode[]) {
+  return nodes
+    .map((node) => (typeof node === "string" ? node : ""))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pushList(
+  blocks: DescriptionBlock[],
+  items: string[],
+  marker: "bullet" | "dash",
+) {
+  const previous = blocks.at(-1);
+  if (previous?.kind === "paragraph") {
+    const title = paragraphPlainText(previous.nodes);
+    if (title.endsWith(":")) {
+      blocks.pop();
+      blocks.push({ kind: "list", title, items, marker });
+      return;
+    }
+  }
+
+  blocks.push({ kind: "list", items, marker });
+}
+
 function stripTags(html: string) {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
 }
@@ -29,7 +65,10 @@ function parseInlineAmazonHtml(html: string): ReactNode[] {
 
   while ((match = pattern.exec(html)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(decodeHtmlEntities(html.slice(lastIndex, match.index)));
+      const leftover = leftoverPlainText(html.slice(lastIndex, match.index));
+      if (leftover) {
+        parts.push(leftover);
+      }
     }
 
     const classes = match[1] ?? "";
@@ -47,7 +86,10 @@ function parseInlineAmazonHtml(html: string): ReactNode[] {
   }
 
   if (lastIndex < html.length) {
-    parts.push(decodeHtmlEntities(html.slice(lastIndex)));
+    const leftover = leftoverPlainText(html.slice(lastIndex));
+    if (leftover) {
+      parts.push(leftover);
+    }
   }
 
   return parts.length ? parts : [stripTags(html)];
@@ -76,10 +118,9 @@ function parseLegacyParagraph(inner: string): DescriptionBlock {
   }
 
   const title = rawLines[0];
-  const items = rawLines.slice(1).map((line) => line.replace(/^[•-]\s*/, "").trim());
-  const marker = rawLines[1]?.trimStart().startsWith("-") ? "dash" : "bullet";
+  const items = rawLines.slice(1).map((line) => line.replace(/^[•\-]\s*/, "").trim());
 
-  return { kind: "list", title, items, marker };
+  return { kind: "list", title, items, marker: "bullet" };
 }
 
 export function parseAmazonDescriptionHtml(html: string): DescriptionBlock[] {
@@ -112,6 +153,8 @@ export function parseAmazonDescriptionHtml(html: string): DescriptionBlock[] {
           nodes: [stripTags(boldParagraph[1])],
           bold: true,
         });
+      } else if (/<br\s*\/?>/i.test(inner)) {
+        blocks.push(parseLegacyParagraph(inner));
       } else {
         blocks.push({
           kind: "paragraph",
@@ -128,7 +171,7 @@ export function parseAmazonDescriptionHtml(html: string): DescriptionBlock[] {
         .map((item) => stripTags(item[1]))
         .filter(Boolean);
 
-      blocks.push({ kind: "list", items, marker: "bullet" });
+      pushList(blocks, items, "bullet");
       remaining = remaining.slice(list[0].length);
       continue;
     }
@@ -173,7 +216,9 @@ export function BookDescription({ book, className = "" }: Props) {
 
           return (
             <div key={index}>
-              {block.title ? <p>{block.title}</p> : null}
+              {block.title ? (
+                <p className="font-semibold text-brand-charcoal">{block.title}</p>
+              ) : null}
               <ul
                 className={
                   block.marker === "dash"
