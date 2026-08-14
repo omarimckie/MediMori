@@ -45,7 +45,7 @@ const socialLinks = [
 
 const navigationLinks = [
   { label: "Home", href: "/" },
-  { label: "Books", href: "/#books" },
+  { label: "Books", href: "/books" },
   { label: "Resources", href: "/resources" },
   { label: "About Us", href: "/authors" },
 ];
@@ -107,7 +107,7 @@ export function SiteHeader() {
               </Link>
             ))}
             <Link
-              href="/#books"
+              href="/books"
               className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-[#7050a5] px-4 py-2.5 font-extrabold text-white shadow-sm transition hover:brightness-95 sm:ml-1 sm:flex-none sm:px-5"
             >
               Shop Books

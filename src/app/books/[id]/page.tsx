@@ -46,7 +46,7 @@ export default async function BookDetailPage({ params }: Props) {
         <div className="mt-7 grid w-full px-1 sm:mt-8 sm:px-0 md:grid-cols-[0.8fr_1.2fr]">
           <div className="flex justify-center md:col-start-2">
             <Link
-              href="/#books"
+              href="/books"
               className="inline-flex h-[50px] min-h-[50px] w-full items-center justify-center whitespace-nowrap rounded-xl border border-section-navy bg-cream text-base font-bold text-section-navy transition-colors duration-200 hover:bg-white md:w-[280px]"
             >
               ← Browse All Books
