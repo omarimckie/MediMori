@@ -26,6 +26,33 @@
       "source": "MedlinePlus — U.S. National Library of Medicine",
       "cta": "Explore the resource →",
       "url": "https://medlineplus.gov/childrenshealth.html"
+    },
+    {
+      "id": "usda-healthy-eating-kids",
+      "category": "Nutrition & Health",
+      "title": "Healthy Eating for Kids",
+      "description": "Simple nutrition guidance from USDA MyPlate to help families offer children a variety of nutritious foods and build healthy eating habits.",
+      "source": "USDA MyPlate",
+      "cta": "Explore the resource →",
+      "url": "https://www.myplate.gov/tip-sheet/healthy-eating-kids"
+    },
+    {
+      "id": "poison-control",
+      "category": "Safety",
+      "title": "Poison Control",
+      "description": "Free expert guidance for families when a child may have been exposed to a potentially poisonous substance, with online and phone support.",
+      "source": "Poison Control",
+      "cta": "Get help →",
+      "url": "https://www.poison.org/how-to-get-help-from-poison-control"
+    },
+    {
+      "id": "aap-childhood-nutrition",
+      "category": "Nutrition",
+      "title": "Childhood Nutrition",
+      "description": "American Academy of Pediatrics guidance on children's nutrition, healthy eating, and the role food plays in healthy growth and development.",
+      "source": "American Academy of Pediatrics",
+      "cta": "Read more →",
+      "url": "https://www.healthychildren.org/English/healthy-living/nutrition/Pages/Childhood-Nutrition.aspx"
     }
   ]
 }

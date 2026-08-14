@@ -18,12 +18,12 @@ export default function ResourcesPage() {
           Resources
         </p>
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
-          Helpful reads we recommend
+          Helpful resources we recommend
         </h1>
         <p className="mt-4 text-white/80">
-          Articles and reading roundups we have curated for families, caregivers,
-          and educators. These link to trusted outside sources, with our notes on
-          why each one is worth your time.
+          Trusted resources and family-friendly information we&apos;ve curated to
+          help parents, caregivers, and educators navigate children&apos;s health
+          and wellness.
         </p>
       </PageSection>
 
