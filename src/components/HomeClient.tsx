@@ -85,11 +85,11 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
       </div>
 
       <PageSection
-        tone="cream"
+        tone="white"
         cloudTop="white"
         id="books"
-        className="relative scroll-mt-24 overflow-hidden"
-        containerClassName="mx-auto max-w-7xl"
+        className="relative scroll-mt-24 overflow-hidden bg-transparent"
+        containerClassName="relative mx-auto max-w-7xl"
       >
         <ScrollingRocket />
         <span
@@ -100,28 +100,26 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
         </span>
         <span
           aria-hidden="true"
-          className="absolute right-[26%] top-20 hidden text-xl text-brand-orange sm:block"
-        >
-          ★
-        </span>
-        <span
-          aria-hidden="true"
-          className="absolute bottom-14 left-[4%] hidden text-xl text-[#8f76bc]/70 sm:block"
+          className="absolute right-[18%] top-24 hidden text-xl text-brand-gold/70 lg:block"
         >
           ★
         </span>
         <div className="relative z-10">
-          <div className="mb-10 text-center">
+          <div className="mb-10 text-center sm:mb-12">
             <div className="flex items-center justify-center gap-3">
               <span aria-hidden="true" className="text-2xl text-brand-yellow">
                 ✦
               </span>
-              <h2 className="text-3xl font-extrabold text-section-navy">Our books</h2>
+              <h2 className="text-3xl font-semibold tracking-tight text-brand-navy sm:text-4xl">
+                Our books
+              </h2>
               <span aria-hidden="true" className="text-2xl text-brand-yellow">
                 ✦
               </span>
             </div>
-            <p className="mt-2 text-brand-charcoal/75">Three titles today — more stories on the way.</p>
+            <p className="mt-3 text-brand-charcoal/75">
+              Three titles today — more stories on the way.
+            </p>
           </div>
           <BookCatalog books={books} />
           <BookHighlights />
