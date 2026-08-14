@@ -35,7 +35,7 @@ export function Hero() {
   return (
     <PageSection
       tone="cream"
-      className="tf-hero relative overflow-hidden !pb-6 sm:!pb-10 lg:!pb-4"
+      className="tf-hero relative overflow-hidden !pb-6 sm:!pt-12 sm:!pb-10 lg:!pt-14 lg:!pb-4"
       containerClassName="relative mx-auto grid max-w-7xl items-center gap-8 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] md:gap-8 lg:gap-10 xl:gap-14"
     >
       {/* Soft lavender / cream atmosphere — continuous cloudscape */}
@@ -109,24 +109,18 @@ export function Hero() {
         initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.18, ease: "easeOut" }}
-        className="relative z-10 order-2 -mb-4 sm:-mb-6 md:-mb-8 md:-mt-4 lg:-mb-10 lg:-mt-6"
+        className="relative z-10 order-2 -mb-6 sm:-mb-8 md:-mb-12 md:-mt-4 lg:-mb-16 lg:-mt-8"
       >
-        {/* Soft cloud pedestal — helps the white-backed PNG dissolve into cream */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-[-6%] bottom-[2%] top-[18%] rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(253,246,227,0.95)_0%,rgba(230,220,246,0.55)_42%,transparent_72%)] blur-md"
+        <Image
+          src="/children-reading.png"
+          alt="AJ and Amara sitting together and reading a picture book"
+          width={1280}
+          height={1024}
+          priority
+          unoptimized
+          sizes="(min-width: 1024px) 48vw, (min-width: 640px) 70vw, 92vw"
+          className="relative z-[1] mx-auto h-auto w-full max-w-xl object-contain lg:max-w-none"
         />
-        <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
-          <Image
-            src="/children-reading.png"
-            alt="AJ and Amara sitting together and reading a picture book"
-            width={1024}
-            height={819}
-            priority
-            sizes="(min-width: 1024px) 48vw, (min-width: 640px) 70vw, 92vw"
-            className="tf-hero-art relative z-[1] h-auto w-full object-contain"
-          />
-        </div>
       </motion.div>
     </PageSection>
   );
