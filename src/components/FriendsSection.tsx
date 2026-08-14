@@ -47,7 +47,7 @@ export function FriendsSection() {
           </h2>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 overflow-visible sm:grid-cols-2">
           {friends.map((friend) => {
             const styles = accentStyles[friend.accent];
 
@@ -60,10 +60,10 @@ export function FriendsSection() {
               >
                 {/* Card chrome stays rounded; portrait is a sibling so hair can clear the top edge. */}
                 <div
-                  className={`grid min-h-60 grid-cols-[42%_1fr] rounded-3xl border shadow-sm transition group-hover:shadow-lg ${styles.card}`}
+                  className={`relative z-0 grid min-h-60 grid-cols-[42%_1fr] rounded-3xl border shadow-sm transition group-hover:shadow-lg ${styles.card}`}
                 >
                   <div aria-hidden="true" className="min-h-60" />
-                  <div className="flex flex-col items-start justify-center p-5 sm:p-7">
+                  <div className="relative z-20 flex flex-col items-start justify-center p-5 sm:p-7">
                     <h3 className={`text-2xl font-extrabold ${styles.title}`}>
                       {friend.name}
                     </h3>
@@ -77,19 +77,31 @@ export function FriendsSection() {
                     </span>
                   </div>
                 </div>
-                <div className="absolute bottom-0 left-0 top-0 w-[42%]">
-                  <Image
-                    src={friend.cardImageSrc ?? friend.imageSrc}
-                    alt={friend.name}
-                    fill
-                    sizes="(min-width: 640px) 18vw, 42vw"
-                    className="object-cover object-top"
-                    style={
-                      friend.cardObjectPosition
-                        ? { objectPosition: friend.cardObjectPosition }
-                        : undefined
-                    }
-                  />
+                <div className="pointer-events-none absolute bottom-0 left-0 top-6 z-10 w-[42%] overflow-visible sm:top-8">
+                  {friend.id === "aj" ? (
+                    <div className="absolute -left-5 -top-6 bottom-0 flex w-[calc(100%+1.25rem)] items-end justify-start overflow-visible">
+                      <Image
+                        src={friend.cardImageSrc ?? friend.imageSrc}
+                        alt={friend.name}
+                        width={792}
+                        height={1130}
+                        unoptimized
+                        sizes="(min-width: 640px) 22vw, 50vw"
+                        className="h-full w-auto max-w-none origin-bottom -translate-x-1 scale-110 object-contain object-bottom"
+                      />
+                    </div>
+                  ) : (
+                    <div className="absolute -left-3 -top-8 bottom-0 right-[-8%]">
+                      <Image
+                        src={friend.cardImageSrc ?? friend.imageSrc}
+                        alt={friend.name}
+                        fill
+                        unoptimized
+                        sizes="(min-width: 640px) 22vw, 50vw"
+                        className="object-contain object-bottom"
+                      />
+                    </div>
+                  )}
                 </div>
               </Link>
             ) : (
