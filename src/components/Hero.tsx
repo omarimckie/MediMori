@@ -35,15 +35,15 @@ export function Hero() {
   return (
     <PageSection
       tone="cream"
-      className="tf-hero relative overflow-hidden !pb-6 sm:!pt-12 sm:!pb-10 lg:!pt-14 lg:!pb-4"
+      className="tf-hero relative z-20 overflow-visible !pb-4 sm:!pt-12 sm:!pb-6 lg:!pt-14 lg:!pb-8"
       containerClassName="relative mx-auto grid max-w-7xl items-center gap-8 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] md:gap-8 lg:gap-10 xl:gap-14"
     >
       {/* Soft lavender / cream atmosphere — continuous cloudscape */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 select-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_65%_50%_at_12%_18%,rgba(200,182,230,0.22),transparent_58%),radial-gradient(ellipse_55%_45%_at_88%_12%,rgba(168,203,230,0.16),transparent_55%),radial-gradient(ellipse_70%_55%_at_72%_92%,rgba(200,182,230,0.18),transparent_60%)]" />
 
-        {/* Watercolor bank behind characters */}
-        <div className="absolute bottom-0 right-0 h-[58%] w-full sm:h-[62%] sm:w-[72%] lg:h-[78%] lg:w-[58%]">
+        {/* Watercolor bank behind and under the characters */}
+        <div className="absolute -bottom-8 right-0 h-[62%] w-full sm:h-[68%] sm:w-[72%] lg:-bottom-10 lg:h-[82%] lg:w-[58%]">
           <span className="absolute bottom-[4%] left-[6%] h-[48%] w-[64%] rounded-full bg-white/85 blur-2xl" />
           <span className="absolute bottom-[16%] right-[0%] h-[52%] w-[60%] rounded-full bg-[#e6dcf6]/70 blur-2xl" />
           <span className="absolute bottom-[28%] left-[22%] h-[42%] w-[54%] rounded-full bg-white/70 blur-3xl" />
@@ -51,7 +51,7 @@ export function Hero() {
         </div>
 
         {/* Soft bottom cloud wash into the next section */}
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent via-[color-mix(in_srgb,var(--cream)_55%,transparent)] to-[color-mix(in_srgb,var(--cream)_90%,transparent)] sm:h-28" />
+        <div className="absolute inset-x-0 -bottom-6 h-28 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--cream)_70%,transparent)] sm:h-32" />
 
         {/* Sparse stars / sparkles */}
         <span className="absolute left-[3%] top-[9%] text-xl text-brand-gold/80 sm:text-2xl">✦</span>
@@ -109,7 +109,7 @@ export function Hero() {
         initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.18, ease: "easeOut" }}
-        className="relative z-10 order-2 -mb-6 sm:-mb-8 md:-mb-12 md:-mt-4 lg:-mb-16 lg:-mt-8"
+        className="relative z-10 order-2 -mb-3 md:-mt-4 md:-mb-4 lg:-mt-8 lg:-mb-6"
       >
         <Image
           src="/children-reading.png"
