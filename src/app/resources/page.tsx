@@ -1,7 +1,6 @@
 import { BlogPostCard } from "@/components/BlogPostCard";
 import { PageSection } from "@/components/PageSection";
 import { getPosts, isSharedBlogPost } from "@/lib/blog";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -42,21 +41,6 @@ export default async function ResourcesPage() {
             No curated resources yet — check back soon.
           </p>
         )}
-      </PageSection>
-
-      <PageSection tone="cream" cloudTop="white" containerClassName="mx-auto max-w-3xl text-center">
-        <h2 className="text-2xl font-extrabold text-brand-charcoal sm:text-3xl">
-          Looking for our own stories?
-        </h2>
-        <p className="mt-3 text-brand-charcoal/75">
-          Visit the blog for articles written by the Twilight.Feather team.
-        </p>
-        <Link
-          href="/blog"
-          className="mt-6 inline-flex rounded-2xl bg-brand-yellow-bright px-6 py-3 text-sm font-bold text-section-navy transition hover:brightness-95"
-        >
-          Open the blog
-        </Link>
       </PageSection>
     </main>
   );
