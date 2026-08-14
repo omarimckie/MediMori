@@ -55,10 +55,12 @@ export function FriendsSection() {
               <Link
                 key={friend.id}
                 href={`/friends/${friend.id}`}
-                className="group relative block pt-6 transition hover:-translate-y-1 sm:pt-8"
+                className={`group relative block overflow-visible pt-6 transition hover:-translate-y-1 sm:pt-8 ${
+                  friend.id === "aj" ? "z-20" : "z-10"
+                }`}
                 aria-label={`Meet ${friend.name}`}
               >
-                {/* Card chrome stays rounded; portrait is a sibling so hair can clear the top edge. */}
+                {/* Card chrome stays rounded; portrait is a sibling so hair/hands can clear the edges. */}
                 <div
                   className={`relative z-0 grid min-h-60 grid-cols-[42%_1fr] rounded-3xl border shadow-sm transition group-hover:shadow-lg ${styles.card}`}
                 >
@@ -77,31 +79,24 @@ export function FriendsSection() {
                     </span>
                   </div>
                 </div>
-                <div className="pointer-events-none absolute bottom-0 left-0 top-6 z-10 w-[42%] overflow-visible sm:top-8">
-                  {friend.id === "aj" ? (
-                    <div className="absolute -left-5 -top-6 bottom-0 flex w-[calc(100%+1.25rem)] items-end justify-start overflow-visible">
-                      <Image
-                        src={friend.cardImageSrc ?? friend.imageSrc}
-                        alt={friend.name}
-                        width={792}
-                        height={1130}
-                        unoptimized
-                        sizes="(min-width: 640px) 22vw, 50vw"
-                        className="h-full w-auto max-w-none origin-bottom -translate-x-1 scale-110 object-contain object-bottom"
-                      />
-                    </div>
-                  ) : (
-                    <div className="absolute -left-3 -top-8 bottom-0 right-[-8%]">
-                      <Image
-                        src={friend.cardImageSrc ?? friend.imageSrc}
-                        alt={friend.name}
-                        fill
-                        unoptimized
-                        sizes="(min-width: 640px) 22vw, 50vw"
-                        className="object-contain object-bottom"
-                      />
-                    </div>
-                  )}
+                {/* Sized overlay + native img so hair/hands can hang past the card edges. */}
+                <div
+                  aria-hidden="true"
+                  className={
+                    friend.id === "aj"
+                      ? "pointer-events-none absolute -left-4 bottom-0 top-0 z-10 w-[85%] overflow-visible sm:-left-12 lg:-left-24"
+                      : "pointer-events-none absolute -left-12 bottom-0 top-0 z-10 w-[72%] overflow-visible sm:-left-14"
+                  }
+                >
+                  <img
+                    src={friend.cardImageSrc ?? friend.imageSrc}
+                    alt=""
+                    className={
+                      friend.id === "aj"
+                        ? "absolute bottom-[-8%] left-0 h-[128%] w-auto max-w-none overflow-visible object-bottom"
+                        : "absolute bottom-[-6%] left-0 h-[118%] w-auto max-w-none overflow-visible object-bottom"
+                    }
+                  />
                 </div>
               </Link>
             ) : (
