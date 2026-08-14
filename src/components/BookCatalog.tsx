@@ -53,11 +53,11 @@ function BookCard({ book }: { book: Book }) {
     book.description;
 
   return (
-    <TfCard className="flex h-full flex-col items-center p-5 text-center sm:p-6">
-      <div className="flex w-full flex-1 items-center justify-center">
+    <TfCard className="flex min-h-full w-full flex-1 flex-col items-center p-5 text-center sm:p-6 lg:px-6 lg:py-5">
+      <div className="flex w-full items-center justify-center">
         <BookCover book={book} />
       </div>
-      <div className="mt-5 flex w-full flex-col items-center">
+      <div className="mt-5 flex w-full flex-1 flex-col items-center lg:mt-4">
         <h3 className="text-xl font-semibold leading-snug text-brand-navy sm:text-2xl">
           {book.title}
         </h3>
@@ -66,10 +66,13 @@ function BookCard({ book }: { book: Book }) {
             {book.cardSubtitle}
           </p>
         ) : null}
-        <p className="mt-3 text-sm leading-relaxed text-brand-charcoal/75">
+        <p className="mt-3 text-sm leading-relaxed text-brand-charcoal/75 lg:mt-2.5">
           {tagline}
         </p>
-        <TfButton href={`/books/${book.id}`} className="mt-5 w-full sm:w-auto">
+        <TfButton
+          href={`/books/${book.id}`}
+          className="mt-auto w-full pt-5 sm:w-auto lg:pt-4"
+        >
           View Book
         </TfButton>
       </div>
@@ -81,7 +84,7 @@ export function BookCatalog({ books }: Props) {
   const catalog = orderedBooks(books);
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-7">
+    <div className="grid items-stretch gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-7">
       {catalog.map((book, index) => (
         <motion.div
           key={book.id}
@@ -91,8 +94,8 @@ export function BookCatalog({ books }: Props) {
           transition={{ duration: 0.45, delay: index * 0.08, ease: "easeOut" }}
           className={
             catalog.length === 3 && index === 2
-              ? "md:col-span-2 md:mx-auto md:w-[calc(50%-0.75rem)] lg:col-span-1 lg:mx-0 lg:w-auto"
-              : undefined
+              ? "flex md:col-span-2 md:mx-auto md:w-[calc(50%-0.75rem)] lg:col-span-1 lg:mx-0 lg:w-auto"
+              : "flex"
           }
         >
           <BookCard book={book} />
