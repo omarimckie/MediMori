@@ -32,7 +32,7 @@ function HeroRocket() {
 
 export function Hero() {
   return (
-    <section className="tf-hero relative z-20 overflow-visible bg-transparent px-4 pb-4 pt-8 text-brand-charcoal sm:px-8 sm:pb-6 sm:pt-12 lg:px-10 lg:pb-8 lg:pt-14">
+    <section className="tf-hero relative z-20 overflow-visible bg-transparent px-4 pb-4 pt-8 text-brand-charcoal sm:px-8 sm:pb-6 sm:pt-12 lg:px-10 lg:pb-4 lg:pt-14">
       {/* Atmosphere is section-wide so it cannot form a max-width panel */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden select-none">
         <div className="absolute right-0 top-[12%] h-[70%] w-[55%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(200,182,230,0.18),transparent_68%)] blur-2xl" />
@@ -94,7 +94,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.18, ease: "easeOut" }}
-          className="relative z-10 order-2 -mb-3 md:-mt-4 md:-mb-4 lg:-mt-8 lg:-mb-6"
+          className="relative z-10 order-2 -mb-3 md:-mt-4 md:-mb-4 lg:-mt-6 lg:-mb-3"
         >
           <Image
             src="/children-reading.png"
@@ -104,7 +104,7 @@ export function Hero() {
             priority
             unoptimized
             sizes="(min-width: 1024px) 48vw, (min-width: 640px) 70vw, 92vw"
-            className="relative z-[1] mx-auto h-auto w-full max-w-xl object-contain lg:max-w-none"
+            className="relative z-[1] mx-auto h-auto w-full max-w-xl object-contain lg:ml-auto lg:w-[92%] lg:max-w-[92%]"
           />
         </motion.div>
       </div>
