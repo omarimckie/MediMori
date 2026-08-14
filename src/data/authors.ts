@@ -34,6 +34,9 @@ export const authors: Author[] = [
     bio: "Omari handles the numbers — budgets, deadlines, and the occasional spreadsheet emergency — as an accountant. But his favorite job comes with no calculator: dreaming up stories with his wife, Dale-Marie. A devoted husband and father of three lively sons (and two equally lively dogs), Omari brings structure, patience, and a steady editing eye to every Twilight Feather book.",
     photoSrc: "/authors/omari.png",
     photoAlt: "Omari McKie headshot",
+    photoFit: "contain",
+    photoWidth: 526,
+    photoHeight: 1024,
     socialLinks: [instagramLink("ooomaaariii")],
   },
 ];

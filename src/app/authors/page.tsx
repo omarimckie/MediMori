@@ -26,7 +26,12 @@ export default async function AuthorsPage({ searchParams }: Props) {
         <AuthorProfiles authors={authors} initialAuthorId={author} />
       </PageSection>
 
-      <PageSection tone="navy" cloudTop="white">
+      <PageSection
+        tone="navy"
+        cloudTop="white"
+        className="lg:!py-20"
+        containerClassName="mx-auto max-w-[1150px]"
+      >
         <h2 className="text-2xl font-extrabold text-white sm:text-3xl">Our Story</h2>
         <hr className="mt-4 border-white/20" />
         <p className="mt-6 text-sm leading-relaxed text-white/85 sm:text-base">
