@@ -5,6 +5,7 @@ import { BookHighlights } from "@/components/BookHighlights";
 import { EmailSignup } from "@/components/EmailSignup";
 import { FriendsSection } from "@/components/FriendsSection";
 import { Hero } from "@/components/Hero";
+import { MissionSection } from "@/components/MissionSection";
 import { PageSection } from "@/components/PageSection";
 import { getBooks } from "@/lib/books";
 import { motion } from "framer-motion";
@@ -83,6 +84,8 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
       <div id="friends" className="scroll-mt-24">
         <FriendsSection />
       </div>
+
+      <MissionSection />
 
       <PageSection
         tone="white"

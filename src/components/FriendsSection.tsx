@@ -22,7 +22,7 @@ export function FriendsSection() {
       tone="white"
       cloudTop="white"
       className="relative overflow-visible"
-      containerClassName="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.35fr_0.8fr] lg:items-end"
+      containerClassName="relative mx-auto max-w-7xl"
     >
       <span
         aria-hidden="true"
@@ -47,7 +47,11 @@ export function FriendsSection() {
           </h2>
         </div>
 
-        <div className="grid gap-5 overflow-visible sm:grid-cols-2">
+        <div
+          className={`grid gap-5 overflow-visible sm:grid-cols-2 ${
+            friends.length >= 3 ? "lg:grid-cols-3" : "lg:grid-cols-2"
+          }`}
+        >
           {friends.map((friend) => {
             const styles = accentStyles[friend.accent];
 
@@ -63,15 +67,15 @@ export function FriendsSection() {
                   className={`grid min-h-60 grid-cols-[42%_1fr] rounded-3xl border shadow-sm transition group-hover:shadow-lg ${styles.card}`}
                 >
                   <div aria-hidden="true" className="min-h-60" />
-                  <div className="flex flex-col items-start justify-center p-5 sm:p-7">
-                    <h3 className={`text-2xl font-extrabold ${styles.title}`}>
+                  <div className="flex h-full flex-col items-start justify-start p-5 sm:p-7">
+                    <h3 className={`text-[1.8rem] font-extrabold leading-none ${styles.title}`}>
                       {friend.name}
                     </h3>
                     <p className="mt-2 text-sm leading-relaxed text-brand-charcoal/80">
                       {friend.tagline}
                     </p>
                     <span
-                      className={`mt-5 inline-flex rounded-xl border px-4 py-2 text-sm font-bold transition ${styles.button}`}
+                      className={`mt-5 inline-flex rounded-xl border px-[1.38rem] py-[0.69rem] text-[0.97rem] font-bold transition sm:px-[1.65rem] sm:py-[0.83rem] ${styles.button}`}
                     >
                       Meet {friend.name}
                     </span>
@@ -132,53 +136,24 @@ export function FriendsSection() {
                     />
                   )}
                 </div>
-                <div className="flex flex-col items-start justify-center p-6 sm:p-7">
-                  <h3 className={`text-2xl font-extrabold ${styles.title}`}>
+                <div className="flex h-full flex-col items-start justify-start p-6 sm:p-7">
+                  <h3 className={`text-[1.8rem] font-extrabold leading-none ${styles.title}`}>
                     {friend.name}
                   </h3>
                   <p className="mt-2 text-sm leading-relaxed text-brand-charcoal/80">
                     {friend.tagline}
                   </p>
-                  <span
-                    className={`mt-5 inline-flex rounded-xl border px-4 py-2 text-sm font-bold transition ${styles.button}`}
-                  >
-                    Meet {friend.name}
-                  </span>
+                    <span
+                      className={`mt-5 inline-flex rounded-xl border px-[1.38rem] py-[0.69rem] text-[0.97rem] font-bold transition sm:px-[1.65rem] sm:py-[0.83rem] ${styles.button}`}
+                    >
+                      Meet {friend.name}
+                    </span>
                 </div>
               </Link>
             );
           })}
         </div>
       </div>
-
-      <aside className="relative overflow-hidden rounded-3xl border border-brand-blue/20 bg-[linear-gradient(145deg,#eef8ff_0%,#fffaf0_55%,#e9f4dc_100%)] p-8 shadow-sm sm:p-10">
-        <div
-          aria-hidden="true"
-          className="absolute -bottom-10 -right-8 hidden h-36 w-36 rounded-full bg-brand-green/25 blur-sm sm:block"
-        />
-        <div
-          aria-hidden="true"
-          className="absolute right-8 top-6 text-2xl text-brand-orange"
-        >
-          ♥
-        </div>
-        <h3 className="relative text-2xl font-extrabold text-section-navy">
-          Our mission
-        </h3>
-        <p className="relative mt-4 leading-relaxed text-brand-charcoal/85">
-          To empower children and families with stories that educate, inspire,
-          and support better health for a brighter tomorrow.
-        </p>
-        <div className="relative mt-7 flex items-end justify-end gap-3">
-          <span className="text-4xl text-[#7050a5]/70" aria-hidden="true">
-            ❧
-          </span>
-          <div
-            aria-hidden="true"
-            className="h-16 w-20 rounded-t-full bg-brand-green/45"
-          />
-        </div>
-      </aside>
     </PageSection>
   );
 }
