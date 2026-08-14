@@ -78,7 +78,7 @@ export function SiteFooter() {
         ★
       </span>
 
-      <div className="tf-page-width flex flex-col items-center gap-7 px-4 pb-12 pt-8 text-center sm:gap-8 sm:px-8 sm:pb-14 sm:pt-10 lg:flex-row lg:justify-between lg:gap-8 lg:px-10 lg:pb-16 lg:pt-10 lg:text-left">
+      <div className="tf-page-width flex flex-col items-center gap-8 px-4 pb-14 pt-9 text-center sm:gap-9 sm:px-8 sm:pb-16 sm:pt-11 lg:flex-row lg:justify-between lg:gap-8 lg:px-10 lg:pb-20 lg:pt-12 lg:text-left">
         {/* Feather + thank-you note */}
         <div className="flex items-center gap-3">
           <Image
@@ -90,7 +90,7 @@ export function SiteFooter() {
             className="h-16 w-auto -rotate-12 select-none opacity-90"
           />
           <p
-            className="max-w-44 text-[0.9375rem] italic leading-snug text-white/85 sm:text-sm"
+            className="max-w-44 text-base italic leading-snug text-white/85 sm:text-sm"
             style={{ fontFamily: '"Segoe Script", "Bradley Hand", cursive' }}
           >
             Thank you for being part of our story.{" "}
@@ -130,12 +130,12 @@ export function SiteFooter() {
         </div>
 
         {/* Copyright */}
-        <p className="text-[0.9375rem] text-white/75 sm:text-sm">
+        <p className="text-base text-white/75 sm:text-sm">
           © {new Date().getFullYear()} Twilight Feather. All rights reserved.
         </p>
 
         {/* Legal links */}
-        <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[0.9375rem] sm:text-sm">
+        <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-base sm:text-sm">
           {legalLinks.map((item) => (
             <Link
               key={item.label}
