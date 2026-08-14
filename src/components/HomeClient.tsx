@@ -4,13 +4,12 @@ import { BookCatalog } from "@/components/BookCatalog";
 import { BookHighlights } from "@/components/BookHighlights";
 import { EmailSignup } from "@/components/EmailSignup";
 import { FriendsSection } from "@/components/FriendsSection";
+import { HelpfulResources } from "@/components/HelpfulResources";
 import { Hero } from "@/components/Hero";
 import { MissionSection } from "@/components/MissionSection";
 import { PageSection } from "@/components/PageSection";
 import { getBooks } from "@/lib/books";
 import { motion } from "framer-motion";
-import Image from "next/image";
-import Link from "next/link";
 
 function ScrollingRocket() {
   return (
@@ -63,18 +62,7 @@ function ScrollingPlanet() {
   );
 }
 
-export type HomeBlogPost = {
-  slug: string;
-  title: string;
-  dateLabel: string;
-  imageUrl?: string;
-};
-
-type HomeClientProps = {
-  latestPosts: HomeBlogPost[];
-};
-
-export function HomeClient({ latestPosts }: HomeClientProps) {
+export function HomeClient() {
   const books = getBooks();
 
   return (
@@ -136,61 +124,7 @@ export function HomeClient({ latestPosts }: HomeClientProps) {
         </div>
       </PageSection>
 
-      <PageSection
-        tone="navy"
-        cloudTop="white"
-        containerClassName="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_2.1fr] lg:items-start"
-      >
-        <div className="text-center lg:text-left">
-          <h2 className="text-2xl font-extrabold text-white sm:text-3xl">
-            From our blog
-          </h2>
-          <p className="mt-3 text-white/80">
-            Read wellness tips, family guides, and updates from the Twilight
-            Feather team.
-          </p>
-          <Link
-            href="/blog"
-            className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl bg-brand-yellow-bright px-6 text-sm font-bold text-section-navy transition hover:brightness-95 sm:h-11 sm:w-auto"
-          >
-            Open Blog
-          </Link>
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-3">
-          {latestPosts.map((post) => (
-            <Link
-              key={post.slug}
-              href={`/blog/${post.slug}`}
-              className="group block"
-            >
-              <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-white/10">
-                {post.imageUrl ? (
-                  <Image
-                    src={post.imageUrl}
-                    alt=""
-                    fill
-                    sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 90vw"
-                    className="object-cover transition duration-300 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center bg-[linear-gradient(135deg,#31497a_0%,#7050a5_100%)]">
-                    <span aria-hidden="true" className="text-4xl text-brand-yellow-bright">
-                      ✦
-                    </span>
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-3 text-base font-extrabold leading-snug text-white underline-offset-4 group-hover:underline">
-                {post.title}
-              </h3>
-              <p className="mt-1.5 text-xs font-semibold text-white/65">
-                {post.dateLabel}
-              </p>
-            </Link>
-          ))}
-        </div>
-      </PageSection>
+      <HelpfulResources />
     </main>
   );
 }

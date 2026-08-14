@@ -48,7 +48,6 @@ const navigationLinks = [
   { label: "Books", href: "/#books" },
   { label: "Resources", href: "/resources" },
   { label: "About Us", href: "/authors" },
-  { label: "Blog", href: "/blog" },
 ];
 
 export function SiteHeader() {
