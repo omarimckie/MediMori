@@ -179,7 +179,12 @@ async function runAsyncChecks() {
     data: { object: { id: "cs_test_sig" } },
   });
   const secret = "whsec_test_phase1";
-  const validHeader = stripe.webhooks.generateTestHeaderString({
+  const validHeader = (
+    stripe.webhooks.generateTestHeaderString as (opts: {
+      payload: string;
+      secret: string;
+    }) => string
+  )({
     payload,
     secret,
   });
