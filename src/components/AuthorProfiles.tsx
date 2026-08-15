@@ -80,32 +80,39 @@ export function AuthorProfiles({ authors, initialAuthorId }: Props) {
 
         return (
           <div key={author.id} className="text-center">
-            <button
-              type="button"
-              onClick={() =>
-                setOpenId((current) => (current === author.id ? null : author.id))
-              }
-              aria-expanded={isOpen}
-              aria-controls={author.bio ? bioId : undefined}
-              className="group w-full cursor-pointer rounded-3xl border border-transparent p-2 text-center transition hover:border-brand-blue/20 hover:bg-brand-blue/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
-            >
-              <AuthorPhoto author={author} className="mx-auto" />
-              <h2 className="mt-6 text-2xl font-extrabold text-brand-blue-deep sm:text-[1.65rem]">
-                {author.name}
-              </h2>
-              <p className="mt-2 text-sm font-semibold italic text-brand-brown">
-                {author.tagline}
-              </p>
-              <PersonalSocialLinks
-                links={author.socialLinks ?? []}
-                stopLinkPropagation
-              />
-              {author.bio ? (
-                <p className="mt-4 text-xs font-semibold text-brand-charcoal/50 group-hover:text-brand-blue-deep/70">
-                  Tap to read bio
+            <div className="group w-full rounded-3xl border border-transparent p-2 text-center transition hover:border-brand-blue/20 hover:bg-brand-blue/[0.04]">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenId((current) => (current === author.id ? null : author.id))
+                }
+                aria-expanded={isOpen}
+                aria-controls={author.bio ? bioId : undefined}
+                className="w-full cursor-pointer text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
+              >
+                <AuthorPhoto author={author} className="mx-auto" />
+                <h2 className="mt-6 text-2xl font-extrabold text-brand-blue-deep sm:text-[1.65rem]">
+                  {author.name}
+                </h2>
+                <p className="mt-2 text-sm font-semibold italic text-brand-brown">
+                  {author.tagline}
                 </p>
+              </button>
+              <PersonalSocialLinks links={author.socialLinks ?? []} />
+              {author.bio ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenId((current) => (current === author.id ? null : author.id))
+                  }
+                  aria-expanded={isOpen}
+                  aria-controls={bioId}
+                  className="mt-4 w-full cursor-pointer text-xs font-semibold text-brand-charcoal/50 group-hover:text-brand-blue-deep/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-deep"
+                >
+                  Tap to read bio
+                </button>
               ) : null}
-            </button>
+            </div>
 
             {isOpen && author.bio ? (
               <p

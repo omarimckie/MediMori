@@ -3,6 +3,9 @@ import Image from "next/image";
 import Link from "next/link";
 import type { SVGProps } from "react";
 
+/** Static so server HTML and client hydration always match. */
+const COPYRIGHT_YEAR = 2026;
+
 function FacebookIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -131,7 +134,7 @@ export function SiteFooter() {
 
         {/* Copyright */}
         <p className="text-base text-white/75 sm:text-sm">
-          © {new Date().getFullYear()} Twilight Feather. All rights reserved.
+          © {COPYRIGHT_YEAR} Twilight Feather. All rights reserved.
         </p>
 
         {/* Legal links */}

@@ -4,17 +4,17 @@ import Link from "next/link";
 const categories = [
   {
     name: "Learn",
-    description: "Trusted health information and family-friendly resources.",
+    description: "Opens our Resources page for trusted children's health information.",
     motif: "book" as const,
   },
   {
     name: "Explore",
-    description: "Activities, guides, and ideas for learning together.",
+    description: "Opens our Resources page for family-friendly wellness links we recommend.",
     motif: "spark" as const,
   },
   {
     name: "What's New",
-    description: "New books, resources, and updates from Twilight Feather.",
+    description: "Opens our Resources page — curated children's health and wellness links in one place.",
     motif: "star" as const,
   },
 ];
@@ -97,8 +97,8 @@ export function HelpfulResources() {
           </h2>
         </div>
         <p className="mt-3 text-base leading-relaxed text-brand-charcoal/80 sm:mt-4 sm:text-lg">
-          Trusted information, activities, and ideas to help families learn,
-          grow, and navigate children&apos;s wellness together.
+          Trusted children&apos;s health and wellness resources for parents,
+          caregivers, and educators — all on our Resources page.
         </p>
       </div>
 

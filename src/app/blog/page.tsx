@@ -43,7 +43,7 @@ export default async function BlogPage() {
           Explore our children&apos;s books and find your next family favorite.
         </p>
         <Link
-          href="/#books"
+          href="/books"
           className="mt-6 inline-flex rounded-2xl bg-brand-yellow-bright px-6 py-3 text-sm font-bold text-section-navy transition hover:brightness-95"
         >
           Explore our books

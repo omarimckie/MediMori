@@ -115,7 +115,7 @@ export default async function FriendPage({ params }: Props) {
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           <Link
-            href="/#books"
+            href="/books"
             className={`inline-flex rounded-xl px-5 py-3 text-sm font-extrabold text-white transition hover:brightness-110 ${accent.button}`}
           >
             Explore our books

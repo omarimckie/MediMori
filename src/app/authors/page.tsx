@@ -1,6 +1,13 @@
 import { AuthorProfiles } from "@/components/AuthorProfiles";
 import { PageSection } from "@/components/PageSection";
 import { authors } from "@/data/authors";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "About the Authors | Twilight Feather",
+  description:
+    "Twilight Feather Children's Books is a husband-and-wife passion project — written with heart, illustrated with care, and inspired by real life.",
+};
 
 type Props = {
   searchParams: Promise<{ author?: string }>;

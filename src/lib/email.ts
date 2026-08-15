@@ -136,7 +136,7 @@ export async function sendSignupConfirmationEmail(
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
     "https://twilight-feather.com";
-  const booksUrl = `${siteUrl}/#books`;
+  const booksUrl = `${siteUrl}/books`;
 
   const subject = options.alreadySignedUp
     ? "You're already on the Twilight Feather list"

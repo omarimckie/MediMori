@@ -1,6 +1,7 @@
 import { BookDetailContent } from "@/components/BookDetailContent";
 import { PageSection } from "@/components/PageSection";
 import { getBookById, getBooks } from "@/lib/books";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,6 +12,26 @@ type Props = {
 
 export function generateStaticParams() {
   return getBooks().map((book) => ({ id: book.id }));
+}
+
+function bookMetaDescription(book: NonNullable<ReturnType<typeof getBookById>>): string {
+  const fromTagline = book.tagline?.trim();
+  if (fromTagline) return fromTagline;
+  return book.description.trim();
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const book = getBookById(id);
+
+  if (!book) {
+    return { title: "Book — Twilight.Feather" };
+  }
+
+  return {
+    title: `${book.title} — Twilight.Feather`,
+    description: bookMetaDescription(book),
+  };
 }
 
 export default async function BookDetailPage({ params }: Props) {
@@ -26,7 +47,7 @@ export default async function BookDetailPage({ params }: Props) {
     <main>
       <PageSection tone="navy" className="!py-12 sm:!py-14 lg:!py-24">
         <Link
-          href="/#books"
+          href="/books"
           className="inline-flex items-center rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
         >
           Back to books

@@ -5,7 +5,7 @@ import { getRecommendedResources } from "@/lib/resources";
 export const metadata = {
   title: "Resources — Twilight.Feather",
   description:
-    "Curated articles and reading roundups we recommend for families, caregivers, and educators.",
+    "Trusted children's health and wellness resources for parents, caregivers, and educators.",
 };
 
 export default function ResourcesPage() {

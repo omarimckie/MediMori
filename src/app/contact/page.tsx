@@ -50,7 +50,7 @@ export default function ContactPage() {
           Looking for our books instead?
         </p>
         <Link
-          href="/#books"
+          href="/books"
           className="mt-3 inline-flex rounded-xl bg-brand-yellow-bright px-6 py-3 text-sm font-bold text-section-navy transition hover:brightness-95"
         >
           Browse our books

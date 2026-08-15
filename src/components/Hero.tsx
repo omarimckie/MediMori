@@ -81,7 +81,7 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
             className="mt-7 flex w-full flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:justify-center md:justify-start"
           >
-            <TfButton href="/#books" variant="primary" className="w-full sm:w-auto">
+            <TfButton href="/books" variant="primary" className="w-full sm:w-auto">
               Explore Our Books
             </TfButton>
             <TfButton href="/resources" variant="ghost" className="w-full sm:w-auto">

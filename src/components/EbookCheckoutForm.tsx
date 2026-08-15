@@ -71,22 +71,36 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <input
-          type="text"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Full name"
-          required
-          className="h-11 rounded-xl border border-brand-brown/20 bg-white px-3 text-sm text-brand-charcoal outline-none ring-brand-green focus:ring-2"
-        />
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="Email address"
-          required
-          className="h-11 rounded-xl border border-brand-brown/20 bg-white px-3 text-sm text-brand-charcoal outline-none ring-brand-green focus:ring-2"
-        />
+        <div>
+          <label htmlFor="ebook-customer-name" className="sr-only">
+            Full name
+          </label>
+          <input
+            id="ebook-customer-name"
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Full name"
+            autoComplete="name"
+            required
+            className="h-11 w-full rounded-xl border border-brand-brown/20 bg-white px-3 text-sm text-brand-charcoal outline-none ring-brand-green focus:ring-2"
+          />
+        </div>
+        <div>
+          <label htmlFor="ebook-customer-email" className="sr-only">
+            Email address
+          </label>
+          <input
+            id="ebook-customer-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="Email address"
+            autoComplete="email"
+            required
+            className="h-11 w-full rounded-xl border border-brand-brown/20 bg-white px-3 text-sm text-brand-charcoal outline-none ring-brand-green focus:ring-2"
+          />
+        </div>
       </div>
 
       <button
