@@ -46,6 +46,7 @@ const socialLinks = [
 const navigationLinks = [
   { label: "Home", href: "/" },
   { label: "Books", href: "/books" },
+  { label: "My Books", href: "/library" },
   { label: "Resources", href: "/resources" },
   { label: "About Us", href: "/authors" },
 ];

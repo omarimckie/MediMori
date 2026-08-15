@@ -177,3 +177,17 @@ export async function countPurchasesForEmailAndBook(
   `;
   return Number(rows[0]?.count ?? 0);
 }
+
+export async function listEntitlementsForEmail(
+  email: string,
+): Promise<EntitlementRow[]> {
+  const sql = getSql();
+  const normalized = normalizeEmail(email);
+  const rows = await sql`
+    SELECT email, book_id, first_purchase_id, granted_at
+    FROM entitlements
+    WHERE email = ${normalized}
+    ORDER BY granted_at ASC
+  `;
+  return rows.map((row) => mapEntitlement(row as Record<string, unknown>));
+}

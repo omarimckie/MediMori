@@ -189,3 +189,48 @@ export async function sendSignupConfirmationEmail(
     throw new Error(error.message || "Could not send confirmation email.");
   }
 }
+
+export async function sendLibraryAccessEmail(
+  email: string,
+  accessUrl: string,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    throw new Error("Access email is not configured (missing Resend).");
+  }
+
+  const { error } = await resend.emails.send({
+    from,
+    to: email,
+    subject: "Your Twilight Feather books access link",
+    html: `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
+        <h1 style="font-size: 22px; margin-bottom: 12px;">Twilight Feather</h1>
+        <p>Use this private link to open the books you purchased. It expires in 45 minutes and can be used once.</p>
+        <p>
+          <a href="${accessUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
+            Open my books
+          </a>
+        </p>
+        <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
+          If you did not request this, you can ignore this email. We never put your email address in the link.
+        </p>
+      </div>
+    `,
+    text: [
+      "Twilight Feather",
+      "",
+      "Use this private link to open the books you purchased.",
+      "It expires in 45 minutes and can be used once.",
+      "",
+      accessUrl,
+      "",
+      "If you did not request this, you can ignore this email.",
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send access email.");
+  }
+}

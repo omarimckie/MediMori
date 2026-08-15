@@ -1,5 +1,5 @@
 -- Permanent eBook ownership (Phase 1).
--- Apply against Neon/Postgres. Do not create magic_link_tokens here (Phase 2).
+-- magic_link_tokens is in sql/magic-link-tokens.sql (Phase 2).
 
 CREATE TABLE IF NOT EXISTS purchases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
