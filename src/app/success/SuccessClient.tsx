@@ -16,8 +16,24 @@ export function SuccessClient() {
     setLoading(true);
     try {
       const url = `/api/download?session_id=${encodeURIComponent(sessionId)}`;
-      const res = await fetch(url);
-      const contentType = res.headers.get("Content-Type") ?? "";
+      const res = await fetch(url, { redirect: "manual" });
+
+      // Cross-origin 302 to Vercel Blob is an opaque redirect (status 0).
+      // Navigate to the API URL so the browser follows the signed download.
+      if (res.type === "opaqueredirect" || res.status === 0) {
+        window.location.assign(url);
+        return;
+      }
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("Location");
+        if (!location) {
+          setError("Download could not start.");
+          return;
+        }
+        window.location.assign(location);
+        return;
+      }
 
       if (!res.ok) {
         let message = "Download could not start.";
@@ -31,25 +47,7 @@ export function SuccessClient() {
         return;
       }
 
-      if (!contentType.includes("application/pdf")) {
-        setError("Unexpected response from server. Please try again.");
-        return;
-      }
-
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = disposition.match(/filename="([^"]+)"/i);
-      const filename = match?.[1] ?? "twilightfeather-ebook.pdf";
-
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
+      setError("Unexpected response from server. Please try again.");
     } catch {
       setError("Network error. Check your connection and try again.");
     } finally {
@@ -68,7 +66,7 @@ export function SuccessClient() {
           your payment confirmation email if Stripe sent one.
         </p>
         <Link
-          href="/#books"
+          href="/books"
           className="mt-8 inline-flex rounded-2xl bg-brand-green-deep px-6 py-3 font-bold text-white hover:brightness-95"
         >
           Back to books
@@ -107,7 +105,7 @@ export function SuccessClient() {
       ) : null}
       <p className="mt-8 text-sm text-brand-charcoal/60">
         Trouble downloading?{" "}
-        <Link href="/#books" className="font-semibold text-brand-green-deep underline">
+        <Link href="/books" className="font-semibold text-brand-green-deep underline">
           Return to the shop
         </Link>
       </p>

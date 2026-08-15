@@ -1,7 +1,10 @@
+import {
+  EBOOK_SIGNED_URL_TTL_MS,
+  getEbookBlobPathname,
+} from "@/lib/ebook-blob";
 import { getBookById } from "@/lib/books";
-import { get } from "@vercel/blob";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { isAllowedEbookPrice } from "@/lib/stripe-prices";
+import { issueSignedToken, presignUrl } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -14,21 +17,20 @@ function lineItemPriceId(item: Stripe.LineItem): string | undefined {
   return price.id;
 }
 
-/** JSON map: book id → Vercel Blob URL (see .env.example). */
-function getEbookBlobUrlForBook(bookId: string): string | undefined {
-  const raw = process.env.EBOOK_BLOB_URLS?.trim();
-  if (!raw) return undefined;
-  try {
-    const map = JSON.parse(raw) as Record<string, unknown>;
-    const u = map[bookId];
-    return typeof u === "string" && u.trim() ? u.trim() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function inferBlobAccess(url: string): "public" | "private" {
-  return url.includes(".private.blob.") ? "private" : "public";
+async function createPrivateEbookDownloadUrl(pathname: string): Promise<string> {
+  const validUntil = Date.now() + EBOOK_SIGNED_URL_TTL_MS;
+  const signedToken = await issueSignedToken({
+    pathname,
+    operations: ["get"],
+    validUntil,
+  });
+  const { presignedUrl } = await presignUrl(signedToken, {
+    operation: "get",
+    pathname,
+    access: "private",
+    validUntil,
+  });
+  return presignedUrl;
 }
 
 export async function GET(request: Request) {
@@ -79,8 +81,7 @@ export async function GET(request: Request) {
     }
 
     const book = getBookById(bookId);
-    const expectedPrice = book?.stripePriceIdEbook?.trim();
-    if (!book || !expectedPrice) {
+    if (!book || !book.stripePriceIdEbook?.trim()) {
       return NextResponse.json({ error: "Unknown book." }, { status: 400 });
     }
 
@@ -105,8 +106,8 @@ export async function GET(request: Request) {
       }
     }
 
-    const paidForPrice = lineItems.some(
-      (item) => lineItemPriceId(item) === expectedPrice,
+    const paidForPrice = lineItems.some((item) =>
+      isAllowedEbookPrice(book, lineItemPriceId(item)),
     );
 
     if (!paidForPrice) {
@@ -116,64 +117,33 @@ export async function GET(request: Request) {
       );
     }
 
-    const safeName = `${book.ebookFileBaseName.replace(/["\\]/g, "")}.pdf`;
-    const pdfHeaders = {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${safeName}"`,
-      "Cache-Control": "no-store",
-    } as const;
-
-    const blobUrl = getEbookBlobUrlForBook(book.id);
-    if (blobUrl) {
-      const blobResult = await get(blobUrl, {
-        access: inferBlobAccess(blobUrl),
-      });
-      if (
-        !blobResult ||
-        blobResult.statusCode !== 200 ||
-        !blobResult.stream
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "eBook file could not be loaded from storage. Check EBOOK_BLOB_URLS and Blob access, or try again later.",
-          },
-          { status: 502 },
-        );
-      }
-
-      return new NextResponse(blobResult.stream, {
-        status: 200,
-        headers: pdfHeaders,
-      });
-    }
-
-    const filePath = path.join(
-      process.cwd(),
-      "private",
-      "ebooks",
-      `${book.ebookFileBaseName}.pdf`,
-    );
-
-    let file: Buffer;
-    try {
-      file = await readFile(filePath);
-    } catch {
+    const pathname = getEbookBlobPathname(book.id);
+    if (!pathname) {
       return NextResponse.json(
-        {
-          error:
-            "eBook PDF is missing. For production set EBOOK_BLOB_URLS in env, or add private/ebooks/" +
-            `${book.ebookFileBaseName}.pdf` +
-            " for local delivery.",
-        },
-        { status: 404 },
+        { error: "This eBook is not available for download." },
+        { status: 500 },
       );
     }
 
-    return new NextResponse(new Uint8Array(file), {
-      status: 200,
-      headers: pdfHeaders,
-    });
+    if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
+      return NextResponse.json(
+        { error: "Downloads are not configured (missing BLOB_READ_WRITE_TOKEN)." },
+        { status: 503 },
+      );
+    }
+
+    let presignedUrl: string;
+    try {
+      presignedUrl = await createPrivateEbookDownloadUrl(pathname);
+    } catch (error) {
+      console.error("Could not create eBook download URL:", error);
+      return NextResponse.json(
+        { error: "eBook download could not be prepared. Please try again later." },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.redirect(presignedUrl, 302);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Download failed";
     return NextResponse.json({ error: message }, { status: 500 });

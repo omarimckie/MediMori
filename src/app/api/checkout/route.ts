@@ -1,5 +1,6 @@
 import { getBookById } from "@/lib/books";
 import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
+import { getEbookStripePriceId } from "@/lib/stripe-prices";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
   }
 
   const book = getBookById(bookId);
-  const priceId = book?.stripePriceIdEbook?.trim();
+  const priceId = book ? getEbookStripePriceId(book) : undefined;
   if (priceId?.startsWith("prod_")) {
     return NextResponse.json(
       {
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${siteUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${siteUrl}/#books`,
+      cancel_url: `${siteUrl}/books`,
       customer_email: customerEmail,
       // Visitor can enter their list-signup code (e.g. TWILIGHTFEATHER10) on Stripe Checkout.
       allow_promotion_codes: true,
