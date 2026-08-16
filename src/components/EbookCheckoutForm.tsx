@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 type Props = {
@@ -102,6 +103,19 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
           />
         </div>
       </div>
+
+      <p className="mt-3 text-xs leading-relaxed text-brand-charcoal/70">
+        Digital purchase: This is a digital product. Refunds are limited and
+        generally unavailable after the content has been accessed or downloaded.
+        See our{" "}
+        <Link
+          href="/refund-policy"
+          className="font-semibold text-brand-green-deep underline underline-offset-2"
+        >
+          Refund Policy
+        </Link>{" "}
+        for details.
+      </p>
 
       <button
         type="submit"

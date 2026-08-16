@@ -3,6 +3,8 @@ import {
   getEbookBlobPathname,
 } from "@/lib/ebook-blob";
 import { getBookById } from "@/lib/books";
+import { customerEmailFromSession } from "@/lib/checkout-ownership";
+import { hasEntitlement } from "@/lib/purchases";
 import { isReaderBookId } from "@/lib/reader-catalog";
 import { isAllowedEbookPrice } from "@/lib/stripe-prices";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
@@ -129,6 +131,24 @@ export async function GET(request: Request) {
         },
         { status: 403 },
       );
+    }
+
+    const email = customerEmailFromSession(session);
+    if (!email) {
+      return NextResponse.json(
+        { error: "This checkout session is missing a usable customer email." },
+        { status: 400 },
+      );
+    }
+
+    if (book.id === "book-two") {
+      const owned = await hasEntitlement(email, "book-two");
+      if (!owned) {
+        return NextResponse.json(
+          { error: "This download is no longer available." },
+          { status: 403 },
+        );
+      }
     }
 
     if (intentOnly) {

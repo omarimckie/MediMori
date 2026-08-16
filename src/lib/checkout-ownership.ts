@@ -46,7 +46,7 @@ function chargeIdFromSession(session: Stripe.Checkout.Session): string | null {
   return charge.id ?? null;
 }
 
-function customerEmailFromSession(session: Stripe.Checkout.Session): string {
+export function customerEmailFromSession(session: Stripe.Checkout.Session): string {
   const fromDetails = session.customer_details?.email?.trim() ?? "";
   const fromSession = session.customer_email?.trim() ?? "";
   const fromMetadata = session.metadata?.customerEmail?.trim() ?? "";
