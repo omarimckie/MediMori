@@ -38,3 +38,25 @@ export function getBooks(): Book[] {
 export function getBookById(id: string): Book | undefined {
   return getBooks().find((b) => b.id === id);
 }
+
+export function bookDeliveryFormat(bookId: string): string | null {
+  if (bookId === "book-two") return "PDF Download";
+  if (bookId === "book-one" || bookId === "book-three") {
+    return "Read Online · No offline download";
+  }
+  return null;
+}
+
+export function formatEbookPrice(priceEbook: string | undefined): string | null {
+  const raw = priceEbook?.trim();
+  if (!raw) return null;
+  if (raw.startsWith("$")) return raw;
+  const amount = Number(raw);
+  if (Number.isFinite(amount)) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+  }
+  return raw;
+}

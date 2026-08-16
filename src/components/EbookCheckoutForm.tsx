@@ -62,16 +62,15 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4">
-      <p className="text-sm font-bold text-brand-charcoal">
-        {bookId === "book-two"
-          ? "Buy direct eBook (instant download)"
-          : "Buy direct eBook"}
-      </p>
+    <form
+      id="purchase"
+      onSubmit={onSubmit}
+      className="scroll-mt-24 rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4"
+    >
+      <p className="text-sm font-bold text-brand-charcoal">Buy direct eBook</p>
       <p className="mt-1 text-xs text-brand-charcoal/70">
-        {bookId === "book-two"
-          ? "Enter your name and email, complete payment, and your download starts on the success page. Email subscribers receive 10% off eBook purchases."
-          : "Enter your name and email, then complete payment. Email subscribers receive 10% off eBook purchases."}
+        Enter your name and email, then complete payment. Email subscribers
+        receive 10% off eBook purchases.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -108,10 +107,15 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-brand-charcoal/70">
+        Your name and email are used to process your purchase and provide access
+        to your Twilight Feather Books library.
+      </p>
+
+      <p className="mt-3 text-xs leading-relaxed text-brand-charcoal/70">
         {bookId === "book-two" ? (
           <>
-            Digital eBook: After purchase, this collection is available as a PDF
-            download through your Twilight Feather Books library.
+            After purchase, your Word Search PDF is available in your Twilight
+            Feather Books library. You can download it whenever you need it.
           </>
         ) : (
           <>

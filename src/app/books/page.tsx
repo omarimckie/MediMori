@@ -21,12 +21,13 @@ export default function BooksPage() {
         <p className="text-sm font-extrabold uppercase tracking-wide text-brand-yellow-bright">
           Twilight Feather
         </p>
-        <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
-          Our Books
+        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">
+          Children&apos;s Books That Make Health Easier to Understand
         </h1>
         <p className="mt-4 text-lg leading-relaxed text-white/85">
-          Browse our collection of children&apos;s books, activities, and
-          learning resources.
+          Explore engaging stories and activities designed to help children and
+          families learn about health conditions in an approachable,
+          age-appropriate way.
         </p>
       </PageSection>
 

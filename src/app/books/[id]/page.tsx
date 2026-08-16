@@ -1,6 +1,12 @@
 import { BookDetailContent } from "@/components/BookDetailContent";
 import { PageSection } from "@/components/PageSection";
-import { getBookById, getBooks } from "@/lib/books";
+import { TfButton } from "@/components/ui/TfButton";
+import {
+  bookDeliveryFormat,
+  formatEbookPrice,
+  getBookById,
+  getBooks,
+} from "@/lib/books";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -42,6 +48,8 @@ export default async function BookDetailPage({ params }: Props) {
 
   const insideImages = book.insideImageUrls ?? [];
   const galleryImages = book.amazonGalleryImageUrls ?? [];
+  const ebookPrice = formatEbookPrice(book.priceEbook);
+  const deliveryFormat = bookDeliveryFormat(book.id);
 
   return (
     <main>
@@ -60,6 +68,17 @@ export default async function BookDetailPage({ params }: Props) {
             {book.subtitle}
           </p>
         ) : null}
+        {ebookPrice ? (
+          <p className="mt-5 text-2xl font-extrabold text-white">{ebookPrice}</p>
+        ) : null}
+        {deliveryFormat ? (
+          <p className="mt-1 text-sm font-semibold text-white/85">
+            {deliveryFormat}
+          </p>
+        ) : null}
+        <TfButton href="#purchase" className="mt-4 w-full sm:w-auto">
+          Buy eBook now
+        </TfButton>
       </PageSection>
 
       <PageSection tone="white" cloudTop="navy" className="!pb-9 sm:!pb-10">

@@ -199,8 +199,11 @@ export function BookPreviewCarousel({
 
         {slides.length > 1 ? (
           <div className="mt-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-charcoal/55">
-              Preview pages
+            <p className="text-xs font-semibold tracking-wide text-brand-charcoal/55">
+              Preview Pages
+            </p>
+            <p className="mb-2 mt-0.5 text-xs text-brand-charcoal/70">
+              Take a look inside the book.
             </p>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {slides.map((slide, index) => (
