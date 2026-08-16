@@ -15,13 +15,14 @@ export function SuccessClient() {
   useEffect(() => {
     if (!sessionId) return;
 
+    const checkoutSessionId = sessionId;
     let cancelled = false;
 
     async function resolveFulfillment() {
       setChecking(true);
       try {
         const res = await fetch(
-          `/api/download?session_id=${encodeURIComponent(sessionId)}&intent=1`,
+          `/api/download?session_id=${encodeURIComponent(checkoutSessionId)}&intent=1`,
           { redirect: "manual" },
         );
         if (cancelled) return;
