@@ -6,6 +6,7 @@ export function LibraryAccessForm() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [localAccessUrl, setLocalAccessUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: React.FormEvent) {
@@ -13,6 +14,7 @@ export function LibraryAccessForm() {
     setLoading(true);
     setError(null);
     setMessage(null);
+    setLocalAccessUrl(null);
 
     try {
       const res = await fetch("/api/library/magic-link", {
@@ -20,7 +22,11 @@ export function LibraryAccessForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = (await res.json()) as { error?: string; message?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        message?: string;
+        localAccessUrl?: string;
+      };
       if (!res.ok) {
         setError(data.error || "Could not send the access email.");
         return;
@@ -29,6 +35,9 @@ export function LibraryAccessForm() {
         data.message ||
           "If that email owns Twilight Feather books, we sent a one-time access link.",
       );
+      if (typeof data.localAccessUrl === "string" && data.localAccessUrl) {
+        setLocalAccessUrl(data.localAccessUrl);
+      }
     } catch {
       setError("Network error. Check your connection and try again.");
     } finally {
@@ -61,6 +70,16 @@ export function LibraryAccessForm() {
       {message ? (
         <p className="mt-4 rounded-2xl border border-brand-green/30 bg-brand-green/10 px-4 py-3 text-sm text-brand-charcoal">
           {message}
+        </p>
+      ) : null}
+      {localAccessUrl ? (
+        <p className="mt-3 text-sm">
+          <a
+            href={localAccessUrl}
+            className="font-bold text-brand-green-deep underline"
+          >
+            Open my books
+          </a>
         </p>
       ) : null}
       {error ? (

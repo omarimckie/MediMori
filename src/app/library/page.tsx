@@ -89,8 +89,16 @@ export default async function LibraryPage({ searchParams }: Props) {
                   <p className="mt-2 text-sm text-brand-charcoal/75">
                     {isWordSearch
                       ? "You own this PDF. Use the download button on your purchase confirmation page for now. A library download button comes next."
-                      : "You own this storybook. The protected online reader comes in a later phase."}
+                      : "You own this storybook. Open the protected online reader."}
                   </p>
+                  {!isWordSearch ? (
+                    <Link
+                      href={`/read/${row.bookId}`}
+                      className="tf-btn tf-btn-primary mt-4 inline-flex"
+                    >
+                      Open reader
+                    </Link>
+                  ) : null}
                 </li>
               );
             })}

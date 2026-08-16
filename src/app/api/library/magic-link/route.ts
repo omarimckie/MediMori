@@ -64,7 +64,28 @@ export async function POST(request: Request) {
 
     const rawToken = createRawMagicToken();
     await insertMagicLinkToken(email, rawToken);
-    await sendLibraryAccessEmail(email, `${siteUrl}/access/${rawToken}`);
+    const accessUrl = `${siteUrl}/access/${rawToken}`;
+    const isLocalSite = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+      siteUrl,
+    );
+
+    try {
+      await sendLibraryAccessEmail(email, accessUrl);
+    } catch (error) {
+      if (isLocalSite) {
+        console.warn("Library magic-link email skipped locally:", {
+          error: error instanceof Error ? error.message : "unknown",
+          accessUrl,
+        });
+        return NextResponse.json({
+          ...generic,
+          message:
+            "Email sending is not configured locally. Use this one-time link:",
+          localAccessUrl: accessUrl,
+        });
+      }
+      throw error;
+    }
   } catch (error) {
     console.error("Could not send library magic link:", {
       error: error instanceof Error ? error.message : "unknown",

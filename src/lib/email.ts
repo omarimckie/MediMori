@@ -200,6 +200,10 @@ export async function sendLibraryAccessEmail(
     throw new Error("Access email is not configured (missing Resend).");
   }
 
+  const isLocalAccess = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(
+    accessUrl,
+  );
+
   const { error } = await resend.emails.send({
     from,
     to: email,
@@ -208,11 +212,22 @@ export async function sendLibraryAccessEmail(
       <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
         <h1 style="font-size: 22px; margin-bottom: 12px;">Twilight Feather</h1>
         <p>Use this private link to open the books you purchased. It expires in 45 minutes and can be used once.</p>
+        ${
+          isLocalAccess
+            ? `<p>This is a local test link. Gmail often will not make localhost links clickable, so copy and paste it if the button does nothing:</p>
         <p>
           <a href="${accessUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
             Open my books
           </a>
         </p>
+        <p style="word-break: break-all; font-size: 14px;">${accessUrl}</p>`
+            : `<p>
+          <a href="${accessUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
+            Open my books
+          </a>
+        </p>
+        <p style="word-break: break-all; color: #5a6478; font-size: 13px;">If the button is rewritten by email tracking, paste this URL instead:<br />${accessUrl}</p>`
+        }
         <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
           If you did not request this, you can ignore this email. We never put your email address in the link.
         </p>
