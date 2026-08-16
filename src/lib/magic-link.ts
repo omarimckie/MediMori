@@ -33,6 +33,24 @@ export async function isMagicLinkRateLimited(email: string): Promise<boolean> {
   );
 }
 
+/** Creates a one-time /access URL, or null if this email is rate-limited. */
+export async function createLibraryAccessUrl(
+  email: string,
+): Promise<string | null> {
+  if (await isMagicLinkRateLimited(email)) {
+    return null;
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  if (!siteUrl) {
+    throw new Error("Site URL is not configured.");
+  }
+
+  const rawToken = createRawMagicToken();
+  await insertMagicLinkToken(email, rawToken);
+  return `${siteUrl}/access/${rawToken}`;
+}
+
 export async function insertMagicLinkToken(
   email: string,
   rawToken: string,

@@ -2,14 +2,50 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function SuccessClient() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(Boolean(sessionId));
   const [error, setError] = useState<string | null>(null);
   const [readerOnly, setReaderOnly] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    async function resolveFulfillment() {
+      setChecking(true);
+      try {
+        const res = await fetch(
+          `/api/download?session_id=${encodeURIComponent(sessionId)}&intent=1`,
+          { redirect: "manual" },
+        );
+        if (cancelled) return;
+
+        let isReaderOnly = false;
+        try {
+          const data = (await res.json()) as { readerOnly?: boolean };
+          isReaderOnly = data.readerOnly === true;
+        } catch {
+          isReaderOnly = false;
+        }
+        setReaderOnly(isReaderOnly);
+      } catch {
+        if (!cancelled) setReaderOnly(false);
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }
+
+    void resolveFulfillment();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const download = useCallback(async () => {
     if (!sessionId) return;
@@ -94,7 +130,9 @@ export function SuccessClient() {
       <p className="mt-3 text-brand-charcoal/80">
         Storybooks open in My Books. Word Search downloads as a PDF.
       </p>
-      {readerOnly ? (
+      {checking ? (
+        <p className="mt-10 text-brand-charcoal/70">Preparing your book…</p>
+      ) : readerOnly ? (
         <Link
           href="/library"
           className="mt-10 inline-flex rounded-2xl bg-brand-blue-deep px-8 py-4 text-lg font-bold text-white shadow-md transition hover:brightness-95"
@@ -124,7 +162,7 @@ export function SuccessClient() {
         </p>
       ) : null}
       <p className="mt-8 text-sm text-brand-charcoal/60">
-        {readerOnly ? (
+        {checking ? null : readerOnly ? (
           <>
             Open{" "}
             <Link href="/library" className="font-semibold text-brand-green-deep underline">

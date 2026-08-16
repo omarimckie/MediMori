@@ -1,10 +1,6 @@
 import { normalizeEmail } from "@/lib/checkout-ownership";
 import { sendLibraryAccessEmail } from "@/lib/email";
-import {
-  createRawMagicToken,
-  insertMagicLinkToken,
-  isMagicLinkRateLimited,
-} from "@/lib/magic-link";
+import { createLibraryAccessUrl } from "@/lib/magic-link";
 import { listEntitlementsForEmail } from "@/lib/purchases";
 import { NextResponse } from "next/server";
 
@@ -45,28 +41,18 @@ export async function POST(request: Request) {
   };
 
   try {
-    if (await isMagicLinkRateLimited(email)) {
-      return NextResponse.json(generic);
-    }
-
     const entitlements = await listEntitlementsForEmail(email);
     if (entitlements.length === 0) {
       return NextResponse.json(generic);
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-    if (!siteUrl) {
-      return NextResponse.json(
-        { error: "Site URL is not configured." },
-        { status: 503 },
-      );
+    const accessUrl = await createLibraryAccessUrl(email);
+    if (!accessUrl) {
+      return NextResponse.json(generic);
     }
 
-    const rawToken = createRawMagicToken();
-    await insertMagicLinkToken(email, rawToken);
-    const accessUrl = `${siteUrl}/access/${rawToken}`;
-    const isLocalSite = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
-      siteUrl,
+    const isLocalSite = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(
+      accessUrl,
     );
 
     try {

@@ -3,6 +3,7 @@ import {
   getEbookBlobPathname,
 } from "@/lib/ebook-blob";
 import { getBookById } from "@/lib/books";
+import { isReaderBookId } from "@/lib/reader-catalog";
 import { isAllowedEbookPrice } from "@/lib/stripe-prices";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
 import { NextResponse } from "next/server";
@@ -43,7 +44,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const sessionId = new URL(request.url).searchParams.get("session_id");
+    const searchParams = new URL(request.url).searchParams;
+    const sessionId = searchParams.get("session_id");
+    const intentOnly = searchParams.get("intent") === "1";
     if (!sessionId) {
       return NextResponse.json(
         { error: "Missing session_id query parameter." },
@@ -117,7 +120,7 @@ export async function GET(request: Request) {
       );
     }
 
-    if (book.id === "book-one" || book.id === "book-three") {
+    if (isReaderBookId(book.id)) {
       return NextResponse.json(
         {
           error:
@@ -126,6 +129,10 @@ export async function GET(request: Request) {
         },
         { status: 403 },
       );
+    }
+
+    if (intentOnly) {
+      return NextResponse.json({ readerOnly: false });
     }
 
     const pathname = getEbookBlobPathname(book.id);

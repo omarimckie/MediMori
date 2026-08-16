@@ -1,4 +1,6 @@
 import { evaluatePaidCheckout } from "@/lib/checkout-ownership";
+import { sendLibraryAccessEmail } from "@/lib/email";
+import { createLibraryAccessUrl } from "@/lib/magic-link";
 import { recordPurchaseAndEntitlement } from "@/lib/purchases";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -126,6 +128,19 @@ export async function POST(request: Request) {
       { error: "Purchase could not be recorded." },
       { status: 500 },
     );
+  }
+
+  try {
+    const accessUrl = await createLibraryAccessUrl(evaluation.purchase.email);
+    if (accessUrl) {
+      await sendLibraryAccessEmail(evaluation.purchase.email, accessUrl);
+    }
+  } catch (error) {
+    console.error("Could not send purchase access email:", {
+      sessionId: evaluation.purchase.stripeCheckoutSessionId,
+      bookId: evaluation.purchase.bookId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
   }
 
   return NextResponse.json({ received: true });
