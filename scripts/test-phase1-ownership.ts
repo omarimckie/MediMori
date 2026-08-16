@@ -166,7 +166,7 @@ assert(
     !("card" in sickle.purchase) &&
     !("payment_method" in sickle.purchase) &&
     Object.keys(sickle.purchase).sort().join(",") ===
-      "bookId,email,stripeCheckoutSessionId,stripePaymentIntentId",
+      "amountCents,bookId,currency,email,stripeChargeId,stripeCheckoutSessionId,stripePaymentIntentId",
 );
 
 async function runAsyncChecks() {

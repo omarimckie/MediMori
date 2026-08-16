@@ -1,6 +1,7 @@
 import { evaluatePaidCheckout } from "@/lib/checkout-ownership";
 import { sendLibraryAccessEmail } from "@/lib/email";
 import { createLibraryAccessUrl } from "@/lib/magic-link";
+import { recordStripeRefundAndRecompute } from "@/lib/purchase-refunds";
 import { recordPurchaseAndEntitlement } from "@/lib/purchases";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -14,7 +15,7 @@ async function loadSessionWithLineItems(
   let session: Stripe.Checkout.Session;
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["line_items.data.price"],
+      expand: ["line_items.data.price", "payment_intent.latest_charge"],
     });
   } catch {
     return null;
@@ -48,6 +49,58 @@ async function loadSessionWithLineItems(
   };
 
   return session;
+}
+
+function refundPaymentIntentId(refund: Stripe.Refund): string | null {
+  const paymentIntent = refund.payment_intent;
+  if (!paymentIntent) return null;
+  if (typeof paymentIntent === "string") return paymentIntent;
+  return paymentIntent.id ?? null;
+}
+
+function refundChargeId(
+  refund: Stripe.Refund,
+  fallbackChargeId?: string | null,
+): string | null {
+  const charge = refund.charge;
+  if (typeof charge === "string") return charge;
+  if (charge && typeof charge === "object" && "id" in charge) {
+    return charge.id ?? fallbackChargeId ?? null;
+  }
+  return fallbackChargeId ?? null;
+}
+
+function chargeId(charge: Stripe.Charge): string | null {
+  return charge.id ?? null;
+}
+
+function stripeRefundToRecord(
+  refund: Stripe.Refund,
+  fallbackChargeId?: string | null,
+) {
+  const succeeded = refund.status === "succeeded";
+  return {
+    stripeRefundId: refund.id,
+    amountCents: refund.amount,
+    currency: refund.currency,
+    status: refund.status ?? "pending",
+    stripeChargeId: refundChargeId(refund, fallbackChargeId),
+    stripePaymentIntentId: refundPaymentIntentId(refund),
+    reason: refund.reason ? String(refund.reason) : null,
+    processedAt: succeeded
+      ? new Date((refund.created ?? 0) * 1000)
+      : null,
+  };
+}
+
+async function listChargeRefunds(
+  stripe: Stripe,
+  charge: Stripe.Charge,
+): Promise<Stripe.Refund[]> {
+  const embedded = charge.refunds?.data;
+  if (embedded?.length) return embedded;
+  const listed = await stripe.refunds.list({ charge: charge.id, limit: 100 });
+  return listed.data;
 }
 
 export async function POST(request: Request) {
@@ -86,6 +139,64 @@ export async function POST(request: Request) {
       { error: "Invalid Stripe signature." },
       { status: 400 },
     );
+  }
+
+  if (
+    event.type === "refund.created" ||
+    event.type === "refund.updated" ||
+    event.type === "refund.failed"
+  ) {
+    const refund = event.data.object as Stripe.Refund;
+    try {
+      const result = await recordStripeRefundAndRecompute(
+        stripeRefundToRecord(refund),
+      );
+      if (result.unmatched) {
+        console.error("Refund webhook did not match a purchase:", {
+          refundId: refund.id,
+          paymentIntent: refundPaymentIntentId(refund),
+        });
+        return NextResponse.json({ received: true, unmatched: true });
+      }
+    } catch (error) {
+      console.error("Could not record Stripe refund:", {
+        refundId: refund.id,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return NextResponse.json(
+        { error: "Refund could not be recorded." },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    try {
+      const refunds = await listChargeRefunds(stripe, charge);
+      for (const refund of refunds) {
+        const result = await recordStripeRefundAndRecompute(
+          stripeRefundToRecord(refund, chargeId(charge)),
+        );
+        if (result.unmatched) {
+          console.error("Charge refund did not match a purchase:", {
+            refundId: refund.id,
+            chargeId: charge.id,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Could not record charge refunds:", {
+        chargeId: charge.id,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return NextResponse.json(
+        { error: "Refund could not be recorded." },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ received: true });
   }
 
   if (event.type !== "checkout.session.completed") {

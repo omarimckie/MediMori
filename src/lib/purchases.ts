@@ -1,7 +1,10 @@
 import { normalizeEmail } from "./checkout-ownership";
 import { getSql } from "./db";
+import { recomputeEntitlement } from "./purchase-refunds";
 
 export { normalizeEmail };
+
+export type RefundStatus = "paid" | "partially_refunded" | "fully_refunded";
 
 export type PurchaseRow = {
   id: string;
@@ -9,6 +12,11 @@ export type PurchaseRow = {
   bookId: string;
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  stripeChargeId: string | null;
+  refundStatus: RefundStatus;
+  fullyRefundedAt: Date | null;
   purchasedAt: Date;
 };
 
@@ -24,11 +32,25 @@ export type RecordPurchaseInput = {
   bookId: string;
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string | null;
+  amountCents?: number | null;
+  currency?: string | null;
+  stripeChargeId?: string | null;
 };
 
 function asDate(value: unknown): Date {
   if (value instanceof Date) return value;
   return new Date(String(value));
+}
+
+function mapRefundStatus(value: unknown): RefundStatus {
+  if (
+    value === "paid" ||
+    value === "partially_refunded" ||
+    value === "fully_refunded"
+  ) {
+    return value;
+  }
+  return "paid";
 }
 
 function mapPurchase(row: Record<string, unknown>): PurchaseRow {
@@ -41,6 +63,14 @@ function mapPurchase(row: Record<string, unknown>): PurchaseRow {
       row.stripe_payment_intent_id == null
         ? null
         : String(row.stripe_payment_intent_id),
+    amountCents:
+      row.amount_cents == null ? null : Number(row.amount_cents),
+    currency: row.currency == null ? null : String(row.currency),
+    stripeChargeId:
+      row.stripe_charge_id == null ? null : String(row.stripe_charge_id),
+    refundStatus: mapRefundStatus(row.refund_status),
+    fullyRefundedAt:
+      row.fully_refunded_at == null ? null : asDate(row.fully_refunded_at),
     purchasedAt: asDate(row.purchased_at),
   };
 }
@@ -60,9 +90,56 @@ export async function getPurchaseByCheckoutSessionId(
   const sql = getSql();
   const rows = await sql`
     SELECT id, email, book_id, stripe_checkout_session_id,
-           stripe_payment_intent_id, purchased_at
+           stripe_payment_intent_id, amount_cents, currency, stripe_charge_id,
+           refund_status, fully_refunded_at, purchased_at
     FROM purchases
     WHERE stripe_checkout_session_id = ${stripeCheckoutSessionId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? mapPurchase(row as Record<string, unknown>) : null;
+}
+
+export async function getPurchaseById(id: string): Promise<PurchaseRow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, email, book_id, stripe_checkout_session_id,
+           stripe_payment_intent_id, amount_cents, currency, stripe_charge_id,
+           refund_status, fully_refunded_at, purchased_at
+    FROM purchases
+    WHERE id = ${id}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? mapPurchase(row as Record<string, unknown>) : null;
+}
+
+export async function getPurchaseByPaymentIntentId(
+  stripePaymentIntentId: string,
+): Promise<PurchaseRow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, email, book_id, stripe_checkout_session_id,
+           stripe_payment_intent_id, amount_cents, currency, stripe_charge_id,
+           refund_status, fully_refunded_at, purchased_at
+    FROM purchases
+    WHERE stripe_payment_intent_id = ${stripePaymentIntentId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? mapPurchase(row as Record<string, unknown>) : null;
+}
+
+export async function getPurchaseByChargeId(
+  stripeChargeId: string,
+): Promise<PurchaseRow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, email, book_id, stripe_checkout_session_id,
+           stripe_payment_intent_id, amount_cents, currency, stripe_charge_id,
+           refund_status, fully_refunded_at, purchased_at
+    FROM purchases
+    WHERE stripe_charge_id = ${stripeChargeId}
     LIMIT 1
   `;
   const row = rows[0];
@@ -101,8 +178,9 @@ export async function getEntitlement(
 }
 
 /**
- * Inserts a purchase and upserts entitlement in one Postgres transaction.
+ * Inserts a purchase and recomputes entitlement from currently valid purchases.
  * Duplicate Stripe checkout sessions are treated as success (idempotent).
+ * A fully refunded purchase will not restore access on replay.
  */
 export async function recordPurchaseAndEntitlement(
   input: RecordPurchaseInput,
@@ -110,34 +188,36 @@ export async function recordPurchaseAndEntitlement(
   const sql = getSql();
   const email = normalizeEmail(input.email);
   const purchaseId = crypto.randomUUID();
+  const amountCents = input.amountCents ?? null;
+  const currency = input.currency?.trim() || null;
+  const stripeChargeId = input.stripeChargeId?.trim() || null;
 
   try {
-    await sql.transaction((txn) => [
-      txn`
-        INSERT INTO purchases (
-          id,
-          email,
-          book_id,
-          stripe_checkout_session_id,
-          stripe_payment_intent_id
-        )
-        VALUES (
-          ${purchaseId}::uuid,
-          ${email},
-          ${input.bookId},
-          ${input.stripeCheckoutSessionId},
-          ${input.stripePaymentIntentId}
-        )
-        ON CONFLICT (stripe_checkout_session_id) DO NOTHING
-      `,
-      txn`
-        INSERT INTO entitlements (email, book_id, first_purchase_id)
-        SELECT ${email}, ${input.bookId}, id
-        FROM purchases
-        WHERE stripe_checkout_session_id = ${input.stripeCheckoutSessionId}
-        ON CONFLICT (email, book_id) DO NOTHING
-      `,
-    ]);
+    await sql`
+      INSERT INTO purchases (
+        id,
+        email,
+        book_id,
+        stripe_checkout_session_id,
+        stripe_payment_intent_id,
+        amount_cents,
+        currency,
+        stripe_charge_id,
+        refund_status
+      )
+      VALUES (
+        ${purchaseId}::uuid,
+        ${email},
+        ${input.bookId},
+        ${input.stripeCheckoutSessionId},
+        ${input.stripePaymentIntentId},
+        ${amountCents},
+        ${currency},
+        ${stripeChargeId},
+        'paid'
+      )
+      ON CONFLICT (stripe_checkout_session_id) DO NOTHING
+    `;
   } catch (error) {
     const code =
       typeof error === "object" &&
@@ -157,6 +237,8 @@ export async function recordPurchaseAndEntitlement(
   if (!purchase) {
     throw new Error("Purchase was not recorded.");
   }
+
+  await recomputeEntitlement(purchase.email, purchase.bookId);
 
   return {
     created: purchase.id === purchaseId,

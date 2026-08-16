@@ -9,6 +9,9 @@ export type VerifiedCheckoutPurchase = {
   bookId: string;
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  stripeChargeId: string | null;
 };
 
 export type CheckoutOwnershipResult =
@@ -32,6 +35,15 @@ function paymentIntentId(
   if (!paymentIntent) return null;
   if (typeof paymentIntent === "string") return paymentIntent;
   return paymentIntent.id ?? null;
+}
+
+function chargeIdFromSession(session: Stripe.Checkout.Session): string | null {
+  const paymentIntent = session.payment_intent;
+  if (!paymentIntent || typeof paymentIntent === "string") return null;
+  const charge = paymentIntent.latest_charge;
+  if (!charge) return null;
+  if (typeof charge === "string") return charge;
+  return charge.id ?? null;
 }
 
 function customerEmailFromSession(session: Stripe.Checkout.Session): string {
@@ -115,6 +127,10 @@ export function evaluatePaidCheckout(
       bookId: book.id,
       stripeCheckoutSessionId: session.id,
       stripePaymentIntentId: paymentIntentId(session.payment_intent),
+      amountCents:
+        typeof session.amount_total === "number" ? session.amount_total : null,
+      currency: session.currency?.trim() || null,
+      stripeChargeId: chargeIdFromSession(session),
     },
   };
 }
