@@ -117,6 +117,17 @@ export async function GET(request: Request) {
       );
     }
 
+    if (book.id === "book-one" || book.id === "book-three") {
+      return NextResponse.json(
+        {
+          error:
+            "This book is available through the protected online reader, not as a PDF download.",
+          readerOnly: true,
+        },
+        { status: 403 },
+      );
+    }
+
     const pathname = getEbookBlobPathname(book.id);
     if (!pathname) {
       return NextResponse.json(

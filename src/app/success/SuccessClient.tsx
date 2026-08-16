@@ -9,10 +9,12 @@ export function SuccessClient() {
   const sessionId = searchParams.get("session_id");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [readerOnly, setReaderOnly] = useState(false);
 
   const download = useCallback(async () => {
     if (!sessionId) return;
     setError(null);
+    setReaderOnly(false);
     setLoading(true);
     try {
       const url = `/api/download?session_id=${encodeURIComponent(sessionId)}`;
@@ -37,12 +39,18 @@ export function SuccessClient() {
 
       if (!res.ok) {
         let message = "Download could not start.";
+        let isReaderOnly = false;
         try {
-          const data = (await res.json()) as { error?: string };
+          const data = (await res.json()) as {
+            error?: string;
+            readerOnly?: boolean;
+          };
           if (data.error) message = data.error;
+          isReaderOnly = data.readerOnly === true;
         } catch {
           message = `Download failed (${res.status}).`;
         }
+        setReaderOnly(isReaderOnly);
         setError(message);
         return;
       }
@@ -84,30 +92,54 @@ export function SuccessClient() {
         Your eBook is ready
       </h1>
       <p className="mt-3 text-brand-charcoal/80">
-        Click the button below to download your PDF. If anything goes wrong, you
-        will see a message on this page instead of a broken tab.
+        Storybooks open in My Books. Word Search downloads as a PDF.
       </p>
-      <button
-        type="button"
-        onClick={download}
-        disabled={loading}
-        className="mt-10 inline-flex rounded-2xl bg-brand-blue-deep px-8 py-4 text-lg font-bold text-white shadow-md transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
-      >
-        {loading ? "Preparing download…" : "Download eBook"}
-      </button>
+      {readerOnly ? (
+        <Link
+          href="/library"
+          className="mt-10 inline-flex rounded-2xl bg-brand-blue-deep px-8 py-4 text-lg font-bold text-white shadow-md transition hover:brightness-95"
+        >
+          Open My Books
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={download}
+          disabled={loading}
+          className="mt-10 inline-flex rounded-2xl bg-brand-blue-deep px-8 py-4 text-lg font-bold text-white shadow-md transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
+        >
+          {loading ? "Preparing download…" : "Download eBook"}
+        </button>
+      )}
       {error ? (
         <p
-          className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-medium text-red-800"
+          className={
+            readerOnly
+              ? "mt-6 rounded-2xl border border-brand-green/30 bg-brand-green/10 px-4 py-3 text-left text-sm font-medium text-brand-charcoal"
+              : "mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-medium text-red-800"
+          }
           role="alert"
         >
           {error}
         </p>
       ) : null}
       <p className="mt-8 text-sm text-brand-charcoal/60">
-        Trouble downloading?{" "}
-        <Link href="/books" className="font-semibold text-brand-green-deep underline">
-          Return to the shop
-        </Link>
+        {readerOnly ? (
+          <>
+            Open{" "}
+            <Link href="/library" className="font-semibold text-brand-green-deep underline">
+              My Books
+            </Link>{" "}
+            to read this storybook.
+          </>
+        ) : (
+          <>
+            Trouble downloading?{" "}
+            <Link href="/books" className="font-semibold text-brand-green-deep underline">
+              Return to the shop
+            </Link>
+          </>
+        )}
       </p>
     </div>
   );
