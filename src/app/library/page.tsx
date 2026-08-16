@@ -88,8 +88,8 @@ export default async function LibraryPage({ searchParams }: Props) {
                   </h2>
                   <p className="mt-2 text-sm text-brand-charcoal/75">
                     {isWordSearch
-                      ? "You own this PDF. Download your copy whenever you need it."
-                      : "You own this storybook. Open the protected online reader."}
+                      ? "PDF download available."
+                      : "Available to read in your browser. Offline download is not available."}
                   </p>
                   {isWordSearch ? (
                     <a
@@ -103,7 +103,7 @@ export default async function LibraryPage({ searchParams }: Props) {
                       href={`/read/${row.bookId}`}
                       className="tf-btn tf-btn-primary mt-4 inline-flex"
                     >
-                      Open reader
+                      Read Online
                     </Link>
                   )}
                 </li>

@@ -64,11 +64,14 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
   return (
     <form onSubmit={onSubmit} className="rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4">
       <p className="text-sm font-bold text-brand-charcoal">
-        Buy direct eBook (instant download)
+        {bookId === "book-two"
+          ? "Buy direct eBook (instant download)"
+          : "Buy direct eBook"}
       </p>
       <p className="mt-1 text-xs text-brand-charcoal/70">
-        Enter your name and email, complete payment, and your download starts on
-        the success page. Email subscribers receive 10% off eBook purchases.
+        {bookId === "book-two"
+          ? "Enter your name and email, complete payment, and your download starts on the success page. Email subscribers receive 10% off eBook purchases."
+          : "Enter your name and email, then complete payment. Email subscribers receive 10% off eBook purchases."}
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -105,9 +108,20 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-brand-charcoal/70">
-        Digital purchase: This is a digital product. Refunds are limited and
-        generally unavailable after the content has been accessed or downloaded.
-        See our{" "}
+        {bookId === "book-two" ? (
+          <>
+            Digital eBook: After purchase, this collection is available as a PDF
+            download through your Twilight Feather Books library.
+          </>
+        ) : (
+          <>
+            Digital eBook: This book is available to read online through your
+            Twilight Feather Books library. It is not available for offline
+            download.
+          </>
+        )}{" "}
+        Refunds are limited and generally unavailable after the content has been
+        accessed or downloaded. See our{" "}
         <Link
           href="/refund-policy"
           className="font-semibold text-brand-green-deep underline underline-offset-2"

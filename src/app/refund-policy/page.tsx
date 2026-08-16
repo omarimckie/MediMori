@@ -83,6 +83,15 @@ export default function RefundPolicyPage() {
             downloaded, except when required by applicable law or when Twilight
             Feather determines that an exception is appropriate.
           </p>
+          <h3 className="mt-6 text-lg font-extrabold text-brand-charcoal">
+            Online reader
+          </h3>
+          <p className="mt-2 leading-relaxed text-brand-charcoal/80">
+            Children Diseases: Sickle Cell and Children Diseases: Asthma are
+            provided through Twilight Feather&apos;s protected online reader and
+            are intended to be read in a web browser. These books are not
+            provided as downloadable or offline PDFs.
+          </p>
         </div>
 
         <div>
