@@ -187,7 +187,6 @@ export function StorybookReader({
                   ? "max-h-full max-w-full select-none object-contain"
                   : "h-auto w-full select-none object-contain"
               }
-              style={{ WebkitUserDrag: "none" }}
             />
           ) : (
             <div className="flex min-h-64 items-center justify-center px-6 py-24 text-center text-sm text-brand-charcoal/70">
