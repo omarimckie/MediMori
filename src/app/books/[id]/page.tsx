@@ -1,4 +1,5 @@
 import { BookDetailContent } from "@/components/BookDetailContent";
+import { JsonLd } from "@/components/JsonLd";
 import { PageSection } from "@/components/PageSection";
 import { TfButton } from "@/components/ui/TfButton";
 import {
@@ -7,6 +8,13 @@ import {
   getBookById,
   getBooks,
 } from "@/lib/books";
+import {
+  DEFAULT_OG_IMAGE,
+  SITE_NAME,
+  bookProductJsonLd,
+  bookSeoDescription,
+  bookSeoTitle,
+} from "@/lib/seo";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -20,23 +28,41 @@ export function generateStaticParams() {
   return getBooks().map((book) => ({ id: book.id }));
 }
 
-function bookMetaDescription(book: NonNullable<ReturnType<typeof getBookById>>): string {
-  const fromTagline = book.tagline?.trim();
-  if (fromTagline) return fromTagline;
-  return book.description.trim();
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const book = getBookById(id);
 
   if (!book) {
-    return { title: "Book — Twilight.Feather" };
+    return { title: "Book" };
   }
 
+  const title = bookSeoTitle(book);
+  const description = bookSeoDescription(book);
+  const path = `/books/${book.id}`;
+  const image = book.coverImageUrl ?? DEFAULT_OG_IMAGE;
+
   return {
-    title: `${book.title} — Twilight.Feather`,
-    description: bookMetaDescription(book),
+    title: { absolute: `${title} — ${SITE_NAME}` },
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      type: "website",
+      title: `${title} — ${SITE_NAME}`,
+      description,
+      url: path,
+      images: [
+        {
+          url: image,
+          alt: `${book.title} book cover`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} — ${SITE_NAME}`,
+      description,
+      images: [image],
+    },
   };
 }
 
@@ -53,6 +79,7 @@ export default async function BookDetailPage({ params }: Props) {
 
   return (
     <main>
+      <JsonLd data={bookProductJsonLd(book)} />
       <PageSection tone="navy" className="!py-12 sm:!py-14 lg:!py-24">
         <Link
           href="/books"

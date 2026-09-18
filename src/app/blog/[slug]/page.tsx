@@ -1,6 +1,7 @@
 import { BlogPostAuthor } from "@/components/BlogPostAuthor";
 import { BlogPostBody } from "@/components/BlogPostBody";
 import { BlogShareActions } from "@/components/BlogShareActions";
+import { JsonLd } from "@/components/JsonLd";
 import { PageSection } from "@/components/PageSection";
 import {
   formatPostDate,
@@ -10,6 +11,7 @@ import {
   getPosts,
   isSharedBlogPost,
 } from "@/lib/blog";
+import { blogPostingJsonLd, SITE_NAME } from "@/lib/seo";
 import { absoluteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -37,17 +39,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const pageUrl = absoluteUrl(`/blog/${post.slug}`);
   const imageUrl = post.imageUrl ? absoluteUrl(post.imageUrl) : undefined;
+  const title = `${post.title} — ${SITE_NAME} Blog`;
 
   return {
-    title: `${post.title} — Twilight.Feather Blog`,
+    title: { absolute: title },
     description: post.excerpt,
+    alternates: { canonical: `/blog/${post.slug}` },
     openGraph: {
       type: "article",
       title: post.title,
       description: post.excerpt,
       url: pageUrl,
       publishedTime: post.publishedAt,
-      siteName: "Twilight.Feather",
+      siteName: SITE_NAME,
       ...(imageUrl
         ? {
             images: [{ url: imageUrl, alt: post.title }],
@@ -76,6 +80,7 @@ export default async function BlogPostPage({ params }: Props) {
 
   return (
     <main>
+      <JsonLd data={blogPostingJsonLd(post, author?.name)} />
       <PageSection tone="navy" className="py-12 sm:py-14" containerClassName="mx-auto max-w-3xl">
         <Link
           href="/blog"

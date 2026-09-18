@@ -8,8 +8,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "My Books | Twilight Feather",
+  title: "My Books",
   description: "Open the Twilight Feather eBooks you purchased.",
+  robots: { index: false, follow: false },
 };
 
 type Props = {

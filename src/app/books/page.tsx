@@ -1,11 +1,24 @@
 import { BooksCollection } from "@/components/BooksCollection";
 import { PageSection } from "@/components/PageSection";
 import { getBooks } from "@/lib/books";
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: "Books — Twilight.Feather",
-  description:
-    "Browse Twilight.Feather children’s books, including Children Diseases: Sickle Cell, Children Diseases: Asthma, and the Health & Medicine Word Search Collection.",
+const BOOKS_DESCRIPTION =
+  "Browse children’s health storybooks about sickle cell and asthma, plus a health & medicine word search PDF. Shop Twilight Feather eBooks from $7.";
+
+export const metadata: Metadata = {
+  title: "Children’s Health Books",
+  description: BOOKS_DESCRIPTION,
+  alternates: { canonical: "/books" },
+  openGraph: {
+    title: "Children’s Health Books — Twilight Feather",
+    description: BOOKS_DESCRIPTION,
+    url: "/books",
+  },
+  twitter: {
+    title: "Children’s Health Books — Twilight Feather",
+    description: BOOKS_DESCRIPTION,
+  },
 };
 
 export default function BooksPage() {

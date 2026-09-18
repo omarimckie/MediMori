@@ -1,9 +1,28 @@
 import { BlogPostCard } from "@/components/BlogPostCard";
 import { PageSection } from "@/components/PageSection";
 import { getPosts } from "@/lib/blog";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
+const BLOG_DESCRIPTION =
+  "Stories, tips, and children’s health insights from Twilight Feather — for parents, caregivers, and educators.";
+
+export const metadata: Metadata = {
+  title: "Blog",
+  description: BLOG_DESCRIPTION,
+  alternates: { canonical: "/blog" },
+  openGraph: {
+    title: "Blog — Twilight Feather",
+    description: BLOG_DESCRIPTION,
+    url: "/blog",
+  },
+  twitter: {
+    title: "Blog — Twilight Feather",
+    description: BLOG_DESCRIPTION,
+  },
+};
 
 export default async function BlogPage() {
   const posts = await getPosts();

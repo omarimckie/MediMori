@@ -46,6 +46,7 @@ const socialLinks = [
 ];
 
 const legalLinks = [
+  { label: "Blog", href: "/blog" },
   { label: "Privacy Policy", href: "/privacy-policy" },
   { label: "Terms of Use", href: "/terms-of-use" },
   { label: "Refund Policy", href: "/refund-policy" },
