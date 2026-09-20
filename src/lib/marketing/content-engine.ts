@@ -13,12 +13,12 @@ import { getMarketingTimezone } from "./config";
 import { platformScheduleSlot, rotate } from "./planner";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
+import { selectAssetAsync } from "./asset-selection";
 import type {
   AudienceId,
   ChannelQuotas,
   ContentCategory,
   ContentFormat,
-  MarketingAsset,
   MarketingCampaign,
   MarketingContent,
   Platform,
@@ -177,23 +177,6 @@ function copyFor(args: {
   };
 }
 
-export function selectAsset(
-  assets: MarketingAsset[],
-  args: { bookId: string | null; characterId: string | null; platform: Platform },
-): { asset: MarketingAsset | null; needsNewAsset: boolean; source: string } {
-  const approved = assets.filter((asset) => asset.approved);
-  const byBook = approved.filter((asset) => !args.bookId || asset.bookId === args.bookId);
-  const character = byBook.find((asset) => args.characterId && asset.characterId === args.characterId);
-  if (character) return { asset: character, needsNewAsset: false, source: "existing_approved_asset" };
-  const cover = byBook.find((asset) => asset.type === "cover");
-  if (cover) return { asset: cover, needsNewAsset: false, source: "existing_approved_asset" };
-  const interior = byBook.find((asset) => asset.type === "interior");
-  if (interior) return { asset: interior, needsNewAsset: false, source: "existing_asset_transformed" };
-  const template = approved.find((asset) => asset.type === "template");
-  if (template) return { asset: template, needsNewAsset: false, source: "existing_template" };
-  return { asset: null, needsNewAsset: true, source: "new_generated_asset_request" };
-}
-
 export async function generateWeeklyContent(
   store: MarketingStore,
   campaign: MarketingCampaign,
@@ -235,10 +218,12 @@ export async function generateWeeklyContent(
         characterName: character?.name ?? null,
         index,
       });
-      const chosen = selectAsset(assets, {
+      const chosen = await selectAssetAsync(assets, {
         bookId: book.id,
         characterId: character?.id ?? null,
         platform,
+        format,
+        category,
       });
       const flags = scanMarketingText(`${copy.title ?? ""}\n${copy.body}\n${copy.cta}`);
       const warnings = [

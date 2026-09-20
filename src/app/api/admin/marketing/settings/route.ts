@@ -1,6 +1,6 @@
 import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
-import { DEFAULT_CHANNEL_QUOTAS, parseChannelQuotas } from "@/lib/marketing/config";
+import { DEFAULT_CHANNEL_QUOTAS, isMockMode, parseChannelQuotas } from "@/lib/marketing/config";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function GET() {
   );
   const plans = await store.listWeeklyPlans();
   const publications = await store.listPublications();
-  return NextResponse.json({ quotas, plans, publications });
+  return NextResponse.json({ quotas, plans, publications, mockMode: isMockMode() });
 }
 
 export async function POST(request: Request) {

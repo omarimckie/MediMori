@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
@@ -22,7 +23,17 @@ type ContentItem = {
   bookId: string | null;
 };
 
+type PublicationRow = {
+  id: string;
+  contentId: string;
+  platform: string;
+  provider: string;
+  status: string;
+};
+
 type Settings = {
+  mockMode?: boolean;
+  publications?: PublicationRow[];
   plans: Array<{
     id: string;
     weekStart: string;
@@ -46,6 +57,14 @@ export function WeekClient() {
   const [message, setMessage] = useState<string | null>(null);
 
   const plan = settings?.plans[0];
+  const mockMode = settings?.mockMode ?? true;
+  const publicationByContent = useMemo(() => {
+    const map = new Map<string, PublicationRow>();
+    for (const row of settings?.publications ?? []) {
+      map.set(row.contentId, row);
+    }
+    return map;
+  }, [settings?.publications]);
 
   async function load() {
     const settingsData = (await fetch("/api/admin/marketing/settings").then((res) => res.json())) as Settings;
@@ -138,7 +157,7 @@ export function WeekClient() {
             disabled={busy}
             onClick={() => void act("/api/cron/marketing-publish", {})}
           >
-            Publish due items
+            {publishDueButtonLabel(mockMode)}
           </SecondaryButton>
         </div>
       </Card>
@@ -152,7 +171,18 @@ export function WeekClient() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap gap-2">
-                    <StatusPill status={item.status} />
+                    <StatusPill
+                      status={
+                        publicationByContent.get(item.id)
+                          ? formatPublicationStatusLabel(publicationByContent.get(item.id)!)
+                          : item.status
+                      }
+                    />
+                    {publicationByContent.get(item.id) ? (
+                      <span className="self-center text-xs text-brand-charcoal/55">
+                        Provider: {publicationByContent.get(item.id)!.provider}
+                      </span>
+                    ) : null}
                     <StatusPill status={item.category} />
                     <StatusPill status={item.format} />
                     {item.needsNewAsset ? <StatusPill status="needs asset" /> : null}

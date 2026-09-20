@@ -73,6 +73,14 @@ test("weekly generation creates platform-specific content and cost logs", async 
   const instagram = content.filter((item) => item.platform === "instagram");
   const facebook = content.filter((item) => item.platform === "facebook");
   assert.notEqual(instagram[0]?.body, facebook[0]?.body);
+  const assets = await store.listAssets();
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+  for (const item of instagram) {
+    const linked = item.assetIds.map((id) => assetById.get(id)).find(Boolean);
+    assert.ok(linked);
+    assert.equal(linked?.type, "cover");
+    assert.equal(linked?.url, "/covers/sickle-cell.png");
+  }
   assert.equal(content.every((item) => item.status === "needs_review"), true);
   const ops = await store.listOperations();
   assert.equal(ops.some((item) => item.operation === "create_campaign"), true);

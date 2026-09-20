@@ -2,6 +2,7 @@ import { estimatedAiCostUsd, getAIProvider } from "./ai";
 import { resolveContentImageUrl } from "./assets";
 import { regenerateContent } from "./content-engine";
 import { isMockMode } from "./config";
+import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import { inferPreferenceSignals } from "./preference-signals";
 import { getEmailProvider, getSocialPublisher } from "./publishers";
 import { logMarketing } from "./logger";
@@ -263,6 +264,10 @@ export async function scheduleApproved(
   if (content.status !== "approved" && content.status !== "scheduled") {
     throw new Error("Only approved content can be scheduled.");
   }
+  const preflight = await runPublishPreflight(store, content);
+  if (!preflight.ok) {
+    throw new Error(formatPreflightError(preflight));
+  }
   const key = idempotencyKey(content);
   const existing = await store.getPublicationByIdempotency(key);
   if (existing) return existing;
@@ -319,10 +324,23 @@ export async function publishPublication(
     return current;
   }
 
+  const preflight = await runPublishPreflight(store, content);
+  if (!preflight.ok) {
+    const attemptCount = current.attemptCount + 1;
+    const message = formatPreflightError(preflight);
+    const updated = await store.updatePublication(current.id, {
+      status: "failed",
+      attemptCount,
+      lastError: message,
+    });
+    await store.updateContent(content.id, { status: "failed" });
+    return updated ?? current;
+  }
+
   const started = Date.now();
   const social = getSocialPublisher(content.platform);
   const email = getEmailProvider();
-  const imageUrl = await resolveContentImageUrl(store, content);
+  const imageUrl = preflight.imageUrl ?? (await resolveContentImageUrl(store, content));
   const result =
     content.platform === "email"
       ? await email.send({

@@ -145,6 +145,10 @@ export type MarketingAsset = {
   approved: boolean;
   usageRestrictions: string | null;
   aspectRatio: string | null;
+  /** Persisted image width (authoritative for preflight when set). */
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  mimeType?: string | null;
   tags: string[];
   url: string | null;
   altText: string | null;

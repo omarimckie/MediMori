@@ -164,16 +164,47 @@ export class PostgresMarketingStore implements MarketingStore {
     const rows = await sql`
       INSERT INTO marketing_assets (
         id, name, type, source, book_id, character_id, campaign_id, approved,
-        usage_restrictions, aspect_ratio, tags, url, alt_text, is_demo
+        usage_restrictions, aspect_ratio, image_width, image_height, mime_type,
+        tags, url, alt_text, is_demo
       ) VALUES (
         ${input.id}::uuid, ${input.name}, ${input.type}, ${input.source},
         ${input.bookId}, ${input.characterId}, ${input.campaignId}::uuid,
         ${input.approved}, ${input.usageRestrictions}, ${input.aspectRatio},
+        ${input.imageWidth ?? null}, ${input.imageHeight ?? null}, ${input.mimeType ?? null},
         ${json(input.tags)}::jsonb, ${input.url}, ${input.altText}, ${input.isDemo}
       )
       RETURNING *
     `;
     return mapAsset(rows[0] as Record<string, unknown>);
+  }
+
+  async updateAsset(id: string, patch: Partial<MarketingAsset>) {
+    const sql = getSql();
+    const current = await this.getAsset(id);
+    if (!current) return null;
+    const next = { ...current, ...patch, id };
+    const rows = await sql`
+      UPDATE marketing_assets SET
+        name = ${next.name},
+        type = ${next.type},
+        source = ${next.source},
+        book_id = ${next.bookId},
+        character_id = ${next.characterId},
+        campaign_id = ${next.campaignId}::uuid,
+        approved = ${next.approved},
+        usage_restrictions = ${next.usageRestrictions},
+        aspect_ratio = ${next.aspectRatio},
+        image_width = ${next.imageWidth ?? null},
+        image_height = ${next.imageHeight ?? null},
+        mime_type = ${next.mimeType ?? null},
+        tags = ${json(next.tags)}::jsonb,
+        url = ${next.url},
+        alt_text = ${next.altText},
+        is_demo = ${next.isDemo}
+      WHERE id = ${id}::uuid
+      RETURNING *
+    `;
+    return rows[0] ? mapAsset(rows[0] as Record<string, unknown>) : null;
   }
 
   async getAsset(id: string) {

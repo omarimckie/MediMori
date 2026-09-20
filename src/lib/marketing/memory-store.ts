@@ -123,6 +123,14 @@ export class MemoryMarketingStore implements MarketingStore {
     return clone(row);
   }
 
+  async updateAsset(id: string, patch: Partial<MarketingAsset>) {
+    const current = this.assets.get(id);
+    if (!current) return null;
+    const row = { ...current, ...patch, id, createdAt: current.createdAt };
+    this.assets.set(id, row);
+    return clone(row);
+  }
+
   async getAsset(id: string) {
     const row = this.assets.get(id);
     return row ? clone(row) : null;
@@ -398,6 +406,9 @@ export function mapAsset(row: Record<string, unknown>): MarketingAsset {
     approved: asBoolean(row.approved),
     usageRestrictions: asStringOrNull(row.usage_restrictions),
     aspectRatio: asStringOrNull(row.aspect_ratio),
+    imageWidth: row.image_width != null ? asNumber(row.image_width) : null,
+    imageHeight: row.image_height != null ? asNumber(row.image_height) : null,
+    mimeType: asStringOrNull(row.mime_type),
     tags: asStringArray(row.tags),
     url: asStringOrNull(row.url),
     altText: asStringOrNull(row.alt_text),

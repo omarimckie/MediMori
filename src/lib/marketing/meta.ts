@@ -6,6 +6,7 @@ export type MetaErrorCode =
   | "meta_malformed_response"
   | "meta_image_missing"
   | "meta_image_inaccessible"
+  | "meta_invalid_image_aspect_ratio"
   | "meta_already_published";
 
 export type MetaGraphResult<T> =
@@ -94,6 +95,18 @@ export function classifyMetaHttpError(
       error: `meta_http_error: transient Meta API failure. ${message}`,
       errorCode: "meta_http_error",
       retryable: true,
+    };
+  }
+  if (
+    /aspect ratio/i.test(message) &&
+    (/cannot be published/i.test(message) ||
+      /valid aspect ratio/i.test(message) ||
+      /submit an image/i.test(message))
+  ) {
+    return {
+      error: `meta_invalid_image_aspect_ratio: ${message}`,
+      errorCode: "meta_invalid_image_aspect_ratio",
+      retryable: false,
     };
   }
   if (code === 100 && /image|url|photo/i.test(message)) {

@@ -8,9 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts",
+    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts src/lib/marketing/asset-pipeline.test.ts",
     "marketing:schema": "node scripts/apply-marketing-schema.mjs",
     "marketing:schema:pass1": "node scripts/apply-marketing-optimization-pass-1.mjs",
+    "marketing:schema:asset-truth": "node scripts/apply-marketing-asset-truth.mjs",
     "scrape:amazon": "node scripts/scrape-amazon.mjs",
     "security:check": "node scripts/check-secrets.mjs"
   },
@@ -22,6 +23,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.19.0",
+    "sharp": "^0.35.3",
     "stripe": "^22.0.1"
   },
   "devDependencies": {
@@ -33,7 +35,6 @@
     "eslint-config-next": "16.2.4",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.61.1",
-    "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "tsx": "^4.20.5",
     "typescript": "^5"

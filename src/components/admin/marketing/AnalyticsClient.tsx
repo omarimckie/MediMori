@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { publishDueButtonLabel } from "@/lib/marketing/publication-display";
 import { Card, PrimaryButton, StatusPill } from "./ui";
 
 type Analytics = {
@@ -27,10 +28,16 @@ type Analytics = {
 
 export function AnalyticsClient() {
   const [data, setData] = useState<Analytics | null>(null);
+  const [mockMode, setMockMode] = useState(true);
   const [publishing, setPublishing] = useState(false);
 
   async function load() {
-    setData(await fetch("/api/admin/marketing/analytics").then((res) => res.json()));
+    const [analytics, settings] = await Promise.all([
+      fetch("/api/admin/marketing/analytics").then((res) => res.json()),
+      fetch("/api/admin/marketing/settings").then((res) => res.json()),
+    ]);
+    setData(analytics);
+    setMockMode(settings.mockMode !== false);
   }
 
   useEffect(() => {
@@ -66,7 +73,7 @@ export function AnalyticsClient() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <PrimaryButton onClick={() => void publishDue()} disabled={publishing}>
-          Publish due items (mock-safe)
+          {publishDueButtonLabel(mockMode)}
         </PrimaryButton>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
