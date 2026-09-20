@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 type Props = {
   url: string;
@@ -21,11 +21,11 @@ function buildTwitterShareUrl(url: string, title: string) {
 
 export function BlogShareActions({ url, title }: Props) {
   const [copied, setCopied] = useState(false);
-  const [canNativeShare, setCanNativeShare] = useState(false);
-
-  useEffect(() => {
-    setCanNativeShare(typeof navigator !== "undefined" && "share" in navigator);
-  }, []);
+  const canNativeShare = useSyncExternalStore(
+    () => () => {},
+    () => typeof navigator !== "undefined" && "share" in navigator,
+    () => false,
+  );
 
   async function copyLink() {
     try {

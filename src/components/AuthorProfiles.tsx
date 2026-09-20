@@ -3,7 +3,7 @@
 import { PersonalSocialLinks } from "@/components/PersonalSocialLinks";
 import type { Author } from "@/data/authors";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type Props = {
   authors: Author[];
@@ -65,12 +65,6 @@ export function AuthorProfiles({ authors, initialAuthorId }: Props) {
     ? initialAuthorId
     : undefined;
   const [openId, setOpenId] = useState<string | null>(validInitialId ?? null);
-
-  useEffect(() => {
-    if (validInitialId) {
-      setOpenId(validInitialId);
-    }
-  }, [validInitialId]);
 
   return (
     <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2 md:gap-8 lg:gap-10">

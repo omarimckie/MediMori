@@ -1,0 +1,421 @@
+import assert from "node:assert/strict";
+import { afterEach, test } from "node:test";
+import { contentMayBePublished, publishPublication, scheduleApproved } from "./approval";
+import {
+  getMetaFacebookCredentials,
+  getMetaInstagramCredentials,
+  getMetaGraphVersion,
+} from "./config";
+import { MemoryMarketingStore } from "./memory-store";
+import { composePublishCaption, redactSecrets } from "./meta";
+import {
+  FacebookPagePublisher,
+  InstagramPublisher,
+  getSocialPublisher,
+} from "./publishers";
+import { seedMarketing } from "./seed";
+import type { MarketingContent, MarketingPublication } from "./types";
+
+const originalEnv = {
+  mock: process.env.MARKETING_MOCK_MODE,
+  igUser: process.env.META_INSTAGRAM_USER_ID,
+  igToken: process.env.META_INSTAGRAM_ACCESS_TOKEN,
+  fbPage: process.env.META_FACEBOOK_PAGE_ID,
+  fbToken: process.env.META_FACEBOOK_PAGE_ACCESS_TOKEN,
+  graph: process.env.META_GRAPH_API_VERSION,
+};
+
+afterEach(() => {
+  process.env.MARKETING_MOCK_MODE = originalEnv.mock;
+  process.env.META_INSTAGRAM_USER_ID = originalEnv.igUser;
+  process.env.META_INSTAGRAM_ACCESS_TOKEN = originalEnv.igToken;
+  process.env.META_FACEBOOK_PAGE_ID = originalEnv.fbPage;
+  process.env.META_FACEBOOK_PAGE_ACCESS_TOKEN = originalEnv.fbToken;
+  process.env.META_GRAPH_API_VERSION = originalEnv.graph;
+});
+
+const SECRET_TOKEN = "TEST_META_TOKEN_DO_NOT_LEAK";
+
+function sampleContent(overrides: Partial<MarketingContent> = {}): MarketingContent {
+  return {
+    id: "c1",
+    campaignId: "camp",
+    weeklyPlanId: null,
+    platform: "instagram",
+    format: "post",
+    category: "educational",
+    audience: "parents",
+    status: "scheduled",
+    title: "Hello",
+    body: "Warm bedtime copy",
+    cta: "Read the book",
+    seoTitle: null,
+    seoDescription: null,
+    scheduledFor: null,
+    timezone: "America/New_York",
+    assetIds: ["asset-1"],
+    needsNewAsset: false,
+    warnings: [],
+    safetyFlags: [],
+    trackingToken: "abc",
+    originalBody: "Warm bedtime copy",
+    bookId: "book-one",
+    isDemo: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function samplePublication(
+  overrides: Partial<MarketingPublication> = {},
+): MarketingPublication {
+  return {
+    id: "pub",
+    contentId: "c1",
+    campaignId: "camp",
+    platform: "instagram",
+    provider: "instagram",
+    status: "processing",
+    idempotencyKey: "pub:c1:instagram",
+    externalId: null,
+    url: null,
+    attemptCount: 0,
+    lastError: null,
+    scheduledFor: new Date().toISOString(),
+    publishedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function jsonResponse(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+test("Meta credential helpers require both id and token", () => {
+  assert.equal(getMetaGraphVersion({}), "v22.0");
+  assert.equal(getMetaInstagramCredentials({}), null);
+  assert.equal(
+    getMetaInstagramCredentials({
+      META_INSTAGRAM_USER_ID: "28572065502429844",
+    }),
+    null,
+  );
+  const ig = getMetaInstagramCredentials({
+    META_INSTAGRAM_USER_ID: "ig-user",
+    META_INSTAGRAM_ACCESS_TOKEN: SECRET_TOKEN,
+    META_GRAPH_API_VERSION: "v21.0",
+  });
+  assert.equal(ig?.userId, "ig-user");
+  assert.equal(ig?.graphVersion, "v21.0");
+  assert.equal(getMetaFacebookCredentials({ META_FACEBOOK_PAGE_ID: "page" }), null);
+});
+
+test("live publisher selection stays on the existing mock switch", () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  assert.equal(getSocialPublisher("instagram").id, "mock_social");
+  process.env.MARKETING_MOCK_MODE = "false";
+  assert.equal(getSocialPublisher("instagram").id, "instagram");
+  assert.equal(getSocialPublisher("facebook").id, "facebook_page");
+  assert.equal(getSocialPublisher("pinterest").id, "mock_social");
+});
+
+test("Instagram publisher constructs media then media_publish requests", async () => {
+  const calls: Array<{ url: string; body: URLSearchParams }> = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    calls.push({ url, body });
+    if (url.endsWith("/media")) return jsonResponse(200, { id: "container_1" });
+    if (url.endsWith("/media_publish")) return jsonResponse(200, { id: "ig_media_99" });
+    return jsonResponse(404, { error: { message: "unknown" } });
+  };
+
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.externalId, "ig_media_99");
+  assert.equal(calls.length, 2);
+  assert.equal(
+    calls[0]?.url,
+    "https://graph.instagram.com/v22.0/ig-user/media",
+  );
+  assert.equal(calls[0]?.body.get("image_url"), "https://twilight-feather.vercel.app/covers/sickle-cell.png");
+  assert.equal(
+    calls[0]?.body.get("caption"),
+    composePublishCaption("Warm bedtime copy", "Read the book"),
+  );
+  assert.equal(
+    calls[1]?.url,
+    "https://graph.instagram.com/v22.0/ig-user/media_publish",
+  );
+  assert.equal(calls[1]?.body.get("creation_id"), "container_1");
+  assert.ok(!calls[0]?.url.includes(SECRET_TOKEN));
+  assert.ok(!calls[1]?.url.includes(SECRET_TOKEN));
+});
+
+test("Facebook publisher uses photos for images and feed for text", async () => {
+  const calls: Array<{ url: string; body: URLSearchParams }> = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    calls.push({ url, body });
+    if (url.endsWith("/photos")) return jsonResponse(200, { id: "photo_1", post_id: "page_post_1" });
+    if (url.endsWith("/feed")) return jsonResponse(200, { id: "page_post_text" });
+    return jsonResponse(404, {});
+  };
+  const credentials = {
+    pageId: "page-id",
+    pageAccessToken: SECRET_TOKEN,
+    graphVersion: "v22.0",
+  };
+  const photo = await new FacebookPagePublisher({ fetch: fetchImpl, credentials }).publish({
+    content: sampleContent({ platform: "facebook" }),
+    publication: samplePublication({ platform: "facebook", provider: "facebook_page" }),
+    imageUrl: "https://twilight-feather.vercel.app/covers/asthma.png",
+  });
+  assert.equal(photo.ok, true);
+  assert.equal(photo.externalId, "page_post_1");
+  assert.equal(calls[0]?.url, "https://graph.facebook.com/v22.0/page-id/photos");
+  assert.equal(calls[0]?.body.get("url"), "https://twilight-feather.vercel.app/covers/asthma.png");
+
+  const text = await new FacebookPagePublisher({ fetch: fetchImpl, credentials }).publish({
+    content: sampleContent({ platform: "facebook" }),
+    publication: samplePublication({
+      id: "pub-text",
+      platform: "facebook",
+      provider: "facebook_page",
+      idempotencyKey: "pub:c1:facebook:text",
+    }),
+  });
+  assert.equal(text.ok, true);
+  assert.equal(text.externalId, "page_post_text");
+  assert.equal(calls[1]?.url, "https://graph.facebook.com/v22.0/page-id/feed");
+  assert.match(calls[1]?.body.get("message") ?? "", /Warm bedtime copy/);
+});
+
+test("missing Meta credentials fail without publishing", async () => {
+  const ig = await new InstagramPublisher({ credentials: null, fetch: async () => {
+    throw new Error("fetch should not run");
+  } }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/instagram-api-test.png",
+  });
+  assert.equal(ig.ok, false);
+  assert.equal(ig.errorCode, "meta_credentials_missing");
+
+  const fb = await new FacebookPagePublisher({ credentials: null, fetch: async () => {
+    throw new Error("fetch should not run");
+  } }).publish({
+    content: sampleContent({ platform: "facebook" }),
+    publication: samplePublication({ platform: "facebook" }),
+  });
+  assert.equal(fb.ok, false);
+  assert.equal(fb.errorCode, "meta_credentials_missing");
+});
+
+test("malformed Meta responses are not treated as published", async () => {
+  const result = await new InstagramPublisher({
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+    fetch: async () => jsonResponse(200, { unexpected: true }),
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_malformed_response");
+  assert.equal(result.externalId, undefined);
+});
+
+test("successful Meta result parsing returns the platform id only", async () => {
+  const ig = await new InstagramPublisher({
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+    fetch: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/media")) return jsonResponse(200, { id: "container" });
+      return jsonResponse(200, { id: "17841400000000000" });
+    },
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(ig.externalId, "17841400000000000");
+});
+
+test("idempotent publish does not call Meta again", async () => {
+  let calls = 0;
+  const fetchImpl: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(200, { id: "should-not-use" });
+  };
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication({
+      status: "published",
+      externalId: "already_posted",
+    }),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.externalId, "already_posted");
+  assert.equal(calls, 0);
+});
+
+test("expired tokens are classified and secrets stay out of errors", async () => {
+  const result = await new FacebookPagePublisher({
+    credentials: {
+      pageId: "page-id",
+      pageAccessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+    fetch: async () =>
+      jsonResponse(401, {
+        error: {
+          message: `Invalid OAuth access token ${SECRET_TOKEN}`,
+          type: "OAuthException",
+          code: 190,
+        },
+      }),
+  }).publish({
+    content: sampleContent({ platform: "facebook" }),
+    publication: samplePublication({ platform: "facebook" }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_auth_expired");
+  assert.ok(result.error);
+  assert.ok(!result.error.includes(SECRET_TOKEN));
+  assert.equal(redactSecrets(`token=${SECRET_TOKEN}`, [SECRET_TOKEN]).includes(SECRET_TOKEN), false);
+});
+
+test("Instagram refuses unpublished or local image URLs", async () => {
+  const missing = await new InstagramPublisher({
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.errorCode, "meta_image_missing");
+
+  const local = await new InstagramPublisher({
+    credentials: {
+      userId: "ig-user",
+      accessToken: SECRET_TOKEN,
+      graphVersion: "v22.0",
+    },
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "http://localhost:3000/instagram-api-test.png",
+  });
+  assert.equal(local.ok, false);
+  assert.equal(local.errorCode, "meta_image_inaccessible");
+});
+
+test("failed Meta publish does not mark the store publication as published", async () => {
+  process.env.MARKETING_MOCK_MODE = "false";
+  process.env.META_INSTAGRAM_USER_ID = "ig-user";
+  process.env.META_INSTAGRAM_ACCESS_TOKEN = SECRET_TOKEN;
+  const store = new MemoryMarketingStore();
+  await seedMarketing(store);
+  const item = (await store.listContent({ platform: "instagram", status: "needs_review" }))[0];
+  assert.ok(item);
+  const asset = await store.createAsset({
+    id: crypto.randomUUID(),
+    name: "Public test image",
+    type: "cover",
+    source: "catalog",
+    bookId: item.bookId,
+    characterId: null,
+    campaignId: item.campaignId,
+    approved: true,
+    usageRestrictions: null,
+    aspectRatio: "1:1",
+    tags: ["test"],
+    url: "https://twilight-feather.vercel.app/instagram-api-test.png",
+    altText: "API test",
+    isDemo: true,
+  });
+  await store.updateContent(item.id, { status: "approved", assetIds: [asset.id] });
+  const publication = await scheduleApproved(store, item.id);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    jsonResponse(400, { error: { message: `bad token ${SECRET_TOKEN}`, code: 190 } })) as typeof fetch;
+  try {
+    const failed = await publishPublication(store, publication);
+    assert.equal(failed.status, "failed");
+    assert.notEqual(failed.status, "published");
+    assert.equal(failed.externalId, null);
+    assert.ok(failed.lastError);
+    assert.ok(!failed.lastError.includes(SECRET_TOKEN));
+    assert.match(failed.lastError, /meta_auth_expired/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("unapproved content cannot be published", async () => {
+  const store = new MemoryMarketingStore();
+  await seedMarketing(store);
+  const item = (await store.listContent({ status: "needs_review" }))[0];
+  assert.ok(item);
+  assert.equal(contentMayBePublished(item.status), false);
+  const publication = await store.createPublication({
+    id: crypto.randomUUID(),
+    contentId: item.id,
+    campaignId: item.campaignId,
+    platform: item.platform,
+    provider: "instagram",
+    status: "scheduled",
+    idempotencyKey: `blocked:${item.id}`,
+    externalId: null,
+    url: null,
+    attemptCount: 0,
+    lastError: null,
+    scheduledFor: new Date().toISOString(),
+    publishedAt: null,
+  });
+  const result = await publishPublication(store, publication);
+  assert.equal(result.status, "failed");
+  assert.match(result.lastError ?? "", /not approved/);
+  const content = await store.getContent(item.id);
+  assert.equal(content?.status, "needs_review");
+});

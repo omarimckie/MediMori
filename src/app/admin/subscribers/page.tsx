@@ -37,7 +37,10 @@ export default function AdminSubscribersPage() {
   }
 
   useEffect(() => {
-    void loadLeads();
+    const timer = window.setTimeout(() => {
+      void loadLeads();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   function formatDate(value: string) {

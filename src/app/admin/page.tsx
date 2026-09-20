@@ -34,7 +34,10 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    void loadPosts();
+    const timer = window.setTimeout(() => {
+      void loadPosts();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function seedStarterPosts() {
