@@ -16,6 +16,11 @@ import type {
   WeeklyPlan,
 } from "./types";
 
+/** Admin-only exhausted retry may set allowExhaustedRetry on claim. */
+export type ClaimPublicationOptions = {
+  allowExhaustedRetry?: boolean;
+};
+
 export type MarketingStore = {
   createCampaign(
     input: Omit<MarketingCampaign, "createdAt" | "updatedAt">,
@@ -70,7 +75,10 @@ export type MarketingStore = {
     key: string,
   ): Promise<MarketingPublication | null>;
   listPublications(status?: MarketingPublication["status"]): Promise<MarketingPublication[]>;
-  claimPublication(id: string): Promise<MarketingPublication | null>;
+  claimPublication(
+    id: string,
+    options?: ClaimPublicationOptions,
+  ): Promise<MarketingPublication | null>;
 
   upsertMetric(input: Omit<MarketingMetric, "createdAt">): Promise<MarketingMetric>;
   listMetrics(campaignId?: string): Promise<MarketingMetric[]>;

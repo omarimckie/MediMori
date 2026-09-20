@@ -123,7 +123,9 @@ export async function retryFailedInstagramPublication(
     };
   }
 
-  const result = await retryPublication(store, publicationId);
+  const result = await retryPublication(store, publicationId, {
+    allowExhaustedRetry: true,
+  });
 
   const published = result.status === "published";
   return {

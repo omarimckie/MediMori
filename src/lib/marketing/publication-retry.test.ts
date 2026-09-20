@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import { NextResponse } from "next/server";
+import { publishDue, retryPublication } from "./approval";
 import { MemoryMarketingStore } from "./memory-store";
 import { ensureCatalogAssets } from "./assets";
 import { handleAdminPublicationRetryRequest } from "./publication-retry-http";
@@ -249,4 +250,97 @@ test("authenticated handler returns non-secret JSON", async () => {
   const body = (await response.json()) as PublicationRetryResponseBody;
   assertNoSecrets(body);
   assert.equal(body.publicationId, publicationId);
+});
+
+test("normal retryPublication cannot claim exhausted failed publication", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedInstagramPublication(store);
+  await store.updatePublication(publicationId, { attemptCount: 3, status: "failed" });
+
+  const result = await retryPublication(store, publicationId);
+  assert.equal(result.attemptCount, 3);
+  assert.equal(result.status, "failed");
+  assert.equal(result.externalId, null);
+});
+
+test("publishDue does not process exhausted failed publications", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedInstagramPublication(store);
+  await store.updatePublication(publicationId, {
+    attemptCount: 3,
+    status: "failed",
+    lastError: "meta_http_error: transient Meta API failure. temporary",
+  });
+
+  const results = await publishDue(store);
+  assert.equal(results.length, 0);
+  const pub = await store.getPublication(publicationId);
+  assert.equal(pub?.attemptCount, 3);
+});
+
+test("admin single-publication retry overrides exhausted claim and increments attempts", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedInstagramPublication(store);
+  await store.updatePublication(publicationId, {
+    attemptCount: 3,
+    status: "failed",
+    lastError: "meta_container_status_timeout: prior",
+  });
+
+  assert.equal(await store.claimPublication(publicationId), null);
+  assert.ok(await store.claimPublication(publicationId, { allowExhaustedRetry: true }));
+
+  await store.updatePublication(publicationId, { status: "failed" });
+
+  const result = await retryFailedInstagramPublication(store, publicationId);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.success, true);
+  assert.equal(result.body.attempt_count, 4);
+  assert.ok(result.body.external_id);
+});
+
+test("unauthenticated admin handler cannot perform exhausted retry", async () => {
+  const store = new MemoryMarketingStore();
+  const response = await handleAdminPublicationRetryRequest({
+    publicationId: "any",
+    auth: {
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
+      username: null,
+    },
+    store,
+  });
+  assert.equal(response.status, 401);
+});
+
+test("admin exhausted retry still runs preflight before publish", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId, contentId } = await seedFailedInstagramPublication(store);
+  await store.updatePublication(publicationId, { attemptCount: 3, status: "failed" });
+  await store.updateContent(contentId, { assetIds: [] });
+
+  const result = await retryFailedInstagramPublication(store, publicationId);
+  assert.equal(result.status, 422);
+  assert.equal(result.body.preflight?.code, "image_missing");
+  const pub = await store.getPublication(publicationId);
+  assert.equal(pub?.attemptCount, 3);
+});
+
+test("published externalId prevents duplicate admin retry", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedInstagramPublication(store);
+  await store.updatePublication(publicationId, {
+    status: "published",
+    externalId: "ig_already_live",
+    attemptCount: 3,
+  });
+
+  const result = await retryFailedInstagramPublication(store, publicationId);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error?.code, "invalid_publication_status");
 });

@@ -7,7 +7,12 @@ import {
   getMetaGraphVersion,
 } from "./config";
 import { MemoryMarketingStore } from "./memory-store";
-import { composePublishCaption, redactSecrets } from "./meta";
+import {
+  INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS,
+  classifyMetaHttpError,
+  composePublishCaption,
+  redactSecrets,
+} from "./meta";
 import {
   FacebookPagePublisher,
   InstagramPublisher,
@@ -97,6 +102,57 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
+const IG_CREDENTIALS = {
+  userId: "ig-user",
+  accessToken: SECRET_TOKEN,
+  graphVersion: "v22.0",
+};
+
+type GraphCall = { method: string; url: string; body?: URLSearchParams };
+
+function createInstagramGraphFetch(options: {
+  containerId: string;
+  statusSequence: string[];
+  publishId?: string;
+  onMedia?: () => Response | Promise<Response>;
+}): { fetchImpl: typeof fetch; calls: GraphCall[] } {
+  const calls: GraphCall[] = [];
+  let statusIndex = 0;
+  const publishId = options.publishId ?? "ig_media_99";
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    const body =
+      init?.body != null ? new URLSearchParams(String(init.body)) : undefined;
+    calls.push({ method, url, body });
+    if (method === "POST" && url.endsWith("/media")) {
+      if (options.onMedia) return options.onMedia();
+      return jsonResponse(200, { id: options.containerId });
+    }
+    if (
+      method === "GET" &&
+      url.includes(`/${options.containerId}`) &&
+      url.includes("fields=status_code")
+    ) {
+      const status =
+        options.statusSequence[
+          Math.min(statusIndex, options.statusSequence.length - 1)
+        ] ?? "IN_PROGRESS";
+      if (statusIndex < options.statusSequence.length - 1) {
+        statusIndex += 1;
+      }
+      return jsonResponse(200, { status_code: status });
+    }
+    if (method === "POST" && url.endsWith("/media_publish")) {
+      return jsonResponse(200, { id: publishId });
+    }
+    return jsonResponse(404, { error: { message: "unknown" } });
+  };
+  return { fetchImpl, calls };
+}
+
+const instantSleep = async () => {};
+
 test("Meta credential helpers require both id and token", () => {
   assert.equal(getMetaGraphVersion({}), "v22.0");
   assert.equal(getMetaInstagramCredentials({}), null);
@@ -125,24 +181,16 @@ test("live publisher selection stays on the existing mock switch", () => {
   assert.equal(getSocialPublisher("pinterest").id, "mock_social");
 });
 
-test("Instagram publisher constructs media then media_publish requests", async () => {
-  const calls: Array<{ url: string; body: URLSearchParams }> = [];
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const url = String(input);
-    const body = new URLSearchParams(String(init?.body ?? ""));
-    calls.push({ url, body });
-    if (url.endsWith("/media")) return jsonResponse(200, { id: "container_1" });
-    if (url.endsWith("/media_publish")) return jsonResponse(200, { id: "ig_media_99" });
-    return jsonResponse(404, { error: { message: "unknown" } });
-  };
+test("Instagram publisher polls IN_PROGRESS then FINISHED before media_publish", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetch({
+    containerId: "container_1",
+    statusSequence: ["IN_PROGRESS", "FINISHED"],
+  });
 
   const result = await new InstagramPublisher({
     fetch: fetchImpl,
-    credentials: {
-      userId: "ig-user",
-      accessToken: SECRET_TOKEN,
-      graphVersion: "v22.0",
-    },
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
   }).publish({
     content: sampleContent(),
     publication: samplePublication(),
@@ -151,23 +199,150 @@ test("Instagram publisher constructs media then media_publish requests", async (
 
   assert.equal(result.ok, true);
   assert.equal(result.externalId, "ig_media_99");
-  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map((call) => call.method + " " + (call.url.includes("/media_publish") ? "publish" : call.url.includes("/media") && call.method === "POST" ? "create" : "status")),
+    ["POST create", "GET status", "GET status", "POST publish"],
+  );
+  const publishCall = calls.find((call) => call.url.endsWith("/media_publish"));
+  assert.equal(publishCall?.body?.get("creation_id"), "container_1");
+  const publishIndex = calls.findIndex((call) => call.url.endsWith("/media_publish"));
+  const lastStatusIndex = calls.findLastIndex(
+    (call) => call.method === "GET" && call.url.includes("fields=status_code"),
+  );
+  assert.ok(lastStatusIndex >= 0 && publishIndex > lastStatusIndex);
   assert.equal(
     calls[0]?.url,
     "https://graph.instagram.com/v22.0/ig-user/media",
   );
-  assert.equal(calls[0]?.body.get("image_url"), "https://twilight-feather.vercel.app/covers/sickle-cell.png");
   assert.equal(
-    calls[0]?.body.get("caption"),
+    calls[0]?.body?.get("image_url"),
+    "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  );
+  assert.equal(
+    calls[0]?.body?.get("caption"),
     composePublishCaption("Warm bedtime copy", "Read the book"),
   );
-  assert.equal(
-    calls[1]?.url,
-    "https://graph.instagram.com/v22.0/ig-user/media_publish",
-  );
-  assert.equal(calls[1]?.body.get("creation_id"), "container_1");
   assert.ok(!calls[0]?.url.includes(SECRET_TOKEN));
-  assert.ok(!calls[1]?.url.includes(SECRET_TOKEN));
+  assert.ok(!publishCall?.url.includes(SECRET_TOKEN));
+});
+
+test("Instagram publisher publishes when container is already FINISHED", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetch({
+    containerId: "container_ready",
+    statusSequence: ["FINISHED"],
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls.filter((c) => c.method === "GET").length, 1);
+  assert.equal(calls.at(-1)?.url.endsWith("/media_publish"), true);
+});
+
+test("Instagram publisher times out when container stays IN_PROGRESS", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetch({
+    containerId: "container_slow",
+    statusSequence: Array(INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS).fill("IN_PROGRESS"),
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_container_status_timeout");
+  assert.equal(result.externalId, undefined);
+  assert.equal(calls.some((call) => call.url.endsWith("/media_publish")), false);
+  assert.equal(
+    calls.filter((call) => call.method === "GET" && call.url.includes("status_code")).length,
+    INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS,
+  );
+});
+
+test("Instagram publisher fails on container ERROR without media_publish", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetch({
+    containerId: "container_err",
+    statusSequence: ["ERROR"],
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_container_error");
+  assert.equal(calls.some((call) => call.url.endsWith("/media_publish")), false);
+});
+
+test("Instagram publisher fails on container EXPIRED without media_publish", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetch({
+    containerId: "container_exp",
+    statusSequence: ["EXPIRED"],
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_container_expired");
+  assert.equal(calls.some((call) => call.url.endsWith("/media_publish")), false);
+});
+
+test("Instagram publisher fails on unknown container status without media_publish", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "POST" && url.endsWith("/media")) {
+      return jsonResponse(200, { id: "container_weird" });
+    }
+    if (method === "GET" && url.includes("container_weird")) {
+      return jsonResponse(200, { status_code: "PENDING_REVIEW" });
+    }
+    if (method === "POST" && url.endsWith("/media_publish")) {
+      return jsonResponse(200, { id: "should-not-publish" });
+    }
+    return jsonResponse(404, {});
+  };
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_container_status_unknown");
+});
+
+test("Meta media-not-ready HTTP message maps to meta_media_not_ready", () => {
+  const classified = classifyMetaHttpError(
+    400,
+    { error: { message: "The media is not ready for publishing. Please wait.", code: 9007 } },
+    [],
+  );
+  assert.equal(classified.errorCode, "meta_media_not_ready");
+  assert.match(classified.error, /meta_media_not_ready/);
 });
 
 test("Facebook publisher uses photos for images and feed for text", async () => {
@@ -250,17 +425,15 @@ test("malformed Meta responses are not treated as published", async () => {
 });
 
 test("successful Meta result parsing returns the platform id only", async () => {
+  const { fetchImpl } = createInstagramGraphFetch({
+    containerId: "container",
+    statusSequence: ["FINISHED"],
+    publishId: "17841400000000000",
+  });
   const ig = await new InstagramPublisher({
-    credentials: {
-      userId: "ig-user",
-      accessToken: SECRET_TOKEN,
-      graphVersion: "v22.0",
-    },
-    fetch: async (input) => {
-      const url = String(input);
-      if (url.endsWith("/media")) return jsonResponse(200, { id: "container" });
-      return jsonResponse(200, { id: "17841400000000000" });
-    },
+    credentials: IG_CREDENTIALS,
+    fetch: fetchImpl,
+    sleep: instantSleep,
   }).publish({
     content: sampleContent(),
     publication: samplePublication(),

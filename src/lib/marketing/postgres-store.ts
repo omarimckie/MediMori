@@ -398,15 +398,16 @@ export class PostgresMarketingStore implements MarketingStore {
     return rows.map((row) => mapPublication(row as Record<string, unknown>));
   }
 
-  async claimPublication(id: string) {
+  async claimPublication(id: string, options?: { allowExhaustedRetry?: boolean }) {
     const sql = getSql();
+    const allowExhaustedRetry = Boolean(options?.allowExhaustedRetry);
     const rows = await sql`
       UPDATE marketing_publications
       SET status = 'processing', updated_at = now()
       WHERE id = ${id}::uuid
         AND (
           status = 'scheduled'
-          OR (status = 'failed' AND attempt_count < 3)
+          OR (status = 'failed' AND (attempt_count < 3 OR ${allowExhaustedRetry}))
           OR (status = 'processing' AND updated_at < now() - interval '15 minutes')
         )
       RETURNING *

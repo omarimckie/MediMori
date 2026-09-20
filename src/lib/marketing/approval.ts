@@ -297,7 +297,7 @@ export async function scheduleApproved(
 export async function publishPublication(
   store: MarketingStore,
   publication: MarketingPublication,
-  options?: { simulateFailure?: boolean },
+  options?: { simulateFailure?: boolean; allowExhaustedRetry?: boolean },
 ) {
   const content = await store.getContent(publication.contentId);
   if (!content) throw new Error("Content not found.");
@@ -315,7 +315,9 @@ export async function publishPublication(
 
   let current = publication;
   if (current.status === "scheduled" || current.status === "failed") {
-    const claimed = await store.claimPublication(current.id);
+    const claimed = await store.claimPublication(current.id, {
+      allowExhaustedRetry: options?.allowExhaustedRetry,
+    });
     if (!claimed) {
       return (await store.getPublication(current.id)) ?? current;
     }
@@ -422,11 +424,15 @@ export async function publishPublication(
   return updated ?? current;
 }
 
-export async function retryPublication(store: MarketingStore, publicationId: string) {
+export async function retryPublication(
+  store: MarketingStore,
+  publicationId: string,
+  options?: { allowExhaustedRetry?: boolean },
+) {
   const publication = await store.getPublication(publicationId);
   if (!publication) throw new Error("Publication not found.");
   if (publication.status === "published") return publication;
-  return publishPublication(store, publication);
+  return publishPublication(store, publication, options);
 }
 
 export async function publishDue(store: MarketingStore, now = new Date()) {

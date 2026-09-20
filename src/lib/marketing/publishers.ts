@@ -11,6 +11,7 @@ import {
   composePublishCaption,
   postMetaForm,
   publicImageUrlError,
+  waitForInstagramContainerReady,
   type MetaErrorCode,
 } from "./meta";
 import type { MarketingContent, MarketingPublication, Platform } from "./types";
@@ -50,6 +51,7 @@ export interface ImageProvider {
 type GraphPublisherOptions<T> = {
   fetch?: typeof fetch;
   credentials?: T | null;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 function alreadyPublished(request: PublishRequest, provider: string): PublishResult | null {
@@ -189,6 +191,24 @@ export class InstagramPublisher implements SocialPublisher {
         error: "meta_malformed_response: Instagram media container response did not include id.",
         errorCode: "meta_malformed_response",
         retryable: false,
+      };
+    }
+
+    const ready = await waitForInstagramContainerReady({
+      containerId: container.data.id,
+      graphVersion: credentials.graphVersion,
+      accessToken: credentials.accessToken,
+      fetchImpl,
+      sleep: this.options.sleep,
+      secrets,
+    });
+    if (!ready.ok) {
+      return {
+        ok: false,
+        provider: this.id,
+        error: ready.error,
+        errorCode: ready.errorCode,
+        retryable: ready.retryable,
       };
     }
 

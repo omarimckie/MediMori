@@ -378,6 +378,30 @@ test("cron authentication fails closed in production", () => {
   );
 });
 
+test("exhausted failed publications require admin override to claim", async () => {
+  const store = new MemoryMarketingStore();
+  await store.createPublication({
+    id: "pub-exhausted",
+    contentId: "content-1",
+    campaignId: "camp",
+    platform: "instagram",
+    provider: "instagram",
+    status: "failed",
+    idempotencyKey: "exhausted",
+    externalId: null,
+    url: null,
+    attemptCount: 3,
+    lastError: "meta_http_error: failed",
+    scheduledFor: null,
+    publishedAt: null,
+  });
+  assert.equal(await store.claimPublication("pub-exhausted"), null);
+  const claimed = await store.claimPublication("pub-exhausted", {
+    allowExhaustedRetry: true,
+  });
+  assert.equal(claimed?.status, "processing");
+});
+
 test("only one worker can claim a scheduled publication", async () => {
   const store = new MemoryMarketingStore();
   await seedMarketing(store);

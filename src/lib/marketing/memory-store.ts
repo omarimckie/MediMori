@@ -223,14 +223,17 @@ export class MemoryMarketingStore implements MarketingStore {
       .map(clone);
   }
 
-  async claimPublication(id: string) {
+  async claimPublication(id: string, options?: { allowExhaustedRetry?: boolean }) {
     const current = this.publications.get(id);
     if (!current) return null;
     const staleMs = 15 * 60 * 1000;
     const updatedAt = new Date(current.updatedAt).getTime();
+    const failedClaimable =
+      current.status === "failed" &&
+      (current.attemptCount < 3 || Boolean(options?.allowExhaustedRetry));
     const claimable =
       current.status === "scheduled" ||
-      (current.status === "failed" && current.attemptCount < 3) ||
+      failedClaimable ||
       (current.status === "processing" && Date.now() - updatedAt >= staleMs);
     if (!claimable) return null;
     const row: MarketingPublication = {
