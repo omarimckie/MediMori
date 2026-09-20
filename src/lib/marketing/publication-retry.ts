@@ -24,6 +24,18 @@ export type PublicationRetryResult = {
   body: PublicationRetryResponseBody;
 };
 
+const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook"]);
+
+function adminRetryEligibleStatus(platform: Platform, status: MarketingPublication["status"]): boolean {
+  if (platform === "instagram") {
+    return status === "failed";
+  }
+  if (platform === "facebook") {
+    return status === "scheduled" || status === "failed";
+  }
+  return false;
+}
+
 function parseWorkflowError(lastError: string | null | undefined): PublicationRetryErrorBody {
   const raw = lastError?.trim() ?? "";
   if (!raw) {
@@ -38,8 +50,8 @@ function parseWorkflowError(lastError: string | null | undefined): PublicationRe
   return { code: "publish_failed", message: raw };
 }
 
-/** Retries one failed Instagram publication (single-id path only). */
-export async function retryFailedInstagramPublication(
+/** Admin-only single-publication retry for Instagram and Facebook. */
+export async function retryAdminPublication(
   store: MarketingStore,
   publicationId: string,
 ): Promise<PublicationRetryResult> {
@@ -55,7 +67,7 @@ export async function retryFailedInstagramPublication(
     };
   }
 
-  if (publication.platform !== "instagram") {
+  if (!ADMIN_RETRY_PLATFORMS.has(publication.platform)) {
     return {
       status: 400,
       body: {
@@ -65,13 +77,14 @@ export async function retryFailedInstagramPublication(
         status: publication.status,
         error: {
           code: "unsupported_platform",
-          message: "Only failed Instagram publications can be retried through this endpoint.",
+          message:
+            "Only Instagram and Facebook publications can be retried through this endpoint.",
         },
       },
     };
   }
 
-  if (publication.status !== "failed") {
+  if (!adminRetryEligibleStatus(publication.platform, publication.status)) {
     return {
       status: 400,
       body: {
@@ -81,7 +94,10 @@ export async function retryFailedInstagramPublication(
         status: publication.status,
         error: {
           code: "invalid_publication_status",
-          message: "Only publications with status failed can be retried.",
+          message:
+            publication.platform === "instagram"
+              ? "Only publications with status failed can be retried."
+              : "Only scheduled or failed Facebook publications can be retried.",
         },
       },
     };
@@ -124,7 +140,7 @@ export async function retryFailedInstagramPublication(
   }
 
   const result = await retryPublication(store, publicationId, {
-    allowExhaustedRetry: true,
+    allowExhaustedRetry: publication.platform === "instagram",
   });
 
   const published = result.status === "published";
@@ -143,3 +159,6 @@ export async function retryFailedInstagramPublication(
     },
   };
 }
+
+/** @deprecated Use retryAdminPublication */
+export const retryFailedInstagramPublication = retryAdminPublication;
