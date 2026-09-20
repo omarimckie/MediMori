@@ -22,7 +22,7 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 - **Alternatives:** Later, a cheap image API behind `ImageProvider`, still gated by asset-priority rules.
 
 ### Scheduling
-- **Chosen for V1:** Store `scheduled_for` on content/publications and poll with Vercel Cron every 15 minutes (`/api/cron/marketing-publish`). Admins can also run it from Analytics.
+- **Chosen for V1:** Store `scheduled_for` on content/publications and poll with Vercel Cron once per day (`/api/cron/marketing-publish`, `0 16 * * *` UTC) because Hobby plans reject more frequent crons. Admins can also run it from Analytics.
 - **Alternatives:** Buffer’s own scheduler, Inngest, or a queue. A distributed job system is out of scope.
 
 ### Analytics
