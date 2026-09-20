@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts src/lib/marketing/asset-pipeline.test.ts",
+    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts src/lib/marketing/asset-pipeline.test.ts src/lib/marketing/publication-retry.test.ts",
     "marketing:schema": "node scripts/apply-marketing-schema.mjs",
     "marketing:schema:pass1": "node scripts/apply-marketing-optimization-pass-1.mjs",
     "marketing:schema:asset-truth": "node scripts/apply-marketing-asset-truth.mjs",

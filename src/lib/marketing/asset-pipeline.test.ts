@@ -22,11 +22,13 @@ import { MemoryMarketingStore } from "./memory-store";
 import type { MarketingAsset, MarketingContent, MarketingPublication } from "./types";
 
 const originalMockMode = process.env.MARKETING_MOCK_MODE;
+const originalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
 afterEach(() => {
   clearAssetTruthCacheForTests();
   mock.restoreAll();
   process.env.MARKETING_MOCK_MODE = originalMockMode;
+  process.env.NEXT_PUBLIC_SITE_URL = originalSiteUrl;
 });
 
 function asset(overrides: Partial<MarketingAsset> & Pick<MarketingAsset, "id" | "type" | "url">): MarketingAsset {
@@ -368,6 +370,7 @@ test("preflight rejects Amara using persisted dimensions without filesystem", as
 
 test("live mode requires public HTTPS image URL when image is required", async () => {
   process.env.MARKETING_MOCK_MODE = "false";
+  delete process.env.NEXT_PUBLIC_SITE_URL;
   const store = new MemoryMarketingStore();
   const good = await store.createAsset(
     asset({
