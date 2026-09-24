@@ -29,6 +29,7 @@ type Analytics = {
 export function AnalyticsClient() {
   const [data, setData] = useState<Analytics | null>(null);
   const [mockMode, setMockMode] = useState(true);
+  const [pinterestLiveConfigured, setPinterestLiveConfigured] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
   async function load() {
@@ -38,6 +39,7 @@ export function AnalyticsClient() {
     ]);
     setData(analytics);
     setMockMode(settings.mockMode !== false);
+    setPinterestLiveConfigured(settings.pinterestLiveConfigured === true);
   }
 
   useEffect(() => {
@@ -73,7 +75,7 @@ export function AnalyticsClient() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <PrimaryButton onClick={() => void publishDue()} disabled={publishing}>
-          {publishDueButtonLabel(mockMode)}
+          {publishDueButtonLabel(mockMode, pinterestLiveConfigured)}
         </PrimaryButton>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">

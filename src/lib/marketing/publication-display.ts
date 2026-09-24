@@ -12,9 +12,15 @@ export function formatPublicationStatusLabel(publication: {
   return publication.status.replaceAll("_", " ");
 }
 
-export function publishDueButtonLabel(mockMode: boolean): string {
+export function publishDueButtonLabel(
+  mockMode: boolean,
+  pinterestLiveConfigured = false,
+): string {
   if (mockMode) {
     return "Publish due items (mock — no live networks)";
+  }
+  if (pinterestLiveConfigured) {
+    return "Publish due items (live Meta + Pinterest where configured)";
   }
   return "Publish due items (live Meta where configured)";
 }

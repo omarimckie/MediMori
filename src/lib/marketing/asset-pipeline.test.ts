@@ -438,7 +438,7 @@ test("mock publication labels and publish button wording", () => {
     updatedAt: new Date().toISOString(),
   };
   assert.equal(formatPublicationStatusLabel(pub), "mock published");
-  assert.match(publishDueButtonLabel(true), /mock/i);
-  assert.match(publishDueButtonLabel(false), /live Meta/i);
-  assert.ok(!publishDueButtonLabel(false).toLowerCase().includes("mock-safe"));
+  assert.match(publishDueButtonLabel(true, false), /mock/i);
+  assert.match(publishDueButtonLabel(false, false), /live Meta/i);
+  assert.ok(!publishDueButtonLabel(false, false).toLowerCase().includes("mock-safe"));
 });

@@ -33,6 +33,7 @@ type PublicationRow = {
 
 type Settings = {
   mockMode?: boolean;
+  pinterestLiveConfigured?: boolean;
   publications?: PublicationRow[];
   plans: Array<{
     id: string;
@@ -58,6 +59,7 @@ export function WeekClient() {
 
   const plan = settings?.plans[0];
   const mockMode = settings?.mockMode ?? true;
+  const pinterestLiveConfigured = settings?.pinterestLiveConfigured ?? false;
   const publicationByContent = useMemo(() => {
     const map = new Map<string, PublicationRow>();
     for (const row of settings?.publications ?? []) {
@@ -157,7 +159,7 @@ export function WeekClient() {
             disabled={busy}
             onClick={() => void act("/api/cron/marketing-publish", {})}
           >
-            {publishDueButtonLabel(mockMode)}
+            {publishDueButtonLabel(mockMode, pinterestLiveConfigured)}
           </SecondaryButton>
         </div>
       </Card>
