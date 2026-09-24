@@ -14,6 +14,7 @@ import { platformScheduleSlot, rotate } from "./planner";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import { selectAssetAsync } from "./asset-selection";
+import { PINTEREST_WEEKLY_CATEGORIES, pinterestCopyFor } from "./pinterest-generation";
 import type {
   AudienceId,
   ChannelQuotas,
@@ -38,7 +39,7 @@ const CATEGORY_ROTATION: ContentCategory[] = [
 const FORMAT_FOR_PLATFORM: Record<Platform, ContentFormat[]> = {
   instagram: ["post", "carousel", "reel_script", "story", "post"],
   facebook: ["post", "post", "post", "post", "post"],
-  pinterest: ["pin", "pin", "pin", "pin", "pin", "pin", "pin"],
+  pinterest: ["pin", "pin", "pin"],
   email: ["email"],
   website: ["article"],
   google: ["google_update"],
@@ -103,10 +104,19 @@ function copyFor(args: {
       : `Visit the ${args.bookTitle} page on twilight-feather.com when you want to read together.`;
 
   if (args.platform === "pinterest") {
+    const pin = pinterestCopyFor({
+      campaign: args.campaign,
+      category: args.category,
+      audience: args.audience,
+      bookTitle: args.bookTitle,
+      bookId: args.bookId,
+      characterName: args.characterName,
+      index: args.index,
+    });
     return {
-      title: `${args.bookTitle} — a gentle conversation starter for ${audienceName}`,
-      body: `${openings[args.category]}\n\nPin this as a reminder that children's health stories can be kind, specific, and honest.\n\n${cta}`,
-      cta,
+      title: pin.title,
+      body: pin.body,
+      cta: pin.cta,
       seoTitle: null,
       seoDescription: null,
     };
@@ -197,6 +207,7 @@ export async function generateWeeklyContent(
   const created: MarketingContent[] = [];
   const categories = rotate(CATEGORY_ROTATION, new Date(plan.weekStart).getUTCDate());
   let slot = 0;
+  const pinterestAssetsUsedThisPlan: string[] = [];
 
   for (const platform of Object.keys(quotas) as Platform[]) {
     const count = quotas[platform] ?? 0;
@@ -204,9 +215,14 @@ export async function generateWeeklyContent(
     for (let index = 0; index < count; index += 1) {
       const book = bookFor(campaign, slot);
       const character = characterFor(book.id);
-      const category = categories[slot % categories.length];
+      const category =
+        platform === "pinterest"
+          ? (PINTEREST_WEEKLY_CATEGORIES[index % PINTEREST_WEEKLY_CATEGORIES.length] ??
+            categories[slot % categories.length])
+          : categories[slot % categories.length];
       const format = formats[index % formats.length];
-      const audience = audienceFor(campaign, slot);
+      const audience =
+        platform === "pinterest" ? campaign.primaryAudience : audienceFor(campaign, slot);
       const copy = copyFor({
         campaign,
         platform,
@@ -224,7 +240,12 @@ export async function generateWeeklyContent(
         platform,
         format,
         category,
+        excludeAssetIds:
+          platform === "pinterest" ? [...pinterestAssetsUsedThisPlan] : undefined,
       });
+      if (platform === "pinterest" && chosen.asset) {
+        pinterestAssetsUsedThisPlan.push(chosen.asset.id);
+      }
       const flags = scanMarketingText(`${copy.title ?? ""}\n${copy.body}\n${copy.cta}`);
       const warnings = [
         ...flags.map((flag) => flag.message),

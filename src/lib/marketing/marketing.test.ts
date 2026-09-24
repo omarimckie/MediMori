@@ -69,7 +69,7 @@ test("weekly generation creates platform-specific content and cost logs", async 
   const plan = await buildWeeklyPlan(store, campaign);
   const quotas = await getChannelQuotas(store);
   const content = await generateWeeklyContent(store, campaign, plan, quotas);
-  assert.ok(content.length >= 20);
+  assert.ok(content.length >= 16);
   const instagram = content.filter((item) => item.platform === "instagram");
   const facebook = content.filter((item) => item.platform === "facebook");
   assert.notEqual(instagram[0]?.body, facebook[0]?.body);

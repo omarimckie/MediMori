@@ -5,7 +5,7 @@ export const DEFAULT_TIMEZONE = "America/New_York";
 export const DEFAULT_CHANNEL_QUOTAS: ChannelQuotas = {
   instagram: 5,
   facebook: 5,
-  pinterest: 7,
+  pinterest: 3,
   email: 1,
   website: 1,
   google: 1,
