@@ -245,7 +245,7 @@ export class PostgresMarketingStore implements MarketingStore {
         id, campaign_id, weekly_plan_id, platform, format, category, audience,
         status, title, body, cta, seo_title, seo_description, scheduled_for,
         timezone, asset_ids, needs_new_asset, warnings, safety_flags,
-        tracking_token, original_body, book_id, is_demo
+        tracking_token, original_body, book_id, metadata, is_demo
       ) VALUES (
         ${input.id}::uuid, ${input.campaignId}::uuid, ${input.weeklyPlanId}::uuid,
         ${input.platform}, ${input.format}, ${input.category}, ${input.audience},
@@ -253,7 +253,8 @@ export class PostgresMarketingStore implements MarketingStore {
         ${input.seoTitle}, ${input.seoDescription}, ${input.scheduledFor},
         ${input.timezone}, ${json(input.assetIds)}::jsonb, ${input.needsNewAsset},
         ${json(input.warnings)}::jsonb, ${json(input.safetyFlags)}::jsonb,
-        ${input.trackingToken}, ${input.originalBody}, ${input.bookId}, ${input.isDemo}
+        ${input.trackingToken}, ${input.originalBody}, ${input.bookId},
+        ${json(input.metadata ?? {})}::jsonb, ${input.isDemo}
       )
       RETURNING *
     `;
@@ -281,6 +282,7 @@ export class PostgresMarketingStore implements MarketingStore {
         safety_flags = ${json(next.safetyFlags)}::jsonb,
         tracking_token = ${next.trackingToken},
         original_body = ${next.originalBody},
+        metadata = ${json(next.metadata ?? {})}::jsonb,
         updated_at = now()
       WHERE id = ${id}::uuid
       RETURNING *

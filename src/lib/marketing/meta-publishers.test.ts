@@ -65,6 +65,7 @@ function sampleContent(overrides: Partial<MarketingContent> = {}): MarketingCont
     trackingToken: "abc",
     originalBody: "Warm bedtime copy",
     bookId: "book-one",
+    metadata: {},
     isDemo: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -178,7 +179,11 @@ test("live publisher selection stays on the existing mock switch", () => {
   process.env.MARKETING_MOCK_MODE = "false";
   assert.equal(getSocialPublisher("instagram").id, "instagram");
   assert.equal(getSocialPublisher("facebook").id, "facebook_page");
-  assert.equal(getSocialPublisher("pinterest").id, "mock_social");
+  process.env.PINTEREST_CLIENT_ID = "client";
+  process.env.PINTEREST_CLIENT_SECRET = "secret";
+  process.env.PINTEREST_REFRESH_TOKEN = "pinr_test";
+  process.env.PINTEREST_BOARD_ID = "board";
+  assert.equal(getSocialPublisher("pinterest").id, "pinterest");
 });
 
 test("Instagram publisher polls IN_PROGRESS then FINISHED before media_publish", async () => {

@@ -460,6 +460,9 @@ export function mapContent(row: Record<string, unknown>): MarketingContent {
     trackingToken: asStringOrNull(row.tracking_token),
     originalBody: asStringOrNull(row.original_body),
     bookId: asStringOrNull(row.book_id),
+    metadata: (row.metadata === undefined || row.metadata === null
+      ? {}
+      : asRecord(row.metadata)) as MarketingContent["metadata"],
     isDemo: asBoolean(row.is_demo),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),

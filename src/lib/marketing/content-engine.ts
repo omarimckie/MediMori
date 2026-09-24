@@ -259,6 +259,7 @@ export async function generateWeeklyContent(
         trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
         originalBody: copy.body,
         bookId: book.id,
+        metadata: {},
         isDemo: campaign.isDemo,
       });
       await store.recordEvent({

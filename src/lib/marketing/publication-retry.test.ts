@@ -79,6 +79,7 @@ async function seedFailedInstagramPublication(store: MemoryMarketingStore) {
     trackingToken: null,
     originalBody: null,
     bookId: "book-one",
+    metadata: {},
     isDemo: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -160,6 +161,7 @@ async function seedScheduledFacebookPublication(store: MemoryMarketingStore) {
     trackingToken: null,
     originalBody: null,
     bookId: "book-one",
+    metadata: {},
     isDemo: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -214,10 +216,10 @@ test("nonexistent publication is rejected", async () => {
 test("unsupported platform publication is rejected", async () => {
   const store = new MemoryMarketingStore();
   await store.createPublication({
-    id: "pub-pin",
+    id: "pub-email",
     contentId: "c1",
     campaignId: "camp",
-    platform: "pinterest",
+    platform: "email",
     provider: "mock",
     status: "failed",
     idempotencyKey: "k",
@@ -228,7 +230,7 @@ test("unsupported platform publication is rejected", async () => {
     scheduledFor: null,
     publishedAt: null,
   });
-  const result = await retryAdminPublication(store, "pub-pin");
+  const result = await retryAdminPublication(store, "pub-email");
   assert.equal(result.status, 400);
   assert.equal(result.body.error?.code, "unsupported_platform");
 });

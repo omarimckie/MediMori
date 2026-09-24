@@ -14,6 +14,7 @@ import {
   waitForInstagramContainerReady,
   type MetaErrorCode,
 } from "./meta";
+import { PinterestPublisher } from "./pinterest-publisher";
 import type { MarketingContent, MarketingPublication, Platform } from "./types";
 
 export type PublishRequest = {
@@ -438,6 +439,7 @@ export function getSocialPublisher(platform?: Platform): SocialPublisher {
   if (isMockMode()) return new MockSocialPublisher();
   if (platform === "instagram") return new InstagramPublisher();
   if (platform === "facebook") return new FacebookPagePublisher();
+  if (platform === "pinterest") return new PinterestPublisher();
   return new MockSocialPublisher();
 }
 

@@ -200,6 +200,7 @@ function sampleContent(overrides: Partial<MarketingContent> = {}): MarketingCont
     trackingToken: "abc",
     originalBody: "Warm copy",
     bookId: "book-one",
+    metadata: {},
     isDemo: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

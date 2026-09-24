@@ -24,13 +24,16 @@ export type PublicationRetryResult = {
   body: PublicationRetryResponseBody;
 };
 
-const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook"]);
+const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook", "pinterest"]);
 
 function adminRetryEligibleStatus(platform: Platform, status: MarketingPublication["status"]): boolean {
   if (platform === "instagram") {
     return status === "failed";
   }
   if (platform === "facebook") {
+    return status === "scheduled" || status === "failed";
+  }
+  if (platform === "pinterest") {
     return status === "scheduled" || status === "failed";
   }
   return false;
@@ -78,7 +81,7 @@ export async function retryAdminPublication(
         error: {
           code: "unsupported_platform",
           message:
-            "Only Instagram and Facebook publications can be retried through this endpoint.",
+            "Only Instagram, Facebook, and Pinterest publications can be retried through this endpoint.",
         },
       },
     };
@@ -97,7 +100,9 @@ export async function retryAdminPublication(
           message:
             publication.platform === "instagram"
               ? "Only publications with status failed can be retried."
-              : "Only scheduled or failed Facebook publications can be retried.",
+              : publication.platform === "facebook"
+                ? "Only scheduled or failed Facebook publications can be retried."
+                : "Only scheduled or failed Pinterest publications can be retried.",
         },
       },
     };

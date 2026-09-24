@@ -1,6 +1,7 @@
 import { resolveContentImageUrl } from "./assets";
 import { getAssetImageTruth } from "./asset-truth";
 import { isMockMode } from "./config";
+import { isPinterestLiveConfigured } from "./pinterest";
 import { isPublicHttpsImageUrl, publicImageUrlError } from "./meta";
 import {
   contentFormatUsesSocialImage,
@@ -8,6 +9,7 @@ import {
   isAssetSuitableForPlatform,
   platformImageRule,
 } from "./platform-suitability";
+import { buildPublishTrackingLink } from "./tracking";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
@@ -41,6 +43,33 @@ export async function runPublishPreflight(
   store: MarketingStore,
   content: MarketingContent,
 ): Promise<PublishPreflightResult> {
+  if (content.platform === "pinterest") {
+    if (!buildPublishTrackingLink(content)) {
+      return {
+        ok: false,
+        code: "invalid_asset",
+        message: "Pinterest pin requires a tracking token for the destination link.",
+      };
+    }
+    if (!isMockMode() && !isPinterestLiveConfigured()) {
+      return {
+        ok: false,
+        code: "invalid_asset",
+        message:
+          "Pinterest live publishing requires PINTEREST_CLIENT_ID, PINTEREST_CLIENT_SECRET, PINTEREST_REFRESH_TOKEN, and PINTEREST_BOARD_ID.",
+      };
+    }
+    const pinTitle = content.title?.trim();
+    const pinDescription = content.body?.trim();
+    if (!pinTitle || !pinDescription) {
+      return {
+        ok: false,
+        code: "invalid_asset",
+        message: "Pinterest pin requires a title and description.",
+      };
+    }
+  }
+
   const rule = platformImageRule(content.platform, content.format);
   const imageUrl = await resolveContentImageUrl(store, content);
 
@@ -100,7 +129,7 @@ export async function runPublishPreflight(
     return {
       ok: false,
       code: "invalid_aspect_ratio",
-      message: describeAspectRatioFailure(content.platform, truth),
+      message: describeAspectRatioFailure(content.platform, truth, content.format),
     };
   }
 

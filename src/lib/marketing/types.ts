@@ -171,6 +171,10 @@ export type MarketingTemplate = {
   createdAt: string;
 };
 
+export type MarketingContentMetadata = {
+  pinAltText?: string | null;
+};
+
 export type MarketingContent = {
   id: string;
   campaignId: string | null;
@@ -194,6 +198,7 @@ export type MarketingContent = {
   trackingToken: string | null;
   originalBody: string | null;
   bookId: string | null;
+  metadata: MarketingContentMetadata;
   isDemo: boolean;
   createdAt: string;
   updatedAt: string;

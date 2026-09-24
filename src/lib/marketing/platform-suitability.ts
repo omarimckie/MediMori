@@ -7,10 +7,22 @@ export const INSTAGRAM_FEED_ASPECT_RATIO_MAX = 1.91;
 
 /**
  * Conservative Facebook feed photo range (wider than Instagram to avoid false rejects).
- * Pinterest uses {@link isAssetSuitableForPlatform} with ratio checks deferred until live publish.
  */
 export const FACEBOOK_FEED_ASPECT_RATIO_MIN = 0.5;
 export const FACEBOOK_FEED_ASPECT_RATIO_MAX = 2.0;
+
+/**
+ * Pinterest standard Pin image guidance (help.pinterest.com Pin specs / product specs):
+ * - Minimum practical width 600px
+ * - Vertical aspect ratios from 1:2.1 (tall) through 2:3 (recommended); wider than 2:3 may be cropped in feed
+ */
+export const PINTEREST_MIN_IMAGE_WIDTH = 600;
+/** width / height — tallest allowed (1:2.1). */
+export const PINTEREST_ASPECT_RATIO_MIN = 1 / 2.1;
+/** width / height — 2:3 recommended maximum width for standard vertical pins. */
+export const PINTEREST_ASPECT_RATIO_MAX = 2 / 3;
+
+const PINTEREST_ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export type PlatformImageRule = {
   requiresImage: boolean;
@@ -67,9 +79,9 @@ export function platformImageRule(platform: Platform, format: ContentFormat): Pl
   if (platform === "pinterest") {
     return {
       requiresImage: true,
-      requiresAspectRatio: false,
-      minRatio: null,
-      maxRatio: null,
+      requiresAspectRatio: true,
+      minRatio: PINTEREST_ASPECT_RATIO_MIN,
+      maxRatio: PINTEREST_ASPECT_RATIO_MAX,
     };
   }
   return {
@@ -105,10 +117,23 @@ export function isAssetSuitableForPlatform(
 export function describeAspectRatioFailure(
   platform: Platform,
   truth: AssetImageTruth,
+  format: ContentFormat = "post",
 ): string {
-  const rule = platformImageRule(platform, "post");
+  const rule = platformImageRule(platform, format);
+  if (platform === "pinterest") {
+    if (truth.width < PINTEREST_MIN_IMAGE_WIDTH) {
+      return `Pinterest image width ${truth.width}px is below the minimum ${PINTEREST_MIN_IMAGE_WIDTH}px.`;
+    }
+    if (!PINTEREST_ALLOWED_MIME.has(truth.mimeType.toLowerCase())) {
+      return `Pinterest image type ${truth.mimeType} is not supported. Use JPEG, PNG, or WebP.`;
+    }
+  }
   if (rule.minRatio !== null && rule.maxRatio !== null) {
-    return `Image aspect ratio ${truth.aspectRatio.toFixed(3)} (${truth.aspectRatioLabel}) is outside ${platform} acceptable range ${rule.minRatio}–${rule.maxRatio} (width/height).`;
+    return `Image aspect ratio ${truth.aspectRatio.toFixed(3)} (${truth.aspectRatioLabel}) is outside ${platform} acceptable range ${rule.minRatio.toFixed(3)}–${rule.maxRatio.toFixed(3)} (width/height).`;
   }
   return `Image is not suitable for ${platform}.`;
+}
+
+export function isPinterestMimeAllowed(mimeType: string): boolean {
+  return PINTEREST_ALLOWED_MIME.has(mimeType.toLowerCase());
 }

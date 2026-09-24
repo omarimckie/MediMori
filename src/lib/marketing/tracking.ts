@@ -1,10 +1,18 @@
 import { logMarketing } from "./logger";
+import { absoluteUrl } from "@/lib/site";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
 export function trackingDestinationPath(content: MarketingContent | null): string {
   if (!content) return "/books";
   return content.bookId ? `/books/${content.bookId}` : "/books";
+}
+
+/** Public HTTPS link for social pin destinations (via /api/m tracking redirect). */
+export function buildPublishTrackingLink(content: MarketingContent): string | null {
+  const token = content.trackingToken?.trim();
+  if (!token) return null;
+  return absoluteUrl(`/api/m/${token}`);
 }
 
 export function buildTrackingRedirect(

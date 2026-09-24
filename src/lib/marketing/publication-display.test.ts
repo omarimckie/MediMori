@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { isMockMode, isPinterestLiveConfigured } from "./config";
+import { isMockMode } from "./config";
+import { isPinterestLiveConfigured } from "./pinterest";
 import { publishDueButtonLabel } from "./publication-display";
 
 const PINTEREST_ENV = {
