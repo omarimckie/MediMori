@@ -3,9 +3,9 @@ import { getMarketingStore } from "@/lib/marketing/context";
 import {
   DEFAULT_CHANNEL_QUOTAS,
   isMockMode,
-  isPinterestLiveConfigured,
   parseChannelQuotas,
 } from "@/lib/marketing/config";
+import { isPinterestLiveConfigured } from "@/lib/marketing/pinterest";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
