@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts src/lib/marketing/publication-display.test.ts src/lib/marketing/pinterest-publishers.test.ts src/lib/marketing/asset-pipeline.test.ts src/lib/marketing/publication-retry.test.ts src/lib/marketing/content-post-action.test.ts src/components/admin/marketing/week-client-act.test.ts",
+    "test": "tsx --test src/lib/marketing/marketing.test.ts src/lib/marketing/meta-publishers.test.ts src/lib/marketing/publication-display.test.ts src/lib/marketing/pinterest-publishers.test.ts src/lib/marketing/asset-pipeline.test.ts src/lib/marketing/publication-retry.test.ts src/lib/marketing/content-post-action.test.ts src/components/admin/marketing/week-client-act.test.ts src/lib/marketing/weekly-review.test.ts src/components/admin/marketing/weekly-visual-preview.test.tsx",
     "marketing:schema": "node scripts/apply-marketing-schema.mjs",
     "marketing:schema:pass1": "node scripts/apply-marketing-optimization-pass-1.mjs",
     "marketing:schema:asset-truth": "node scripts/apply-marketing-asset-truth.mjs",

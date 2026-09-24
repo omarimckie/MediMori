@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
+import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { runMarketingWeekPostAction } from "./week-client-act";
+import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
@@ -54,6 +56,9 @@ type Settings = {
 export function WeekClient() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
+  const [reviewByContentId, setReviewByContentId] = useState<Record<string, WeeklyItemReview>>(
+    {},
+  );
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -73,9 +78,12 @@ export function WeekClient() {
     const settingsData = (await fetch("/api/admin/marketing/settings").then((res) => res.json())) as Settings;
     setSettings(settingsData);
     const planId = settingsData.plans[0]?.id;
-    const query = planId ? `?weeklyPlanId=${planId}` : "";
+    const query = planId
+      ? `?weeklyPlanId=${planId}&enrich=weekly`
+      : "?enrich=weekly";
     const contentData = await fetch(`/api/admin/marketing/content${query}`).then((res) => res.json());
     setContent(contentData.content ?? []);
+    setReviewByContentId(contentData.reviewByContentId ?? {});
   }
 
   useEffect(() => {
@@ -168,11 +176,19 @@ export function WeekClient() {
       {[...grouped.entries()].map(([platform, items]) => (
         <section key={platform} className="space-y-3">
           <h3 className="text-sm font-bold uppercase tracking-wide text-brand-green-deep">{platform}</h3>
-          {items.map((item) => (
+          {items.map((item) => {
+            const review = reviewByContentId[item.id];
+            return (
             <Card key={item.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap gap-2">
+                  {review?.channelLabel ? (
+                    <p className="text-xs font-bold uppercase tracking-wide text-brand-green-deep">
+                      {review.channelLabel}
+                    </p>
+                  ) : null}
+                  <WeeklyVisualPreview review={review} title={item.title} />
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <StatusPill
                       status={
                         publicationByContent.get(item.id)
@@ -261,7 +277,8 @@ export function WeekClient() {
                 </div>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </section>
       ))}
     </div>

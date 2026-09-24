@@ -1,5 +1,6 @@
 import { requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
+import { buildWeeklyItemReview } from "@/lib/marketing/weekly-review";
 import type { ContentFilters } from "@/lib/marketing/types";
 import { NextResponse } from "next/server";
 
@@ -22,6 +23,16 @@ export async function GET(request: Request) {
   if (audience) filters.audience = audience as ContentFilters["audience"];
   if (category) filters.category = category as ContentFilters["category"];
   if (status) filters.status = status as ContentFilters["status"];
-  const content = await getMarketingStore().listContent(filters);
+  const store = getMarketingStore();
+  const content = await store.listContent(filters);
+  const enrich = url.searchParams.get("enrich");
+  if (enrich === "weekly") {
+    const reviewByContentId: Record<string, Awaited<ReturnType<typeof buildWeeklyItemReview>>> =
+      {};
+    for (const item of content) {
+      reviewByContentId[item.id] = await buildWeeklyItemReview(store, item);
+    }
+    return NextResponse.json({ content, reviewByContentId });
+  }
   return NextResponse.json({ content });
 }
