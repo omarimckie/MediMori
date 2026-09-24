@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
+import { runMarketingWeekPostAction } from "./week-client-act";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
@@ -97,15 +98,14 @@ export function WeekClient() {
   async function act(path: string, body: unknown) {
     setBusy(true);
     setMessage(null);
-    const response = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) setMessage(data.error ?? "Action failed");
-    await load();
-    setBusy(false);
+    try {
+      const errorMessage = await runMarketingWeekPostAction(path, body, fetch, load);
+      if (errorMessage) setMessage(errorMessage);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Network error.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!settings) {

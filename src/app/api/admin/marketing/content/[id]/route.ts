@@ -1,6 +1,6 @@
 import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
-import { runApprovalAction } from "@/lib/marketing/workflow";
+import { executeMarketingContentPostAction } from "@/lib/marketing/content-post-action";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -42,12 +42,11 @@ export async function POST(
   ) {
     return jsonError("Unsupported action.");
   }
-  const result = await runApprovalAction(getMarketingStore(), {
+  return executeMarketingContentPostAction(getMarketingStore(), {
     action,
     contentId: id,
     body: body.body,
     feedback: body.feedback,
     actor: auth.username,
   });
-  return NextResponse.json({ result });
 }
