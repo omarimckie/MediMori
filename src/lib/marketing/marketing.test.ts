@@ -124,9 +124,23 @@ test("regenerate keeps the item in review", async () => {
 });
 
 test("publishing is idempotent and retries transient failures", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+
   const store = new MemoryMarketingStore();
+
   await seedMarketing(store);
-  const item = (await store.listContent({ status: "needs_review" }))[0];
+
+  const item = (
+    await store.listContent({
+      platform: "instagram",
+      status: "needs_review",
+    })
+  ).find((row) => row.assetIds.length > 0);
+
+  assert.ok(
+    item,
+    "expected a needs_review Instagram item with an approved image",
+  );
   await approveContent(store, item.id, "omari");
   const first = await scheduleApproved(store, item.id);
   const second = await scheduleApproved(store, item.id);
@@ -403,9 +417,19 @@ test("exhausted failed publications require admin override to claim", async () =
 });
 
 test("only one worker can claim a scheduled publication", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
   const store = new MemoryMarketingStore();
   await seedMarketing(store);
-  const item = (await store.listContent({ status: "needs_review" }))[0];
+  const item = (
+    await store.listContent({
+      platform: "instagram",
+      status: "needs_review",
+    })
+  ).find((row) => row.assetIds.length > 0);
+  assert.ok(
+    item,
+    "expected a needs_review Instagram item with an approved image",
+  );
   await approveContent(store, item.id, "omari");
   const publication = await scheduleApproved(store, item.id);
   const again = await scheduleApproved(store, item.id);
