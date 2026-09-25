@@ -5,6 +5,7 @@ import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marke
 import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { runMarketingWeekPostAction } from "./week-client-act";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
+import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
@@ -62,6 +63,8 @@ export function WeekClient() {
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [showUploadPost, setShowUploadPost] = useState(false);
+  const [showUploadResource, setShowUploadResource] = useState(false);
 
   const plan = settings?.plans[0];
   const mockMode = settings?.mockMode ?? true;
@@ -169,8 +172,32 @@ export function WeekClient() {
           >
             {publishDueButtonLabel(mockMode, pinterestLiveConfigured)}
           </SecondaryButton>
+          <SecondaryButton disabled={busy} onClick={() => setShowUploadPost(true)}>
+            Upload post
+          </SecondaryButton>
+          <SecondaryButton disabled={busy} onClick={() => setShowUploadResource(true)}>
+            Upload free resource
+          </SecondaryButton>
         </div>
       </Card>
+      {showUploadPost ? (
+        <UploadPostModal
+          weeklyPlanId={plan.id}
+          busy={busy}
+          onClose={() => setShowUploadPost(false)}
+          onDone={load}
+          setMessage={setMessage}
+        />
+      ) : null}
+      {showUploadResource ? (
+        <UploadResourceModal
+          weeklyPlanId={plan.id}
+          busy={busy}
+          onClose={() => setShowUploadResource(false)}
+          onDone={load}
+          setMessage={setMessage}
+        />
+      ) : null}
       {message ? <p className="text-sm font-semibold text-brand-orange-deep">{message}</p> : null}
 
       {[...grouped.entries()].map(([platform, items]) => (

@@ -43,6 +43,7 @@ export const CONTENT_FORMATS = [
   "seo_title",
   "seo_description",
   "cta",
+  "free_resource",
 ] as const;
 
 export type ContentFormat = (typeof CONTENT_FORMATS)[number];
@@ -67,6 +68,25 @@ export const AUDIENCES = [
 ] as const;
 
 export type AudienceId = (typeof AUDIENCES)[number];
+
+export const RESOURCE_TYPES = [
+  "coloring_page",
+  "word_search",
+  "crossword",
+  "maze",
+  "worksheet",
+  "activity_sheet",
+  "other",
+] as const;
+
+export type ResourceType = (typeof RESOURCE_TYPES)[number];
+
+export function assertResourceType(value: string): ResourceType {
+  if (!RESOURCE_TYPES.includes(value as ResourceType)) {
+    throw new Error("Unsupported resource type.");
+  }
+  return value as ResourceType;
+}
 
 export const ATTRIBUTION_KINDS = [
   "directly_attributed",
