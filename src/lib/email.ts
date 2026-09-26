@@ -1,4 +1,6 @@
+import { getBookById } from "@/lib/books";
 import { getNewsletterDiscountCode } from "@/lib/newsletter-constants";
+import type { PhysicalOrderRow, ShippingAddressSnapshot } from "@/lib/physical-orders";
 import { Resend } from "resend";
 
 export type NewsletterContactResult = {
@@ -247,5 +249,142 @@ export async function sendLibraryAccessEmail(
 
   if (error) {
     throw new Error(error.message || "Could not send access email.");
+  }
+}
+
+function formatUsd(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
+
+export function formatShippingAddressForEmail(
+  address: ShippingAddressSnapshot,
+): string {
+  const lines = [
+    address.name,
+    address.line1,
+    address.line2,
+    [address.city, address.state, address.postalCode].filter(Boolean).join(", "),
+    address.country,
+  ].filter((line) => line && line.trim());
+  return lines.join("\n");
+}
+
+function getFulfillmentNotifyEmail(): string | null {
+  return (
+    process.env.RESEND_FULFILLMENT_NOTIFY_EMAIL?.trim() ||
+    process.env.RESEND_ORDERS_EMAIL?.trim() ||
+    null
+  );
+}
+
+export async function sendPhysicalOrderConfirmationEmail(
+  order: PhysicalOrderRow,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    console.warn(
+      "Physical order confirmation skipped: set RESEND_API_KEY and RESEND_FROM_EMAIL.",
+    );
+    return;
+  }
+
+  const book = getBookById(order.bookId);
+  const title = book?.title ?? "Twilight Feather book";
+  const shipTo = formatShippingAddressForEmail(order.shippingAddress);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: order.customerEmail,
+    subject: `Your Twilight Feather paperback order — ${title}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
+        <h1 style="font-size: 22px; margin-bottom: 12px;">Thank you for your order</h1>
+        <p>Hi ${order.customerName},</p>
+        <p>We received your payment for <strong>${title}</strong> (${order.quantity} ${order.quantity === 1 ? "copy" : "copies"}).</p>
+        <p><strong>Total paid:</strong> ${formatUsd(order.totalAmountCents)}</p>
+        <p><strong>Ship to:</strong><br />${shipTo.replace(/\n/g, "<br />")}</p>
+        <p>Your book will ship directly from Twilight Feather. We will email you when tracking is available.</p>
+        <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
+          Order reference: ${order.id}
+        </p>
+      </div>
+    `,
+    text: [
+      "Thank you for your order",
+      "",
+      `Hi ${order.customerName},`,
+      "",
+      `Book: ${title}`,
+      `Quantity: ${order.quantity}`,
+      `Total paid: ${formatUsd(order.totalAmountCents)}`,
+      "",
+      "Ship to:",
+      shipTo,
+      "",
+      "Your book will ship directly from Twilight Feather.",
+      "",
+      `Order reference: ${order.id}`,
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send physical order confirmation.");
+  }
+}
+
+export async function sendPhysicalFulfillmentNotificationEmail(
+  order: PhysicalOrderRow,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  const notifyTo = getFulfillmentNotifyEmail();
+  if (!resend || !from || !notifyTo) {
+    console.warn(
+      "Fulfillment notification skipped: set RESEND_FULFILLMENT_NOTIFY_EMAIL (and Resend).",
+    );
+    return;
+  }
+
+  const book = getBookById(order.bookId);
+  const title = book?.title ?? order.bookId;
+  const shipTo = formatShippingAddressForEmail(order.shippingAddress);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: notifyTo,
+    subject: `[Fulfillment] Physical order ${order.id.slice(0, 8)} — ${title}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 640px; line-height: 1.5;">
+        <h1 style="font-size: 20px;">New physical book order</h1>
+        <p><strong>Order ID:</strong> ${order.id}</p>
+        <p><strong>Stripe session:</strong> ${order.stripeCheckoutSessionId}</p>
+        <p><strong>Book:</strong> ${title} (${order.bookId})</p>
+        <p><strong>Quantity:</strong> ${order.quantity}</p>
+        <p><strong>Total:</strong> ${formatUsd(order.totalAmountCents)}</p>
+        <p><strong>Customer:</strong> ${order.customerName} &lt;${order.customerEmail}&gt;</p>
+        <p><strong>Ship to:</strong><br />${shipTo.replace(/\n/g, "<br />")}</p>
+        <p>Create the label manually in Pirate Ship using the address above.</p>
+      </div>
+    `,
+    text: [
+      "New physical book order",
+      `Order ID: ${order.id}`,
+      `Stripe session: ${order.stripeCheckoutSessionId}`,
+      `Book: ${title} (${order.bookId})`,
+      `Quantity: ${order.quantity}`,
+      `Total: ${formatUsd(order.totalAmountCents)}`,
+      `Customer: ${order.customerName} <${order.customerEmail}>`,
+      "",
+      "Ship to:",
+      shipTo,
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send fulfillment notification.");
   }
 }

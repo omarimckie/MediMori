@@ -29,6 +29,8 @@ export type Book = {
   amazonPaperbackUrl?: string;
   ebookFileBaseName: string;
   stripePriceIdEbook?: string;
+  /** Stripe Price ID (price_...) for $10 direct paperback when sold from site inventory. */
+  stripePriceIdPhysical?: string;
 };
 
 export function getBooks(): Book[] {

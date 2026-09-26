@@ -18,6 +18,8 @@ import {
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { hasPhysicalInventory } from "@/lib/physical-inventory";
+import { isPhysicalDirectBookId } from "@/lib/physical-books";
 import { notFound } from "next/navigation";
 
 type Props = {
@@ -72,6 +74,15 @@ export default async function BookDetailPage({ params }: Props) {
 
   if (!book) notFound();
 
+  let physicalDirectAvailable = false;
+  if (isPhysicalDirectBookId(book.id)) {
+    try {
+      physicalDirectAvailable = await hasPhysicalInventory(book.id, 1);
+    } catch {
+      physicalDirectAvailable = false;
+    }
+  }
+
   const insideImages = book.insideImageUrls ?? [];
   const galleryImages = book.amazonGalleryImageUrls ?? [];
   const ebookPrice = formatEbookPrice(book.priceEbook);
@@ -109,7 +120,10 @@ export default async function BookDetailPage({ params }: Props) {
       </PageSection>
 
       <PageSection tone="white" cloudTop="navy" className="!pb-9 sm:!pb-10">
-        <BookDetailContent book={book} />
+        <BookDetailContent
+          book={book}
+          physicalDirectAvailable={physicalDirectAvailable}
+        />
         <div className="mt-7 grid w-full px-1 sm:mt-8 sm:px-0 md:grid-cols-[0.8fr_1.2fr]">
           <div className="flex justify-center md:col-start-2">
             <Link

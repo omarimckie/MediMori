@@ -1,5 +1,11 @@
 import { evaluatePaidCheckout } from "@/lib/checkout-ownership";
-import { sendLibraryAccessEmail } from "@/lib/email";
+import {
+  sendLibraryAccessEmail,
+  sendPhysicalFulfillmentNotificationEmail,
+  sendPhysicalOrderConfirmationEmail,
+} from "@/lib/email";
+import { fulfillPhysicalOrder } from "@/lib/fulfill-physical-order";
+import { evaluatePaidPhysicalCheckout, isPhysicalCheckoutSession } from "@/lib/physical-checkout-ownership";
 import { createLibraryAccessUrl } from "@/lib/magic-link";
 import { recordStripeRefundAndRecompute } from "@/lib/purchase-refunds";
 import { recordPurchaseAndEntitlement } from "@/lib/purchases";
@@ -217,6 +223,48 @@ export async function POST(request: Request) {
       { error: "Checkout session could not be retrieved." },
       { status: 400 },
     );
+  }
+
+  if (isPhysicalCheckoutSession(session)) {
+    const physicalEvaluation = evaluatePaidPhysicalCheckout(session);
+    if (!physicalEvaluation.ok) {
+      return NextResponse.json(
+        { error: physicalEvaluation.error },
+        { status: physicalEvaluation.status },
+      );
+    }
+
+    const fulfillment = await fulfillPhysicalOrder(
+      stripe,
+      physicalEvaluation.order,
+    );
+
+    if (!fulfillment.ok) {
+      console.error("Physical order could not be fulfilled:", {
+        sessionId: physicalEvaluation.order.stripeCheckoutSessionId,
+        reason: fulfillment.reason,
+        refunded: fulfillment.refunded,
+      });
+      return NextResponse.json({
+        received: true,
+        physicalFulfillment: "inventory_unavailable",
+        refunded: fulfillment.refunded,
+      });
+    }
+
+    if (!fulfillment.duplicate) {
+      try {
+        await sendPhysicalOrderConfirmationEmail(fulfillment.order);
+        await sendPhysicalFulfillmentNotificationEmail(fulfillment.order);
+      } catch (error) {
+        console.error("Could not send physical order emails:", {
+          orderId: fulfillment.order.id,
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
+    return NextResponse.json({ received: true, physicalFulfillment: "ok" });
   }
 
   const evaluation = evaluatePaidCheckout(session);

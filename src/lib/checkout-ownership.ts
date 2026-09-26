@@ -1,4 +1,5 @@
 import { getBookById } from "./books";
+import { isPhysicalCheckoutSessionMetadata } from "./physical-books";
 import { isAllowedEbookPrice } from "./stripe-prices";
 import type Stripe from "stripe";
 
@@ -70,6 +71,14 @@ export function evaluatePaidCheckout(
       ok: false,
       status: 402,
       error: "Checkout session is not paid.",
+    };
+  }
+
+  if (isPhysicalCheckoutSessionMetadata(session.metadata ?? undefined)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Checkout session is a physical purchase, not an eBook.",
     };
   }
 

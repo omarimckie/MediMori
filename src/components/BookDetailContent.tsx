@@ -8,9 +8,14 @@ import type { Book } from "@/lib/books";
 type Props = {
   book: Book;
   showTitle?: boolean;
+  physicalDirectAvailable?: boolean;
 };
 
-export function BookDetailContent({ book, showTitle = false }: Props) {
+export function BookDetailContent({
+  book,
+  showTitle = false,
+  physicalDirectAvailable = false,
+}: Props) {
   return (
     <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr] md:items-start">
       <div className="md:text-left">
@@ -41,7 +46,11 @@ export function BookDetailContent({ book, showTitle = false }: Props) {
 
       <article className="rounded-3xl border border-brand-brown/15 bg-white p-6 shadow-sm">
         <BookDescription book={book} />
-        <BookBuyActions book={book} className="mt-7" />
+        <BookBuyActions
+          book={book}
+          physicalDirectAvailable={physicalDirectAvailable}
+          className="mt-7"
+        />
       </article>
     </div>
   );
