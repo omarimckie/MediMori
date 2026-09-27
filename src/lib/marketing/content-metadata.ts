@@ -4,16 +4,6 @@ import type { MarketingAsset, MarketingContent, ResourceType } from "./types";
 export const MANUAL_UPLOAD_SOURCE = "manual_upload";
 export const PRIVATE_BLOB_PATH_TAG = "private_blob_path:";
 
-export function isEditableManualUploadAsset(asset: MarketingAsset): boolean {
-  if (asset.source === "catalog" || asset.isDemo) return false;
-  if (asset.source !== MANUAL_UPLOAD_SOURCE) return false;
-  return (
-    asset.type === "upload" ||
-    asset.type === "resource_preview" ||
-    asset.type === "resource_file"
-  );
-}
-
 export const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
   coloring_page: "Coloring page",
   word_search: "Word search",

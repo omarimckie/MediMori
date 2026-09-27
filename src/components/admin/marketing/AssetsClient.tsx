@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { isEditableManualUploadAsset } from "@/lib/marketing/content-metadata";
+import { isEditableManualUploadAsset } from "@/lib/marketing/content-metadata-client";
 import type { MarketingAsset } from "@/lib/marketing/types";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
