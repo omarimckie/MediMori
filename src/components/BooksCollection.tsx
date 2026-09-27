@@ -5,6 +5,18 @@ import {
   formatEbookPrice,
   type Book,
 } from "@/lib/books";
+import {
+  isPhysicalDirectBookId,
+  PHYSICAL_SHIPPING_PRICE_CENTS,
+  PHYSICAL_UNIT_PRICE_CENTS,
+} from "@/lib/physical-books";
+
+function formatUsdFromCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
 
 const DISPLAY_ORDER = ["book-one", "book-three", "book-two"] as const;
 
@@ -66,16 +78,43 @@ export function BooksCollection({ books }: { books: Book[] }) {
                   {book.tagline}
                 </p>
               ) : null}
-              {ebookPrice ? (
-                <p className="mt-3 text-sm font-semibold text-brand-charcoal">
-                  {ebookPrice}
-                </p>
-              ) : null}
-              {deliveryFormat ? (
-                <p className="mt-1 text-sm text-brand-charcoal/70">
-                  {deliveryFormat}
-                </p>
-              ) : null}
+              {isPhysicalDirectBookId(book.id) ? (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <p className="text-base font-extrabold text-brand-charcoal">
+                      Paperback — {formatUsdFromCents(PHYSICAL_UNIT_PRICE_CENTS)}
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-brand-charcoal/75">
+                      + {formatUsdFromCents(PHYSICAL_SHIPPING_PRICE_CENTS)} shipping
+                    </p>
+                  </div>
+                  {ebookPrice ? (
+                    <div>
+                      <p className="text-sm font-semibold text-brand-charcoal/85">
+                        Ebook — {ebookPrice}
+                      </p>
+                      {deliveryFormat ? (
+                        <p className="mt-1 text-sm text-brand-charcoal/70">
+                          {deliveryFormat}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  {ebookPrice ? (
+                    <p className="mt-3 text-sm font-semibold text-brand-charcoal">
+                      Ebook — {ebookPrice}
+                    </p>
+                  ) : null}
+                  {deliveryFormat ? (
+                    <p className="mt-1 text-sm text-brand-charcoal/70">
+                      {deliveryFormat}
+                    </p>
+                  ) : null}
+                </>
+              )}
               <TfButton
                 href={`/books/${book.id}`}
                 className="mt-5 w-full sm:w-auto lg:min-w-[10rem]"
