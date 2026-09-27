@@ -88,6 +88,11 @@ export function assertResourceType(value: string): ResourceType {
   return value as ResourceType;
 }
 
+/** Social / website placement for manual uploads (metadata.placement). */
+export const CONTENT_PLACEMENTS = ["feed", "pin", "story"] as const;
+
+export type ContentPlacement = (typeof CONTENT_PLACEMENTS)[number];
+
 export const ATTRIBUTION_KINDS = [
   "directly_attributed",
   "assisted",
@@ -193,6 +198,14 @@ export type MarketingTemplate = {
 
 export type MarketingContentMetadata = {
   pinAltText?: string | null;
+  /** Set on manual social / free-resource uploads (see MANUAL_UPLOAD_SOURCE). */
+  source?: "manual_upload";
+  placement?: ContentPlacement;
+  manualUploadVersion?: number;
+  resourceType?: ResourceType;
+  slug?: string;
+  relatedCondition?: string | null;
+  resourcePublishedAt?: string | null;
 };
 
 export type MarketingContent = {
