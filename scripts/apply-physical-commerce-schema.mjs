@@ -24,10 +24,26 @@ if (!url) {
 
 const sql = neon(url);
 const file = readFileSync(new URL("../sql/physical-commerce.sql", import.meta.url), "utf8");
+
+/** Drop leading blank lines and `--` comments so header comments do not skip real SQL. */
+function stripLeadingSqlComments(chunk) {
+  const lines = chunk.split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const trimmed = lines[index].trim();
+    if (trimmed === "" || trimmed.startsWith("--")) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  return lines.slice(index).join("\n").trim();
+}
+
 const statements = file
   .split(/;\s*\n/)
-  .map((part) => part.trim())
-  .filter((part) => part && !part.startsWith("--"));
+  .map((part) => stripLeadingSqlComments(part.trim()))
+  .filter((part) => part.length > 0);
 
 for (const statement of statements) {
   await sql.query(statement);
