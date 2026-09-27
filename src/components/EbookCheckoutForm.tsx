@@ -7,6 +7,8 @@ type Props = {
   bookId: string;
   ebookFileBaseName: string;
   isEnabled: boolean;
+  /** When physical paperback is primary, use a compact layout below the eBook heading. */
+  variant?: "default" | "secondary";
 };
 
 type CheckoutResponse = {
@@ -14,7 +16,12 @@ type CheckoutResponse = {
   error?: string;
 };
 
-export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Props) {
+export function EbookCheckoutForm({
+  bookId,
+  ebookFileBaseName,
+  isEnabled,
+  variant = "default",
+}: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,19 +68,34 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
     );
   }
 
+  const secondary = variant === "secondary";
+
   return (
     <form
       id="purchase"
       onSubmit={onSubmit}
-      className="scroll-mt-24 rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4"
+      className={
+        secondary
+          ? "scroll-mt-24"
+          : "scroll-mt-24 rounded-2xl border border-brand-green/20 bg-brand-green/10 p-4"
+      }
     >
-      <p className="text-sm font-bold text-brand-charcoal">Buy direct eBook</p>
-      <p className="mt-1 text-xs text-brand-charcoal/70">
-        Enter your name and email, then complete payment. Email subscribers
-        receive 10% off eBook purchases.
-      </p>
+      {!secondary ? (
+        <>
+          <p className="text-sm font-bold text-brand-charcoal">Buy direct eBook</p>
+          <p className="mt-1 text-xs text-brand-charcoal/70">
+            Enter your name and email, then complete payment. Email subscribers
+            receive 10% off eBook purchases.
+          </p>
+        </>
+      ) : (
+        <p className="text-xs text-brand-charcoal/70">
+          Enter your name and email to complete payment. Email subscribers receive
+          10% off eBook purchases.
+        </p>
+      )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className={secondary ? "mt-3 grid gap-3 sm:grid-cols-2" : "mt-4 grid gap-3 sm:grid-cols-2"}>
         <div>
           <label htmlFor="ebook-customer-name" className="sr-only">
             Full name
@@ -138,7 +160,7 @@ export function EbookCheckoutForm({ bookId, ebookFileBaseName, isEnabled }: Prop
       <button
         type="submit"
         disabled={loading}
-        className="mt-3 inline-flex h-11 items-center justify-center rounded-xl bg-brand-green-deep px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
+        className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-xl bg-brand-green-deep px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-wait disabled:opacity-70"
       >
         {loading ? "Redirecting to checkout..." : "Buy eBook now"}
       </button>

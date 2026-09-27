@@ -87,11 +87,19 @@ export default async function BookDetailPage({ params }: Props) {
   const galleryImages = book.amazonGalleryImageUrls ?? [];
   const ebookPrice = formatEbookPrice(book.priceEbook);
   const deliveryFormat = bookDeliveryFormat(book.id);
+  const physicalDirectBook = isPhysicalDirectBookId(book.id);
 
   return (
     <main>
       <JsonLd data={bookProductJsonLd(book)} />
-      <PageSection tone="navy" className="!py-12 sm:!py-14 lg:!py-24">
+      <PageSection
+        tone="navy"
+        className={
+          physicalDirectBook
+            ? "!py-10 sm:!py-12 lg:!py-14"
+            : "!py-12 sm:!py-14 lg:!py-24"
+        }
+      >
         <Link
           href="/books"
           className="inline-flex items-center rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
@@ -106,17 +114,19 @@ export default async function BookDetailPage({ params }: Props) {
             {book.subtitle}
           </p>
         ) : null}
-        {ebookPrice ? (
+        {!physicalDirectBook && ebookPrice ? (
           <p className="mt-5 text-2xl font-extrabold text-white">{ebookPrice}</p>
         ) : null}
-        {deliveryFormat ? (
+        {!physicalDirectBook && deliveryFormat ? (
           <p className="mt-1 text-sm font-semibold text-white/85">
             {deliveryFormat}
           </p>
         ) : null}
-        <TfButton href="#purchase" className="mt-4 w-full sm:w-auto">
-          Buy eBook now
-        </TfButton>
+        {!physicalDirectBook ? (
+          <TfButton href="#purchase" className="mt-4 w-full sm:w-auto">
+            Buy eBook now
+          </TfButton>
+        ) : null}
       </PageSection>
 
       <PageSection tone="white" cloudTop="navy" className="!pb-9 sm:!pb-10">

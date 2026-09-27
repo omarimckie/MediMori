@@ -66,7 +66,7 @@ export function PhysicalCheckoutForm({ bookId, disabled = false }: Props) {
         disabled={disabled || loading}
         className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-brand-green-deep px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? "Redirecting…" : "Buy direct"}
+        {loading ? "Redirecting…" : "Buy paperback directly"}
       </button>
       {error ? (
         <p className="text-sm font-medium text-red-700" role="alert">{error}</p>

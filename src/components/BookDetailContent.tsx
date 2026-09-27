@@ -17,7 +17,7 @@ export function BookDetailContent({
   physicalDirectAvailable = false,
 }: Props) {
   return (
-    <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr] md:items-start">
+    <div className="grid gap-6 md:grid-cols-[0.8fr_1.2fr] md:items-start md:gap-8">
       <div className="md:text-left">
         <BookDetailPreview book={book} priority />
 

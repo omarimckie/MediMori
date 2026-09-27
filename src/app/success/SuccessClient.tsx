@@ -1,19 +1,74 @@
 "use client";
 
+import {
+  formatUsdFromCents,
+  type CheckoutSessionSummary,
+  type PhysicalCheckoutSessionSummary,
+} from "@/lib/checkout-session-summary";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-
+import {
+  shouldFetchEbookDownloadIntent,
+  successViewStateFromSummary,
+  type SuccessViewState,
+} from "./success-flow";
 export function SuccessClient() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
+  const [viewState, setViewState] = useState<SuccessViewState>(
+    sessionId ? "loading" : "error",
+  );
+  const [physicalSummary, setPhysicalSummary] =
+    useState<PhysicalCheckoutSessionSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(Boolean(sessionId));
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readerOnly, setReaderOnly] = useState(false);
 
   useEffect(() => {
     if (!sessionId) return;
+
+    const checkoutSessionId = sessionId;
+    let cancelled = false;
+
+    async function loadSummary() {
+      setViewState("loading");
+      setPhysicalSummary(null);
+      setError(null);
+
+      try {
+        const res = await fetch(
+          `/api/checkout/session-summary?session_id=${encodeURIComponent(checkoutSessionId)}`,
+        );
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setViewState("error");
+          return;
+        }
+
+        const summary = (await res.json()) as CheckoutSessionSummary;
+        const nextState = successViewStateFromSummary(summary, false);
+        setViewState(nextState);
+        if (summary.purchaseType === "physical") {
+          setPhysicalSummary(summary);
+        }
+      } catch {
+        if (!cancelled) {
+          setViewState("error");
+        }
+      }
+    }
+
+    void loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !shouldFetchEbookDownloadIntent(viewState)) return;
 
     const checkoutSessionId = sessionId;
     let cancelled = false;
@@ -46,10 +101,10 @@ export function SuccessClient() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, viewState]);
 
   const download = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || viewState !== "ebook") return;
     setError(null);
     setReaderOnly(false);
     setLoading(true);
@@ -57,8 +112,6 @@ export function SuccessClient() {
       const url = `/api/download?session_id=${encodeURIComponent(sessionId)}`;
       const res = await fetch(url, { redirect: "manual" });
 
-      // Cross-origin 302 to Vercel Blob is an opaque redirect (status 0).
-      // Navigate to the API URL so the browser follows the signed download.
       if (res.type === "opaqueredirect" || res.status === 0) {
         window.location.assign(url);
         return;
@@ -98,7 +151,7 @@ export function SuccessClient() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, viewState]);
 
   if (!sessionId) {
     return (
@@ -113,6 +166,76 @@ export function SuccessClient() {
         <Link
           href="/books"
           className="mt-8 inline-flex rounded-2xl bg-brand-green-deep px-6 py-3 font-bold text-white hover:brightness-95"
+        >
+          Back to books
+        </Link>
+      </div>
+    );
+  }
+
+  if (viewState === "loading") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20 text-center text-brand-charcoal/70">
+        Loading your order…
+      </div>
+    );
+  }
+
+  if (viewState === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20 text-center">
+        <h1 className="text-2xl font-extrabold text-brand-charcoal">
+          Payment received
+        </h1>
+        <p className="mt-3 text-brand-charcoal/80">
+          We could not load your order details right now. If you completed
+          checkout, your payment was processed. Check your email for confirmation
+          or contact us if you need help.
+        </p>
+        <Link
+          href="/books"
+          className="mt-8 inline-flex rounded-2xl bg-brand-green-deep px-6 py-3 font-bold text-white hover:brightness-95"
+        >
+          Back to books
+        </Link>
+      </div>
+    );
+  }
+
+  if (viewState === "physical" && physicalSummary) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20 text-center">
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand-green-deep">
+          Thank you
+        </p>
+        <h1 className="mt-2 text-3xl font-extrabold text-brand-charcoal">
+          Thank you for your order!
+        </h1>
+        <p className="mt-3 text-brand-charcoal/80">
+          Your paperback order has been received.
+        </p>
+        <div className="mt-8 rounded-2xl border border-brand-brown/15 bg-cream-deep p-5 text-left text-sm text-brand-charcoal">
+          <p className="font-bold text-brand-charcoal">{physicalSummary.bookTitle}</p>
+          <p className="mt-2 text-brand-charcoal/85">
+            Quantity:{" "}
+            <span className="font-semibold">{physicalSummary.quantity}</span>
+          </p>
+          <p className="mt-1 text-brand-charcoal/85">
+            Total:{" "}
+            <span className="font-semibold">
+              {formatUsdFromCents(physicalSummary.amountTotalCents)}
+            </span>
+          </p>
+        </div>
+        <p className="mt-6 text-brand-charcoal/80">
+          Your book will be shipped to the address you provided at checkout.
+        </p>
+        <p className="mt-3 text-sm text-brand-charcoal/65">
+          This order is for a paperback only. No eBook download is included.
+        </p>
+        <Link
+          href="/books"
+          className="mt-10 inline-flex rounded-2xl bg-brand-green-deep px-6 py-3 font-bold text-white hover:brightness-95"
         >
           Back to books
         </Link>
