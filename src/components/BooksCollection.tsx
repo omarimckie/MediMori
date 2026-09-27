@@ -33,6 +33,33 @@ function orderedBooks(books: Book[]) {
   );
 }
 
+function AmazonListingNote({
+  book,
+  variant,
+}: {
+  book: Book;
+  variant: "also" | "paperback";
+}) {
+  const url = book.amazonPaperbackUrl?.trim();
+  if (!url) return null;
+  const label =
+    variant === "also"
+      ? "Also available on Amazon"
+      : "Paperback available on Amazon";
+  return (
+    <p className="mt-2 text-xs text-brand-charcoal/55 sm:text-sm">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-brand-charcoal/25 underline-offset-2 hover:text-brand-charcoal/75 hover:decoration-brand-charcoal/40"
+      >
+        {label}
+      </a>
+    </p>
+  );
+}
+
 export function BooksCollection({ books }: { books: Book[] }) {
   const catalog = orderedBooks(books);
 
@@ -100,6 +127,7 @@ export function BooksCollection({ books }: { books: Book[] }) {
                       ) : null}
                     </div>
                   ) : null}
+                  <AmazonListingNote book={book} variant="also" />
                 </div>
               ) : (
                 <>
@@ -113,6 +141,7 @@ export function BooksCollection({ books }: { books: Book[] }) {
                       {deliveryFormat}
                     </p>
                   ) : null}
+                  <AmazonListingNote book={book} variant="paperback" />
                 </>
               )}
               <TfButton
