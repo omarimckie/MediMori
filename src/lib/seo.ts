@@ -1,5 +1,9 @@
 import type { Book } from "@/lib/books";
 import type { BlogPost } from "@/lib/blog";
+import {
+  isPhysicalDirectBookId,
+  PHYSICAL_UNIT_PRICE_CENTS,
+} from "@/lib/physical-books";
 import { absoluteUrl, getSiteUrl } from "@/lib/site";
 
 export const SITE_NAME = "Twilight Feather";
@@ -43,11 +47,11 @@ export function bookSeoTitle(book: Book): string {
 export function bookSeoDescription(book: Book): string {
   switch (book.id) {
     case "book-one":
-      return "A children’s picture book that helps families explain sickle cell disease with warmth and courage. Read Amara’s story online with Twilight Feather — $7 eBook, no offline PDF.";
+      return "Children's sickle cell picture book for families and classrooms. Paperback $10 + $4.99 shipping from Twilight Feather, $7 read-online eBook, or paperback on Amazon.";
     case "book-three":
-      return "A gentle children’s asthma story about AJ learning to stay active and confident. Read AJ Can Breathe Easy online with Twilight Feather — $7 eBook, browser-only.";
+      return "Children's asthma story (AJ Can Breathe Easy). Paperback $10 + $4.99 shipping from Twilight Feather, $7 read-online eBook, or paperback on Amazon.";
     case "book-two":
-      return "60 medicine-themed word search puzzles for kids, families, and classrooms. Download the Health & Medicine Word Search Collection PDF from Twilight Feather — $7.";
+      return "Medicine-themed word search puzzles for kids and classrooms. $7 PDF download from Twilight Feather; paperback also available on Amazon.";
     default: {
       const fromTagline = book.tagline?.trim();
       if (fromTagline) return fromTagline;
@@ -85,24 +89,42 @@ export function websiteJsonLd() {
   };
 }
 
+function twilightFeatherSeller() {
+  return {
+    "@type": "Organization" as const,
+    name: SITE_NAME,
+  };
+}
+
+function siteBookOffer(pageUrl: string, price: string) {
+  return {
+    "@type": "Offer" as const,
+    url: pageUrl,
+    priceCurrency: "USD",
+    price,
+    availability: "https://schema.org/InStock",
+    itemCondition: "https://schema.org/NewCondition",
+    seller: twilightFeatherSeller(),
+  };
+}
+
 export function bookProductJsonLd(book: Book) {
-  const url = absoluteUrl(`/books/${book.id}`);
-  const price = ebookPriceAmount(book.priceEbook);
+  const pageUrl = absoluteUrl(`/books/${book.id}`);
   const image = book.coverImageUrl
     ? absoluteUrl(book.coverImageUrl)
     : absoluteUrl(DEFAULT_OG_IMAGE);
 
-  const offer =
-    price != null
-      ? {
-          "@type": "Offer" as const,
-          url,
-          priceCurrency: "USD",
-          price,
-          availability: "https://schema.org/InStock",
-          itemCondition: "https://schema.org/NewCondition",
-        }
-      : undefined;
+  const offers: ReturnType<typeof siteBookOffer>[] = [];
+
+  const ebookPrice = ebookPriceAmount(book.priceEbook);
+  if (ebookPrice != null) {
+    offers.push(siteBookOffer(pageUrl, ebookPrice));
+  }
+
+  if (isPhysicalDirectBookId(book.id)) {
+    const paperbackPrice = (PHYSICAL_UNIT_PRICE_CENTS / 100).toFixed(2);
+    offers.push(siteBookOffer(pageUrl, paperbackPrice));
+  }
 
   return {
     "@context": "https://schema.org",
@@ -115,7 +137,7 @@ export function bookProductJsonLd(book: Book) {
       "@type": "Brand",
       name: SITE_NAME,
     },
-    ...(offer ? { offers: offer } : {}),
+    ...(offers.length > 0 ? { offers } : {}),
   };
 }
 
