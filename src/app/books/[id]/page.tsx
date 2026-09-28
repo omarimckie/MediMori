@@ -1,3 +1,4 @@
+import { BookFreeActivities } from "@/components/BookFreeActivities";
 import { BookDetailContent } from "@/components/BookDetailContent";
 import { JsonLd } from "@/components/JsonLd";
 import { PageSection } from "@/components/PageSection";
@@ -18,6 +19,8 @@ import {
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { getMarketingStore } from "@/lib/marketing/context";
+import { listPublishedFreeResourcesForBook } from "@/lib/marketing/free-resources";
 import { hasPhysicalInventory } from "@/lib/physical-inventory";
 import { isPhysicalDirectBookId } from "@/lib/physical-books";
 import { notFound } from "next/navigation";
@@ -73,6 +76,8 @@ export default async function BookDetailPage({ params }: Props) {
   const book = getBookById(id);
 
   if (!book) notFound();
+
+  const bookFreeResources = await listPublishedFreeResourcesForBook(getMarketingStore(), book.id);
 
   let physicalDirectAvailable = false;
   if (isPhysicalDirectBookId(book.id)) {
@@ -134,6 +139,9 @@ export default async function BookDetailPage({ params }: Props) {
           book={book}
           physicalDirectAvailable={physicalDirectAvailable}
         />
+        <div className="mx-auto mt-6 max-w-5xl px-1 sm:px-0">
+          <BookFreeActivities resources={bookFreeResources} />
+        </div>
         <div className="mt-7 grid w-full px-1 sm:mt-8 sm:px-0 md:grid-cols-[0.8fr_1.2fr]">
           <div className="flex justify-center md:col-start-2">
             <Link

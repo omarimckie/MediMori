@@ -14,8 +14,8 @@ export function ResourceCard({ resource }: Props) {
       <h2 className="mt-2 text-xl font-extrabold text-brand-charcoal">
         <a
           href={resource.url}
-          target="_blank"
-          rel="noopener noreferrer"
+          target={resource.url.startsWith("/") ? undefined : "_blank"}
+          rel={resource.url.startsWith("/") ? undefined : "noopener noreferrer"}
           className="underline-offset-4 transition hover:text-brand-blue-deep hover:underline"
         >
           {resource.title}
@@ -32,8 +32,8 @@ export function ResourceCard({ resource }: Props) {
         </p>
         <a
           href={resource.url}
-          target="_blank"
-          rel="noopener noreferrer"
+          target={resource.url.startsWith("/") ? undefined : "_blank"}
+          rel={resource.url.startsWith("/") ? undefined : "noopener noreferrer"}
           className="inline-block text-xs font-bold text-brand-blue-deep underline-offset-4 hover:underline"
         >
           {resource.cta}

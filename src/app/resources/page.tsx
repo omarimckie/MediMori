@@ -1,15 +1,29 @@
 import { ResourceCard } from "@/components/ResourceCard";
 import { PageSection } from "@/components/PageSection";
-import { getRecommendedResources } from "@/lib/resources";
+import { getCombinedResources } from "@/lib/resources";
+import { SITE_NAME } from "@/lib/seo";
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: "Resources — Twilight.Feather",
-  description:
-    "Trusted children's health and wellness resources for parents, caregivers, and educators.",
+const RESOURCES_DESCRIPTION =
+  "Trusted children's health and wellness resources for parents, caregivers, and educators — including free Twilight Feather downloads and curated external guides.";
+
+export const metadata: Metadata = {
+  title: { absolute: `Helpful Resources — ${SITE_NAME}` },
+  description: RESOURCES_DESCRIPTION,
+  alternates: { canonical: "/resources" },
+  openGraph: {
+    title: `Helpful Resources — ${SITE_NAME}`,
+    description: RESOURCES_DESCRIPTION,
+    url: "/resources",
+  },
+  twitter: {
+    title: `Helpful Resources — ${SITE_NAME}`,
+    description: RESOURCES_DESCRIPTION,
+  },
 };
 
-export default function ResourcesPage() {
-  const resources = getRecommendedResources();
+export default async function ResourcesPage() {
+  const resources = await getCombinedResources();
 
   return (
     <main>
