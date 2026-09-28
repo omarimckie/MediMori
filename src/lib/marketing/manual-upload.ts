@@ -13,7 +13,15 @@ import {
   probeImageDimensions,
   sanitizeUploadFilename,
 } from "./file-validation";
-import { deleteMarketingBlob, uploadPrivateMarketingFile, uploadPublicMarketingFile } from "./marketing-blob";
+import {
+  assertPreviewPublicUrlMatchesPathname,
+  deleteMarketingBlob,
+  isMarketingPrivateResourceFilePathname,
+  isMarketingPublicResourcePreviewPathname,
+  readMarketingBlobBuffer,
+  uploadPrivateMarketingFile,
+  uploadPublicMarketingFile,
+} from "./marketing-blob";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import {
@@ -248,17 +256,85 @@ export async function createManualSocialPost(
   }
 }
 
+export type ManualResourceStagedBlobInput = {
+  title: string;
+  description: string;
+  resourceType: ResourceType;
+  bookId?: string | null;
+  relatedCondition?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  cta?: string | null;
+  scheduledFor?: string | null;
+  weeklyPlanId: string;
+  campaignId: string | null;
+  actor: string | null;
+  previewPathname: string;
+  previewPublicUrl: string;
+  filePathname: string;
+  previewFilename: string;
+  fileFilename: string;
+};
+
+export function assertStagedManualResourceBlobRefs(input: {
+  previewPathname: string;
+  previewPublicUrl: string;
+  filePathname: string;
+}): void {
+  if (!isMarketingPublicResourcePreviewPathname(input.previewPathname)) {
+    throw new Error("Invalid preview blob pathname.");
+  }
+  if (!isMarketingPrivateResourceFilePathname(input.filePathname)) {
+    throw new Error("Invalid downloadable file blob pathname.");
+  }
+  assertPreviewPublicUrlMatchesPathname(input.previewPathname, input.previewPublicUrl);
+}
+
+export async function cleanupResourceUploadIntentBlobs(
+  uploadIntent: string,
+  actorUsername: string | null,
+): Promise<void> {
+  const { verifyResourceUploadIntentForCleanup } = await import("./resource-upload-intent");
+  const { previewPathname, filePathname } = verifyResourceUploadIntentForCleanup(
+    uploadIntent,
+    actorUsername,
+  );
+  await deleteMarketingBlob(previewPathname);
+  await deleteMarketingBlob(filePathname);
+}
+
+export async function createManualFreeResourceFromStagedBlobs(
+  store: MarketingStore,
+  input: ManualResourceStagedBlobInput,
+) {
+  assertStagedManualResourceBlobRefs(input);
+
+  const previewBuffer = await readMarketingBlobBuffer(input.previewPathname, "public");
+  const fileBuffer = await readMarketingBlobBuffer(input.filePathname, "private");
+
+  const preview = assertImageUpload(previewBuffer);
+  const file = assertResourceFileUpload(fileBuffer);
+  const previewDimensions = await probeImageDimensions(previewBuffer);
+
+  const previewUpload = { url: input.previewPublicUrl, pathname: input.previewPathname };
+  const fileUpload = { pathname: input.filePathname };
+
+  return persistManualFreeResource(store, input, {
+    preview,
+    file,
+    previewDimensions,
+    previewUpload,
+    fileUpload,
+    previewFilename: input.previewFilename,
+    fileFilename: input.fileFilename,
+    rollbackPathnames: [input.previewPathname, input.filePathname],
+  });
+}
+
 export async function createManualFreeResource(
   store: MarketingStore,
   input: ManualResourceInput,
 ) {
-  const resourceType = assertResourceType(input.resourceType);
-  const category = assertCategory("educational");
-  const audience = assertAudience("parents");
-  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
-    throw new Error("Unknown book.");
-  }
-
   const preview = assertImageUpload(input.previewBuffer);
   const file = assertResourceFileUpload(input.fileBuffer);
   const previewDimensions = await probeImageDimensions(input.previewBuffer);
@@ -273,7 +349,46 @@ export async function createManualFreeResource(
     file.mime,
     extensionForKind(file.kind),
   );
-  const blobPathnames = [previewUpload.pathname, fileUpload.pathname];
+
+  return persistManualFreeResource(store, input, {
+    preview,
+    file,
+    previewDimensions,
+    previewUpload,
+    fileUpload,
+    previewFilename: input.previewFilename,
+    fileFilename: input.fileFilename,
+    rollbackPathnames: [previewUpload.pathname, fileUpload.pathname],
+  });
+}
+
+type PersistManualFreeResourceArgs = {
+  preview: { kind: import("./file-validation").DetectedFileKind; mime: string };
+  file: { kind: import("./file-validation").DetectedFileKind; mime: string };
+  previewDimensions: { width: number; height: number; mimeType: string };
+  previewUpload: { url: string; pathname: string };
+  fileUpload: { pathname: string };
+  previewFilename: string;
+  fileFilename: string;
+  rollbackPathnames: string[];
+};
+
+async function persistManualFreeResource(
+  store: MarketingStore,
+  input: Omit<
+    ManualResourceInput,
+    "previewBuffer" | "previewFilename" | "fileBuffer" | "fileFilename"
+  >,
+  parts: PersistManualFreeResourceArgs,
+) {
+  const resourceType = assertResourceType(input.resourceType);
+  const category = assertCategory("educational");
+  const audience = assertAudience("parents");
+  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
+    throw new Error("Unknown book.");
+  }
+
+  const blobPathnames = parts.rollbackPathnames;
 
   try {
     const previewAssetId = crypto.randomUUID();
@@ -289,7 +404,7 @@ export async function createManualFreeResource(
 
     const previewAsset = await store.createAsset({
       id: previewAssetId,
-      name: sanitizeUploadFilename(input.previewFilename),
+      name: sanitizeUploadFilename(parts.previewFilename),
       type: "resource_preview",
       source: MANUAL_UPLOAD_SOURCE,
       bookId: input.bookId ?? null,
@@ -297,19 +412,19 @@ export async function createManualFreeResource(
       campaignId: input.campaignId,
       approved: true,
       usageRestrictions: "Public preview image for free resource page.",
-      aspectRatio: formatAspectRatioLabel(previewDimensions.width, previewDimensions.height),
-      imageWidth: previewDimensions.width,
-      imageHeight: previewDimensions.height,
-      mimeType: previewDimensions.mimeType,
+      aspectRatio: formatAspectRatioLabel(parts.previewDimensions.width, parts.previewDimensions.height),
+      imageWidth: parts.previewDimensions.width,
+      imageHeight: parts.previewDimensions.height,
+      mimeType: parts.previewDimensions.mimeType,
       tags: ["manual_upload", "resource_preview"],
-      url: previewUpload.url,
+      url: parts.previewUpload.url,
       altText: input.title,
       isDemo: false,
     });
 
     const fileAsset = await store.createAsset({
       id: fileAssetId,
-      name: sanitizeUploadFilename(input.fileFilename),
+      name: sanitizeUploadFilename(parts.fileFilename),
       type: "resource_file",
       source: MANUAL_UPLOAD_SOURCE,
       bookId: input.bookId ?? null,
@@ -320,8 +435,8 @@ export async function createManualFreeResource(
       aspectRatio: null,
       imageWidth: null,
       imageHeight: null,
-      mimeType: file.mime,
-      tags: [`${PRIVATE_BLOB_PATH_TAG}${fileUpload.pathname}`, "manual_upload", "resource_file"],
+      mimeType: parts.file.mime,
+      tags: [`${PRIVATE_BLOB_PATH_TAG}${parts.fileUpload.pathname}`, "manual_upload", "resource_file"],
       url: null,
       altText: input.title,
       isDemo: false,
@@ -440,6 +555,61 @@ export async function readResourceFilesFromForm(form: FormData) {
     previewFilename: preview.name || "preview.jpg",
     fileBuffer: Buffer.from(await resourceFile.arrayBuffer()),
     fileFilename: resourceFile.name || "resource.pdf",
+  };
+}
+
+export type ManualResourceMetadataFields = Omit<
+  ManualResourceInput,
+  | "previewBuffer"
+  | "previewFilename"
+  | "fileBuffer"
+  | "fileFilename"
+  | "weeklyPlanId"
+  | "campaignId"
+  | "actor"
+>;
+
+export function parseManualResourceMetadataRecord(
+  record: Record<string, unknown>,
+): ManualResourceMetadataFields {
+  const title = String(record.title ?? "").trim();
+  const description = String(record.description ?? "").trim();
+  if (!title) throw new Error("Title is required.");
+  if (!description) throw new Error("Description is required.");
+  return {
+    title,
+    description,
+    resourceType: assertResourceType(String(record.resourceType ?? "other")),
+    bookId: String(record.bookId ?? "").trim() || null,
+    relatedCondition: String(record.relatedCondition ?? "").trim() || null,
+    seoTitle: String(record.seoTitle ?? "").trim() || null,
+    seoDescription: String(record.seoDescription ?? "").trim() || null,
+    cta: String(record.cta ?? "").trim() || null,
+    scheduledFor: normalizeScheduledFor(String(record.scheduledFor ?? "").trim() || null),
+  };
+}
+
+export function parseManualResourceStagedBlobBody(record: Record<string, unknown>): {
+  previewPathname: string;
+  previewPublicUrl: string;
+  filePathname: string;
+  previewFilename: string;
+  fileFilename: string;
+} {
+  const previewPathname = String(record.previewPathname ?? "").trim();
+  const previewPublicUrl = String(record.previewPublicUrl ?? "").trim();
+  const filePathname = String(record.filePathname ?? "").trim();
+  const previewFilename = String(record.previewFilename ?? "").trim() || "preview.jpg";
+  const fileFilename = String(record.fileFilename ?? "").trim() || "resource.pdf";
+  if (!previewPathname || !previewPublicUrl || !filePathname) {
+    throw new Error("Staged blob pathnames are required.");
+  }
+  return {
+    previewPathname,
+    previewPublicUrl,
+    filePathname,
+    previewFilename,
+    fileFilename,
   };
 }
 

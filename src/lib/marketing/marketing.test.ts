@@ -199,6 +199,7 @@ test("mock publisher can succeed without live networks", async () => {
       trackingToken: "abc",
       originalBody: "Warm copy",
       bookId: "book-one",
+      metadata: {},
       isDemo: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

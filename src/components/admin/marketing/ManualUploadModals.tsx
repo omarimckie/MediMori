@@ -1,8 +1,18 @@
 "use client";
 
 import { useRef, useState, type RefObject } from "react";
+import { upload } from "@vercel/blob/client";
 import booksData from "@/data/books.json";
+import { MAX_MARKETING_IMAGE_BYTES, MAX_MARKETING_PDF_BYTES } from "@/lib/marketing/file-validation";
+import {
+  resourceBlobStorageUnavailableMessage,
+  shouldUseResourceMultipartFallbackWhenBlobUnavailable,
+} from "@/lib/marketing/resource-multipart-fallback";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
+
+const RESOURCE_BLOB_UPLOAD_URL = "/api/admin/marketing/manual/resource/blob";
+const RESOURCE_UPLOAD_INTENT_URL = "/api/admin/marketing/manual/resource/upload-intent";
+const RESOURCE_CLEANUP_URL = "/api/admin/marketing/manual/resource/cleanup";
 
 const BOOKS = booksData.books as Array<{ id: string; title: string }>;
 
@@ -177,6 +187,78 @@ function hasResourceFieldErrors(errors: ResourceFieldErrors): boolean {
   return Boolean(errors.title || errors.description || errors.preview || errors.file);
 }
 
+function validatePreviewFile(file: File): string | undefined {
+  if (file.size > MAX_MARKETING_IMAGE_BYTES) {
+    return `Preview image must be at most ${MAX_MARKETING_IMAGE_BYTES / (1024 * 1024)} MB.`;
+  }
+  const type = file.type.toLowerCase();
+  if (!type.startsWith("image/") || !["image/jpeg", "image/png", "image/webp"].includes(type)) {
+    return "Preview must be a PNG, JPEG, or WebP image.";
+  }
+  return undefined;
+}
+
+function validateDownloadableFile(file: File): string | undefined {
+  const lower = file.name.toLowerCase();
+  const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
+  const isImage =
+    file.type.startsWith("image/") &&
+    ["image/jpeg", "image/png", "image/webp"].includes(file.type.toLowerCase());
+  if (!isPdf && !isImage) {
+    return "Downloadable file must be a PDF or image (PNG, JPEG, WebP).";
+  }
+  const maxBytes = isPdf ? MAX_MARKETING_PDF_BYTES : MAX_MARKETING_IMAGE_BYTES;
+  if (file.size > maxBytes) {
+    const maxMb = maxBytes / (1024 * 1024);
+    return `File must be at most ${maxMb} MB.`;
+  }
+  return undefined;
+}
+
+async function cleanupStagedResourceUpload(uploadIntent: string): Promise<void> {
+  if (!uploadIntent) return;
+  try {
+    await fetch(RESOURCE_CLEANUP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uploadIntent }),
+    });
+  } catch {
+    // Best-effort; orphaned blobs may remain if cleanup fails.
+  }
+}
+
+function resourceUploadClientPayload(role: "preview" | "file", uploadIntent: string): string {
+  return JSON.stringify({ role, uploadIntent });
+}
+
+async function parseApiError(response: Response): Promise<string> {
+  const raw = await response.text();
+  if (!raw) return `Request failed (${response.status}).`;
+  try {
+    const payload = JSON.parse(raw) as { error?: string };
+    return payload.error ?? `Request failed (${response.status}).`;
+  } catch {
+    return `Request failed (${response.status}). Please try again.`;
+  }
+}
+
+function readResourceMetadataFromForm(form: HTMLFormElement, weeklyPlanId: string) {
+  const data = new FormData(form);
+  return {
+    weeklyPlanId,
+    title: String(data.get("title") ?? "").trim(),
+    description: String(data.get("description") ?? "").trim(),
+    resourceType: String(data.get("resourceType") ?? "worksheet"),
+    bookId: String(data.get("bookId") ?? "").trim() || null,
+    relatedCondition: String(data.get("relatedCondition") ?? "").trim() || null,
+    scheduledFor: String(data.get("scheduledFor") ?? "").trim() || null,
+    seoTitle: String(data.get("seoTitle") ?? "").trim() || null,
+    seoDescription: String(data.get("seoDescription") ?? "").trim() || null,
+    cta: String(data.get("cta") ?? "").trim() || null,
+  };
+}
+
 function ResourceFileUploadField({
   name,
   label,
@@ -263,45 +345,166 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
 
     const form = event.currentTarget;
     const validation = validateResourceFields(form);
+    const previewInput = form.elements.namedItem("preview") as HTMLInputElement | null;
+    const fileInput = form.elements.namedItem("file") as HTMLInputElement | null;
+    const previewFile = previewInput?.files?.[0];
+    const downloadableFile = fileInput?.files?.[0];
+
+    if (previewFile) {
+      const previewSizeError = validatePreviewFile(previewFile);
+      if (previewSizeError) validation.preview = previewSizeError;
+    }
+    if (downloadableFile) {
+      const fileSizeError = validateDownloadableFile(downloadableFile);
+      if (fileSizeError) validation.file = fileSizeError;
+    }
+
     if (hasResourceFieldErrors(validation)) {
       setFieldErrors(validation);
+      return;
+    }
+    if (!previewFile || !downloadableFile) {
       return;
     }
 
     setSubmitting(true);
     try {
-      const data = new FormData(form);
-      data.set("weeklyPlanId", weeklyPlanId);
-      const response = await fetch("/api/admin/marketing/manual/resource", {
-        method: "POST",
-        body: data,
-      });
-
-      const raw = await response.text();
-      let payload: { error?: string } = {};
-      if (raw) {
-        try {
-          payload = JSON.parse(raw) as { error?: string };
-        } catch {
-          if (!response.ok) {
-            setFormError(`Upload failed (${response.status}). Please try again.`);
-            return;
-          }
-        }
+      const usedClientBlob = await submitResourceViaClientBlob(
+        form,
+        weeklyPlanId,
+        previewFile,
+        downloadableFile,
+      );
+      if (usedClientBlob === "fallback-multipart") {
+        await submitResourceViaMultipart(form, weeklyPlanId);
       }
-
-      if (!response.ok) {
-        setFormError(payload.error ?? "Upload failed.");
-        return;
-      }
-
       await onDone();
       onClose();
-    } catch {
-      setFormError("Network error. Check your connection and try again.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Network error. Check your connection and try again.";
+      setFormError(message);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submitResourceViaMultipart(form: HTMLFormElement, planId: string) {
+    const data = new FormData(form);
+    data.set("weeklyPlanId", planId);
+    const response = await fetch("/api/admin/marketing/manual/resource", {
+      method: "POST",
+      body: data,
+    });
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+  }
+
+  async function submitResourceViaClientBlob(
+    form: HTMLFormElement,
+    planId: string,
+    previewFile: File,
+    downloadableFile: File,
+  ): Promise<"done" | "fallback-multipart"> {
+    const combinedBytes = previewFile.size + downloadableFile.size;
+
+    const intentResponse = await fetch(RESOURCE_UPLOAD_INTENT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        previewFilename: previewFile.name,
+        fileFilename: downloadableFile.name,
+      }),
+    });
+
+    if (!intentResponse.ok) {
+      if (
+        shouldUseResourceMultipartFallbackWhenBlobUnavailable(combinedBytes, {
+          blobIntentStatus503: intentResponse.status === 503,
+        })
+      ) {
+        return "fallback-multipart";
+      }
+      if (intentResponse.status === 503) {
+        throw new Error(resourceBlobStorageUnavailableMessage());
+      }
+      throw new Error(
+        intentResponse.status === 401
+          ? "Blob authorization failed. Sign in again and retry."
+          : await parseApiError(intentResponse),
+      );
+    }
+
+    const intentJson = (await intentResponse.json()) as {
+      uploadIntent?: string;
+      previewPathname?: string;
+      filePathname?: string;
+    };
+    const uploadIntent = intentJson.uploadIntent ?? "";
+    const previewPathname = intentJson.previewPathname ?? "";
+    const filePathname = intentJson.filePathname ?? "";
+    if (!uploadIntent || !previewPathname || !filePathname) {
+      throw new Error("Blob authorization failed: invalid upload intent.");
+    }
+
+    let previewBlob;
+    try {
+      previewBlob = await upload(previewPathname, previewFile, {
+        access: "public",
+        handleUploadUrl: RESOURCE_BLOB_UPLOAD_URL,
+        clientPayload: resourceUploadClientPayload("preview", uploadIntent),
+        multipart: previewFile.size > 6 * 1024 * 1024,
+        contentType: previewFile.type || undefined,
+      });
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? `Preview image upload failed: ${error.message}`
+          : "Preview image upload failed.",
+      );
+    }
+
+    let fileBlob;
+    try {
+      fileBlob = await upload(filePathname, downloadableFile, {
+        access: "private",
+        handleUploadUrl: RESOURCE_BLOB_UPLOAD_URL,
+        clientPayload: resourceUploadClientPayload("file", uploadIntent),
+        multipart: downloadableFile.size > 6 * 1024 * 1024,
+        contentType: downloadableFile.type || undefined,
+      });
+    } catch (error) {
+      await cleanupStagedResourceUpload(uploadIntent);
+      throw new Error(
+        error instanceof Error
+          ? `Downloadable file upload failed: ${error.message}`
+          : "Downloadable file upload failed.",
+      );
+    }
+
+    const metadata = {
+      ...readResourceMetadataFromForm(form, planId),
+      uploadIntent,
+      previewPathname: previewBlob.pathname,
+      previewPublicUrl: previewBlob.url,
+      filePathname: fileBlob.pathname,
+      previewFilename: previewFile.name,
+      fileFilename: downloadableFile.name,
+    };
+
+    const response = await fetch("/api/admin/marketing/manual/resource", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metadata),
+    });
+
+    if (!response.ok) {
+      await cleanupStagedResourceUpload(uploadIntent);
+      throw new Error(await parseApiError(response));
+    }
+
+    return "done";
   }
 
   return (

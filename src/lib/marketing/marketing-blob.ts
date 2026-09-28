@@ -1,5 +1,5 @@
-import { del, put } from "@vercel/blob";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { del, get, put } from "@vercel/blob";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
 
@@ -8,8 +8,51 @@ export const MARKETING_SIGNED_URL_TTL_MS = 10 * 60 * 1000;
 const LOCAL_PUBLIC_ROOT = path.join(process.cwd(), "public", "marketing-uploads");
 const LOCAL_PRIVATE_ROOT = path.join(process.cwd(), "private", "marketing-uploads");
 
-function hasBlobToken(): boolean {
+export function hasMarketingBlobToken(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+}
+
+function hasBlobToken(): boolean {
+  return hasMarketingBlobToken();
+}
+
+const RESOURCE_BLOB_SEGMENT = "[a-f0-9]{32}";
+
+/** Pathnames allowed for client-uploaded free-resource preview images. */
+export const MARKETING_PUBLIC_RESOURCE_PREVIEW_PATH = new RegExp(
+  `^marketing/public/${RESOURCE_BLOB_SEGMENT}\\.(?:jpe?g|png|webp)$`,
+  "i",
+);
+
+/** Pathnames allowed for client-uploaded free-resource download files. */
+export const MARKETING_PRIVATE_RESOURCE_FILE_PATH = new RegExp(
+  `^marketing/private/${RESOURCE_BLOB_SEGMENT}\\.(?:pdf|jpe?g|png|webp)$`,
+  "i",
+);
+
+export function isMarketingPublicResourcePreviewPathname(pathname: string): boolean {
+  return MARKETING_PUBLIC_RESOURCE_PREVIEW_PATH.test(pathname);
+}
+
+export function isMarketingPrivateResourceFilePathname(pathname: string): boolean {
+  return MARKETING_PRIVATE_RESOURCE_FILE_PATH.test(pathname);
+}
+
+export function isStagedManualResourcePathname(pathname: string): boolean {
+  return (
+    isMarketingPublicResourcePreviewPathname(pathname) ||
+    isMarketingPrivateResourceFilePathname(pathname)
+  );
+}
+
+/**
+ * Ensures a public preview URL refers to our marketing/public blob (not an arbitrary external URL).
+ */
+export function assertPreviewPublicUrlMatchesPathname(pathname: string, url: string): void {
+  const resolved = tryResolveMarketingBlobPathnameFromUrl(url);
+  if (!resolved || resolved !== pathname) {
+    throw new Error("Invalid preview blob reference.");
+  }
 }
 
 function randomSegment(): string {
@@ -120,6 +163,39 @@ export async function deleteMarketingBlob(pathname: string): Promise<void> {
   } catch {
     // best-effort cleanup
   }
+}
+
+async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
+  const chunks: Uint8Array[] = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
+export async function readMarketingBlobBuffer(
+  pathname: string,
+  access: "public" | "private",
+): Promise<Buffer> {
+  if (pathname.startsWith("local-public/")) {
+    const fileName = pathname.replace("local-public/", "");
+    return readFile(path.join(LOCAL_PUBLIC_ROOT, fileName));
+  }
+  if (pathname.startsWith("local-private/")) {
+    const fileName = pathname.replace("local-private/", "");
+    return readFile(path.join(LOCAL_PRIVATE_ROOT, fileName));
+  }
+  if (!hasBlobToken()) {
+    throw new Error("Blob storage is not configured.");
+  }
+  const result = await get(pathname, { access });
+  if (!result || result.statusCode !== 200 || !result.stream) {
+    throw new Error("Uploaded file not found in blob storage.");
+  }
+  return streamToBuffer(result.stream);
 }
 
 export async function readLocalPrivateMarketingFile(pathname: string): Promise<Buffer | null> {

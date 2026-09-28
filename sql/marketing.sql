@@ -104,10 +104,15 @@ CREATE TABLE IF NOT EXISTS marketing_content (
   tracking_token TEXT UNIQUE,
   original_body TEXT,
   book_id TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_demo BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS marketing_content_metadata_slug_idx
+  ON marketing_content ((metadata->>'slug'))
+  WHERE metadata->>'slug' IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS marketing_content_status_idx
   ON marketing_content (status, scheduled_for);
