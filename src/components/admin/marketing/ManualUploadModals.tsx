@@ -3,7 +3,7 @@
 import { useRef, useState, type RefObject } from "react";
 import { upload } from "@vercel/blob/client";
 import booksData from "@/data/books.json";
-import { MAX_MARKETING_IMAGE_BYTES, MAX_MARKETING_PDF_BYTES } from "@/lib/marketing/file-validation";
+import { MAX_MARKETING_IMAGE_BYTES, MAX_MARKETING_PDF_BYTES } from "@/lib/marketing/upload-limits";
 import {
   resourceBlobStorageUnavailableMessage,
   shouldUseResourceMultipartFallbackWhenBlobUnavailable,
