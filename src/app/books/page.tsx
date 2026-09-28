@@ -4,7 +4,7 @@ import { getBooks } from "@/lib/books";
 import type { Metadata } from "next";
 
 const BOOKS_DESCRIPTION =
-  "Browse children’s health storybooks about sickle cell and asthma, plus a health & medicine word search PDF. Shop Twilight Feather eBooks from $7.";
+  "Shop children's health books: $10 paperback + $4.99 shipping, $7 read-online eBooks, a $7 PDF word search, plus paperback options on Amazon.";
 
 export const metadata: Metadata = {
   title: "Children’s Health Books",
