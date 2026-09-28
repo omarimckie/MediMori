@@ -97,6 +97,44 @@ export function getBufferToken(): string | null {
   return process.env.BUFFER_ACCESS_TOKEN?.trim() || null;
 }
 
+export type MarketingVisualStrategyMode = "off" | "shadow" | "on";
+
+export type MarketingVisualCompositionMode = "off" | "on";
+
+export type MarketingVisualEnvironmentMode = "off" | "on";
+
+function readVisualFeatureMode<T extends string>(
+  env: EnvLike,
+  envKey: string,
+  allowed: readonly T[],
+  defaultMode: T,
+): T {
+  const raw = env[envKey]?.trim().toLowerCase();
+  if (!raw) return defaultMode;
+  return (allowed as readonly string[]).includes(raw) ? (raw as T) : defaultMode;
+}
+
+/** Visual asset strategy: off (legacy only), shadow (compare), on (strategy path). */
+export function getMarketingVisualStrategyMode(
+  env: EnvLike = process.env,
+): MarketingVisualStrategyMode {
+  return readVisualFeatureMode(env, "MARKETING_VISUAL_STRATEGY", ["off", "shadow", "on"], "off");
+}
+
+/** Composed marketing images (requires strategy on at runtime). */
+export function getMarketingVisualCompositionMode(
+  env: EnvLike = process.env,
+): MarketingVisualCompositionMode {
+  return readVisualFeatureMode(env, "MARKETING_VISUAL_COMPOSITION", ["off", "on"], "off");
+}
+
+/** Environmental scene composition layer. */
+export function getMarketingVisualEnvironmentMode(
+  env: EnvLike = process.env,
+): MarketingVisualEnvironmentMode {
+  return readVisualFeatureMode(env, "MARKETING_VISUAL_ENVIRONMENT", ["off", "on"], "off");
+}
+
 export const DEFAULT_META_GRAPH_VERSION = "v22.0";
 
 export function getMetaGraphVersion(env: EnvLike = process.env): string {
