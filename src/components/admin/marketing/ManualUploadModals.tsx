@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, type RefObject } from "react";
-import { upload } from "@vercel/blob/client";
 import booksData from "@/data/books.json";
 import { MAX_MARKETING_IMAGE_BYTES, MAX_MARKETING_PDF_BYTES } from "@/lib/marketing/upload-limits";
 import {
@@ -10,7 +9,7 @@ import {
 } from "@/lib/marketing/resource-multipart-fallback";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
-const RESOURCE_BLOB_UPLOAD_URL = "/api/admin/marketing/manual/resource/blob";
+const RESOURCE_UPLOAD_URL = "/api/admin/marketing/manual/resource/upload-url";
 const RESOURCE_UPLOAD_INTENT_URL = "/api/admin/marketing/manual/resource/upload-intent";
 const RESOURCE_CLEANUP_URL = "/api/admin/marketing/manual/resource/cleanup";
 
@@ -228,8 +227,45 @@ async function cleanupStagedResourceUpload(uploadIntent: string): Promise<void> 
   }
 }
 
-function resourceUploadClientPayload(role: "preview" | "file", uploadIntent: string): string {
-  return JSON.stringify({ role, uploadIntent });
+async function requestResourcePutPresignedUrl(
+  uploadIntent: string,
+  pathname: string,
+  role: "preview" | "file",
+): Promise<{ presignedUrl: string; pathname: string; publicUrl?: string }> {
+  const response = await fetch(RESOURCE_UPLOAD_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uploadIntent, pathname, role }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
+  }
+  const json = (await response.json()) as {
+    presignedUrl?: string;
+    pathname?: string;
+    publicUrl?: string;
+  };
+  const presignedUrl = json.presignedUrl ?? "";
+  const resolvedPathname = json.pathname ?? "";
+  if (!presignedUrl || !resolvedPathname) {
+    throw new Error("Blob authorization failed: invalid upload URL response.");
+  }
+  return { presignedUrl, pathname: resolvedPathname, publicUrl: json.publicUrl };
+}
+
+async function putFileToPresignedUrl(presignedUrl: string, file: File): Promise<void> {
+  const headers: HeadersInit = {};
+  if (file.type) {
+    headers["Content-Type"] = file.type;
+  }
+  const response = await fetch(presignedUrl, {
+    method: "PUT",
+    body: file,
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Direct blob upload failed (${response.status}).`);
+  }
 }
 
 async function parseApiError(response: Response): Promise<string> {
@@ -448,15 +484,18 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
       throw new Error("Blob authorization failed: invalid upload intent.");
     }
 
-    let previewBlob;
+    let previewPublicUrl: string;
     try {
-      previewBlob = await upload(previewPathname, previewFile, {
-        access: "public",
-        handleUploadUrl: RESOURCE_BLOB_UPLOAD_URL,
-        clientPayload: resourceUploadClientPayload("preview", uploadIntent),
-        multipart: previewFile.size > 6 * 1024 * 1024,
-        contentType: previewFile.type || undefined,
-      });
+      const previewUpload = await requestResourcePutPresignedUrl(
+        uploadIntent,
+        previewPathname,
+        "preview",
+      );
+      await putFileToPresignedUrl(previewUpload.presignedUrl, previewFile);
+      previewPublicUrl = previewUpload.publicUrl ?? "";
+      if (!previewPublicUrl) {
+        throw new Error("Preview upload succeeded but public URL was not returned.");
+      }
     } catch (error) {
       throw new Error(
         error instanceof Error
@@ -465,15 +504,11 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
       );
     }
 
-    let fileBlob;
+    let resolvedFilePathname = filePathname;
     try {
-      fileBlob = await upload(filePathname, downloadableFile, {
-        access: "private",
-        handleUploadUrl: RESOURCE_BLOB_UPLOAD_URL,
-        clientPayload: resourceUploadClientPayload("file", uploadIntent),
-        multipart: downloadableFile.size > 6 * 1024 * 1024,
-        contentType: downloadableFile.type || undefined,
-      });
+      const fileUpload = await requestResourcePutPresignedUrl(uploadIntent, filePathname, "file");
+      resolvedFilePathname = fileUpload.pathname;
+      await putFileToPresignedUrl(fileUpload.presignedUrl, downloadableFile);
     } catch (error) {
       await cleanupStagedResourceUpload(uploadIntent);
       throw new Error(
@@ -486,9 +521,9 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
     const metadata = {
       ...readResourceMetadataFromForm(form, planId),
       uploadIntent,
-      previewPathname: previewBlob.pathname,
-      previewPublicUrl: previewBlob.url,
-      filePathname: fileBlob.pathname,
+      previewPathname,
+      previewPublicUrl,
+      filePathname: resolvedFilePathname,
       previewFilename: previewFile.name,
       fileFilename: downloadableFile.name,
     };

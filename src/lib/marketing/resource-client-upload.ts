@@ -73,6 +73,31 @@ export function buildResourceBlobPathname(role: ResourceClientUploadRole, filena
   return `${base}/${id}${ext}`;
 }
 
+export function resourcePutPresignConstraints(
+  role: ResourceClientUploadRole,
+  pathname: string,
+): {
+  allowedContentTypes: string[];
+  maximumSizeInBytes: number;
+} {
+  if (role === "preview") {
+    if (!isMarketingPublicResourcePreviewPathname(pathname)) {
+      throw new Error("Invalid preview upload pathname.");
+    }
+    return {
+      allowedContentTypes: PREVIEW_CONTENT_TYPES,
+      maximumSizeInBytes: MAX_MARKETING_IMAGE_BYTES,
+    };
+  }
+  if (!isMarketingPrivateResourceFilePathname(pathname)) {
+    throw new Error("Invalid downloadable file upload pathname.");
+  }
+  return {
+    allowedContentTypes: FILE_CONTENT_TYPES,
+    maximumSizeInBytes: MAX_MARKETING_PDF_BYTES,
+  };
+}
+
 export function resourceClientUploadTokenConstraints(
   pathname: string,
   clientPayload: string | null,
@@ -84,22 +109,6 @@ export function resourceClientUploadTokenConstraints(
 } {
   const { role, uploadIntent } = parseResourceClientUploadPayload(clientPayload);
   verifyResourceUploadIntentForBlobToken(uploadIntent, adminUsername, pathname, role);
-  if (role === "preview") {
-    if (!isMarketingPublicResourcePreviewPathname(pathname)) {
-      throw new Error("Invalid preview upload pathname.");
-    }
-    return {
-      allowedContentTypes: PREVIEW_CONTENT_TYPES,
-      maximumSizeInBytes: MAX_MARKETING_IMAGE_BYTES,
-      addRandomSuffix: false,
-    };
-  }
-  if (!isMarketingPrivateResourceFilePathname(pathname)) {
-    throw new Error("Invalid downloadable file upload pathname.");
-  }
-  return {
-    allowedContentTypes: FILE_CONTENT_TYPES,
-    maximumSizeInBytes: MAX_MARKETING_PDF_BYTES,
-    addRandomSuffix: false,
-  };
+  const constraints = resourcePutPresignConstraints(role, pathname);
+  return { ...constraints, addRandomSuffix: false };
 }
