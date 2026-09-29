@@ -282,12 +282,18 @@ async function parseApiError(response: Response): Promise<string> {
   }
 }
 
-function readResourceMetadataFromForm(form: HTMLFormElement, weeklyPlanId: string) {
-  const data = new FormData(form);
+export type ResourceUploadTextFields = { title: string; description: string };
+
+/** @internal Exported for unit tests. */
+export function resourceMetadataFromFormData(
+  data: FormData,
+  weeklyPlanId: string,
+  textFields: ResourceUploadTextFields,
+) {
   return {
     weeklyPlanId,
-    title: String(data.get("title") ?? "").trim(),
-    description: String(data.get("description") ?? "").trim(),
+    title: textFields.title.trim(),
+    description: textFields.description.trim(),
     resourceType: String(data.get("resourceType") ?? "worksheet"),
     bookId: String(data.get("bookId") ?? "").trim() || null,
     relatedCondition: String(data.get("relatedCondition") ?? "").trim() || null,
@@ -296,6 +302,14 @@ function readResourceMetadataFromForm(form: HTMLFormElement, weeklyPlanId: strin
     seoDescription: String(data.get("seoDescription") ?? "").trim() || null,
     cta: String(data.get("cta") ?? "").trim() || null,
   };
+}
+
+function readResourceMetadataFromForm(
+  form: HTMLFormElement,
+  weeklyPlanId: string,
+  textFields: ResourceUploadTextFields,
+) {
+  return resourceMetadataFromFormData(new FormData(form), weeklyPlanId, textFields);
 }
 
 function ResourceFileUploadField({
@@ -411,6 +425,11 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
       return;
     }
 
+    const textFields = {
+      title: resourceTitle,
+      description: resourceDescription,
+    };
+
     setSubmitting(true);
     try {
       const usedClientBlob = await submitResourceViaClientBlob(
@@ -418,9 +437,10 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
         weeklyPlanId,
         previewFile,
         downloadableFile,
+        textFields,
       );
       if (usedClientBlob === "fallback-multipart") {
-        await submitResourceViaMultipart(form, weeklyPlanId);
+        await submitResourceViaMultipart(form, weeklyPlanId, textFields);
       }
       await onDone();
       onClose();
@@ -433,9 +453,15 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
     }
   }
 
-  async function submitResourceViaMultipart(form: HTMLFormElement, planId: string) {
+  async function submitResourceViaMultipart(
+    form: HTMLFormElement,
+    planId: string,
+    textFields: ResourceUploadTextFields,
+  ) {
     const data = new FormData(form);
     data.set("weeklyPlanId", planId);
+    data.set("title", textFields.title.trim());
+    data.set("description", textFields.description.trim());
     const response = await fetch("/api/admin/marketing/manual/resource", {
       method: "POST",
       body: data,
@@ -450,6 +476,7 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
     planId: string,
     previewFile: File,
     downloadableFile: File,
+    textFields: ResourceUploadTextFields,
   ): Promise<"done" | "fallback-multipart"> {
     const combinedBytes = previewFile.size + downloadableFile.size;
 
@@ -527,7 +554,7 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
     }
 
     const metadata = {
-      ...readResourceMetadataFromForm(form, planId),
+      ...readResourceMetadataFromForm(form, planId, textFields),
       uploadIntent,
       previewPathname,
       previewPublicUrl,

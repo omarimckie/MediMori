@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { validateResourceFields } from "@/components/admin/marketing/ManualUploadModals";
+import {
+  resourceMetadataFromFormData,
+  validateResourceFields,
+} from "@/components/admin/marketing/ManualUploadModals";
 
 function makeFormStub(fileState: { preview?: boolean; file?: boolean }): HTMLFormElement {
   return {
@@ -44,4 +47,22 @@ test("preview and downloadable file inputs are validated independently", () => {
   });
   assert.equal(fileErrors.preview, "Choose a preview image.");
   assert.equal(fileErrors.file, undefined);
+});
+
+test("registration metadata uses React text fields when disabled controls are omitted from FormData", () => {
+  const data = new FormData();
+  data.set("resourceType", "activity_sheet");
+  data.set("bookId", "sickle-cell");
+  // Simulates setSubmitting(true): title/description disabled → not present in FormData.
+
+  const metadata = resourceMetadataFromFormData(data, "plan-week-1", {
+    title: "Sickle Cell: My Body & Me — Activity Sheet",
+    description: "Printable activity for families.",
+  });
+
+  assert.equal(metadata.title, "Sickle Cell: My Body & Me — Activity Sheet");
+  assert.equal(metadata.description, "Printable activity for families.");
+  assert.equal(metadata.resourceType, "activity_sheet");
+  assert.equal(metadata.bookId, "sickle-cell");
+  assert.equal(metadata.weeklyPlanId, "plan-week-1");
 });
