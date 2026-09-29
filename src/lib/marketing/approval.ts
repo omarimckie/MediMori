@@ -2,9 +2,11 @@ import { estimatedAiCostUsd, getAIProvider } from "./ai";
 import { resolveContentImageUrl } from "./assets";
 import { regenerateContent } from "./content-engine";
 import { isMockMode } from "./config";
+import { isFreeResourceContent } from "./content-metadata";
 import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import { inferPreferenceSignals } from "./preference-signals";
 import { getEmailProvider, getSocialPublisher } from "./publishers";
+import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import { logMarketing } from "./logger";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
@@ -255,6 +257,17 @@ function idempotencyKey(content: MarketingContent) {
   return `pub:${content.id}:${content.platform}`;
 }
 
+function publicationProviderForContent(content: MarketingContent): string {
+  if (isFreeResourceContent(content)) {
+    return getWebsiteFreeResourcePublisher().id;
+  }
+  const providerId =
+    content.platform === "email"
+      ? getEmailProvider().id
+      : getSocialPublisher(content.platform).id;
+  return isMockMode() ? `mock:${providerId}` : providerId;
+}
+
 export async function scheduleApproved(
   store: MarketingStore,
   contentId: string,
@@ -271,16 +284,12 @@ export async function scheduleApproved(
   const key = idempotencyKey(content);
   const existing = await store.getPublicationByIdempotency(key);
   if (existing) return existing;
-  const provider =
-    content.platform === "email"
-      ? getEmailProvider().id
-      : getSocialPublisher(content.platform).id;
   const publication = await store.createPublication({
     id: crypto.randomUUID(),
     contentId: content.id,
     campaignId: content.campaignId,
     platform: content.platform,
-    provider: isMockMode() ? `mock:${provider}` : provider,
+    provider: publicationProviderForContent(content),
     status: "scheduled",
     idempotencyKey: key,
     externalId: null,
@@ -343,20 +352,17 @@ export async function publishPublication(
   const social = getSocialPublisher(content.platform);
   const email = getEmailProvider();
   const imageUrl = preflight.imageUrl ?? (await resolveContentImageUrl(store, content));
-  const result =
-    content.platform === "email"
-      ? await email.send({
-          content,
-          publication: current,
-          imageUrl,
-          simulateFailure: options?.simulateFailure,
-        })
-      : await social.publish({
-          content,
-          publication: current,
-          imageUrl,
-          simulateFailure: options?.simulateFailure,
-        });
+  const publishRequest = {
+    content,
+    publication: current,
+    imageUrl,
+    simulateFailure: options?.simulateFailure,
+  };
+  const result = isFreeResourceContent(content)
+    ? await getWebsiteFreeResourcePublisher().publish(publishRequest, store)
+    : content.platform === "email"
+      ? await email.send(publishRequest)
+      : await social.publish(publishRequest);
 
   const attemptCount = current.attemptCount + 1;
   if (result.ok) {
