@@ -166,13 +166,16 @@ type ResourceFieldErrors = {
   file?: string;
 };
 
-function validateResourceFields(form: HTMLFormElement): ResourceFieldErrors {
+/** @internal Exported for unit tests. */
+export function validateResourceFields(
+  form: HTMLFormElement,
+  fields: { title: string; description: string },
+): ResourceFieldErrors {
   const errors: ResourceFieldErrors = {};
-  const title = (form.elements.namedItem("title") as HTMLInputElement | null)?.value?.trim() ?? "";
-  const description =
-    (form.elements.namedItem("description") as HTMLTextAreaElement | null)?.value?.trim() ?? "";
-  const previewInput = form.elements.namedItem("preview") as HTMLInputElement | null;
-  const fileInput = form.elements.namedItem("file") as HTMLInputElement | null;
+  const title = fields.title.trim();
+  const description = fields.description.trim();
+  const previewInput = form.querySelector<HTMLInputElement>('input[name="preview"]');
+  const fileInput = form.querySelector<HTMLInputElement>('input[name="file"]');
 
   if (!title) errors.title = "Title is required.";
   if (!description) errors.description = "Description is required.";
@@ -366,6 +369,8 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ResourceFieldErrors>({});
+  const [resourceTitle, setResourceTitle] = useState("");
+  const [resourceDescription, setResourceDescription] = useState("");
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
   const [downloadFileName, setDownloadFileName] = useState<string | null>(null);
   const previewInputRef = useRef<HTMLInputElement>(null);
@@ -380,9 +385,12 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
     setMessage(null);
 
     const form = event.currentTarget;
-    const validation = validateResourceFields(form);
-    const previewInput = form.elements.namedItem("preview") as HTMLInputElement | null;
-    const fileInput = form.elements.namedItem("file") as HTMLInputElement | null;
+    const validation = validateResourceFields(form, {
+      title: resourceTitle,
+      description: resourceDescription,
+    });
+    const previewInput = form.querySelector<HTMLInputElement>('input[name="preview"]');
+    const fileInput = form.querySelector<HTMLInputElement>('input[name="file"]');
     const previewFile = previewInput?.files?.[0];
     const downloadableFile = fileInput?.files?.[0];
 
@@ -549,9 +557,15 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
           Title
           <input
             name="title"
+            type="text"
+            autoComplete="off"
+            value={resourceTitle}
             disabled={controlsDisabled}
             aria-invalid={Boolean(fieldErrors.title)}
-            onChange={() => setFieldErrors((current) => ({ ...current, title: undefined }))}
+            onChange={(event) => {
+              setResourceTitle(event.target.value);
+              setFieldErrors((current) => ({ ...current, title: undefined }));
+            }}
             className={`mt-1 w-full rounded-xl border p-2 text-sm ${
               fieldErrors.title ? "border-brand-orange-deep" : "border-brand-brown/20"
             }`}
@@ -565,9 +579,13 @@ export function UploadResourceModal({ weeklyPlanId, busy, onClose, onDone, setMe
           <textarea
             name="description"
             rows={4}
+            value={resourceDescription}
             disabled={controlsDisabled}
             aria-invalid={Boolean(fieldErrors.description)}
-            onChange={() => setFieldErrors((current) => ({ ...current, description: undefined }))}
+            onChange={(event) => {
+              setResourceDescription(event.target.value);
+              setFieldErrors((current) => ({ ...current, description: undefined }));
+            }}
             className={`mt-1 w-full rounded-xl border p-3 text-sm ${
               fieldErrors.description ? "border-brand-orange-deep" : "border-brand-brown/20"
             }`}
