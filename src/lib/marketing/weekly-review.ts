@@ -7,6 +7,7 @@ import {
   describeAspectRatioFailure,
   isAssetSuitableForPlatform,
 } from "./platform-suitability";
+import * as resourcePreviewUrl from "./resource-preview-url";
 import { runPublishPreflight } from "./publish-preflight";
 import type { MarketingStore } from "./store";
 import type { ContentFormat, MarketingContent, Platform } from "./types";
@@ -75,7 +76,9 @@ export async function buildWeeklyItemReview(
     };
   }
 
-  const previewUrl = await resolveContentImageUrl(store, content);
+  const previewUrl = isFreeResourceContent(content)
+    ? await resourcePreviewUrl.resolveFreeResourcePreviewUrlForContent(store, content)
+    : await resolveContentImageUrl(store, content);
   const asset = await resolvePrimaryApprovedAsset(store, content);
   let dimensionsLabel: string | null = null;
   let visualSuitabilityWarning: string | null = null;

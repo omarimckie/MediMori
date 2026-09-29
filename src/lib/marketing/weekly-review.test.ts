@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { MemoryMarketingStore } from "./memory-store";
+import { setResourcePreviewSignedGetUrlFactoryForTests } from "./resource-preview-url";
 import { buildWeeklyItemReview, weeklyChannelLabel } from "./weekly-review";
 import type { MarketingContent } from "./types";
 
@@ -8,6 +9,7 @@ const originalEnv = { ...process.env };
 
 afterEach(() => {
   process.env = { ...originalEnv };
+  setResourcePreviewSignedGetUrlFactoryForTests(null);
 });
 
 function sampleContent(overrides: Partial<MarketingContent> = {}): MarketingContent {
@@ -80,9 +82,16 @@ test("visual item review uses publisher image URL and dimensions", async () => {
   assert.match(review.visualSuitabilityWarning ?? "", /outside pinterest acceptable range/);
 });
 
-test("free resource item review shows resource preview URL", async () => {
+test("free resource item review uses signed preview URL", async () => {
+  const previewPath = `marketing/public/${"deadbeefdeadbeefdeadbeefdeadbeef"}.png`;
+  const storedUrl = `https://legacy.public.blob.vercel-storage.com/${previewPath}`;
+  const signedUrl = `https://store.private.blob.vercel-storage.com/${previewPath}?vercel-blob-signature=mock`;
+  setResourcePreviewSignedGetUrlFactoryForTests(async (pathname) => {
+    assert.equal(pathname, previewPath);
+    return signedUrl;
+  });
+
   const store = new MemoryMarketingStore();
-  const previewUrl = "https://abc123.public.blob.vercel-storage.com/marketing/public/deadbeefdeadbeefdeadbeefdeadbeef.png";
   await store.createAsset({
     id: "asset-preview",
     name: "preview.png",
@@ -98,7 +107,7 @@ test("free resource item review shows resource preview URL", async () => {
     imageHeight: 1200,
     mimeType: "image/png",
     tags: ["manual_upload", "resource_preview"],
-    url: previewUrl,
+    url: storedUrl,
     altText: "Activity sheet preview",
     isDemo: false,
   });
@@ -112,7 +121,22 @@ test("free resource item review shows resource preview URL", async () => {
 
   const review = await buildWeeklyItemReview(store, content);
   assert.equal(review.showVisualPreview, true);
-  assert.equal(review.previewUrl, previewUrl);
+  assert.equal(review.previewUrl, signedUrl);
+});
+
+test("free resource without preview pathname keeps visual flag but no preview URL", async () => {
+  const store = new MemoryMarketingStore();
+  const content = sampleContent({
+    platform: "website",
+    format: "free_resource",
+    assetIds: [],
+    title: "Worksheet without assets",
+  });
+  await store.createContent(content);
+
+  const review = await buildWeeklyItemReview(store, content);
+  assert.equal(review.showVisualPreview, true);
+  assert.equal(review.previewUrl, null);
 });
 
 test("email item review does not request visual preview", async () => {
