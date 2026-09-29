@@ -8,6 +8,7 @@ import {
 import type { MarketingStore } from "./store";
 import type { MarketingAsset, MarketingContent, ResourceType } from "./types";
 import { previewAssetForContent } from "./resource-assets";
+import { hasDeliverableFreeResourcePreview } from "./resource-preview";
 
 export type PublishedFreeResource = {
   id: string;
@@ -96,7 +97,11 @@ export async function listPublishedFreeResourcesForBook(
 export async function getPublishedFreeResourceBySlug(
   store: MarketingStore,
   slug: string,
-): Promise<{ content: MarketingContent; resource: PublishedFreeResource } | null> {
+): Promise<{
+  content: MarketingContent;
+  resource: PublishedFreeResource;
+  hasDeliverablePreview: boolean;
+} | null> {
   const items = await store.listContent();
   const content = items.find(
     (item) => isFreeResourceContent(item) && item.metadata.slug === slug && item.status === "published",
@@ -105,5 +110,9 @@ export async function getPublishedFreeResourceBySlug(
   const assets = await store.listAssets();
   const resource = mapPublishedFreeResource(content, assets);
   if (!resource) return null;
-  return { content, resource };
+  return {
+    content,
+    resource,
+    hasDeliverablePreview: hasDeliverableFreeResourcePreview(content, assets),
+  };
 }

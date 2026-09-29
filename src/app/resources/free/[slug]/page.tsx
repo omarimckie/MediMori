@@ -5,6 +5,7 @@ import { PageSection } from "@/components/PageSection";
 import { getBookById } from "@/lib/books";
 import { getPublishedFreeResourceBySlug } from "@/lib/marketing/free-resources";
 import { getMarketingStore } from "@/lib/marketing/context";
+import { freeResourcePublicPreviewMedia } from "@/lib/marketing/resource-preview";
 import { absoluteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 
@@ -16,8 +17,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!row) {
     return { title: "Resource not found", robots: { index: false, follow: false } };
   }
-  const { resource } = row;
+  const { resource, hasDeliverablePreview } = row;
   const canonical = absoluteUrl(resource.publicPath);
+  const previewMedia = freeResourcePublicPreviewMedia(resource.id, hasDeliverablePreview);
   return {
     title: resource.seoTitle,
     description: resource.seoDescription,
@@ -27,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: resource.seoDescription,
       url: canonical,
       type: "article",
-      images: resource.previewImageUrl ? [{ url: resource.previewImageUrl }] : undefined,
+      images: previewMedia ? [{ url: previewMedia.openGraphImageUrl }] : undefined,
     },
     robots: { index: true, follow: true },
   };
@@ -38,9 +40,10 @@ export default async function FreeResourcePage({ params }: Props) {
   const row = await getPublishedFreeResourceBySlug(getMarketingStore(), slug);
   if (!row) notFound();
 
-  const { resource, content } = row;
+  const { resource, content, hasDeliverablePreview } = row;
   const book = resource.bookId ? getBookById(resource.bookId) : undefined;
   const downloadHref = `/api/resources/free/${content.id}/download`;
+  const previewMedia = freeResourcePublicPreviewMedia(resource.id, hasDeliverablePreview);
 
   return (
     <main>
@@ -58,10 +61,10 @@ export default async function FreeResourcePage({ params }: Props) {
 
       <PageSection tone="white" cloudTop="navy">
         <div className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-2">
-          {resource.previewImageUrl ? (
+          {previewMedia ? (
             <div className="relative aspect-[4/5] overflow-hidden rounded-3xl border border-brand-brown/15 bg-cream-deep">
               <Image
-                src={resource.previewImageUrl}
+                src={previewMedia.imageSrc}
                 alt={resource.title}
                 fill
                 className="object-contain"
