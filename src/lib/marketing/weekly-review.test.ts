@@ -80,6 +80,41 @@ test("visual item review uses publisher image URL and dimensions", async () => {
   assert.match(review.visualSuitabilityWarning ?? "", /outside pinterest acceptable range/);
 });
 
+test("free resource item review shows resource preview URL", async () => {
+  const store = new MemoryMarketingStore();
+  const previewUrl = "https://abc123.public.blob.vercel-storage.com/marketing/public/deadbeefdeadbeefdeadbeefdeadbeef.png";
+  await store.createAsset({
+    id: "asset-preview",
+    name: "preview.png",
+    type: "resource_preview",
+    source: "manual_upload",
+    bookId: null,
+    characterId: null,
+    campaignId: null,
+    approved: true,
+    usageRestrictions: null,
+    aspectRatio: "3:4",
+    imageWidth: 900,
+    imageHeight: 1200,
+    mimeType: "image/png",
+    tags: ["manual_upload", "resource_preview"],
+    url: previewUrl,
+    altText: "Activity sheet preview",
+    isDemo: false,
+  });
+  const content = sampleContent({
+    platform: "website",
+    format: "free_resource",
+    assetIds: ["asset-preview"],
+    title: "Sickle Cell: My Body & Me — Activity Sheet",
+  });
+  await store.createContent(content);
+
+  const review = await buildWeeklyItemReview(store, content);
+  assert.equal(review.showVisualPreview, true);
+  assert.equal(review.previewUrl, previewUrl);
+});
+
 test("email item review does not request visual preview", async () => {
   const store = new MemoryMarketingStore();
   const content = sampleContent({ platform: "email", format: "email", assetIds: [] });

@@ -1,6 +1,7 @@
 import { getAssetImageTruth } from "./asset-truth";
 import { resolveContentImageUrl } from "./assets";
 import { PLATFORM_LABELS } from "./config";
+import { isFreeResourceContent } from "./content-metadata";
 import {
   contentFormatUsesSocialImage,
   describeAspectRatioFailure,
@@ -60,7 +61,9 @@ export async function buildWeeklyItemReview(
   content: MarketingContent,
 ): Promise<WeeklyItemReview> {
   const channelLabel = weeklyChannelLabel(content);
-  const showVisualPreview = contentFormatUsesSocialImage(content.platform, content.format);
+  const showVisualPreview =
+    contentFormatUsesSocialImage(content.platform, content.format) ||
+    isFreeResourceContent(content);
 
   if (!showVisualPreview) {
     return {
