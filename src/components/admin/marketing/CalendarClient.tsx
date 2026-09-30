@@ -1,11 +1,19 @@
 "use client";
 
+import type { CalendarAddExistingMode } from "@/lib/marketing/calendar-add-existing-eligibility";
 import {
   calendarDayKeyInMarketingTimezone,
   formatMarketingScheduleDisplay,
 } from "@/lib/marketing/marketing-scheduling";
-import { useEffect, useState } from "react";
-import { Card, StatusPill } from "./ui";
+import type { MarketingPublication } from "@/lib/marketing/types";
+import { useCallback, useEffect, useState } from "react";
+import {
+  AddExistingPostPickerModal,
+  type AddExistingPostPickerItem,
+} from "./AddExistingPostPickerModal";
+import { ScheduleContentModal } from "./ScheduleContentModal";
+import { PrimaryButton, Card, StatusPill } from "./ui";
+import { runMarketingWeekPostAction } from "./week-client-act";
 
 type CalendarEvent = {
   id: string;
@@ -18,18 +26,71 @@ type CalendarEvent = {
   timezone: string;
 };
 
+type ScheduleTarget = AddExistingPostPickerItem & { mode: CalendarAddExistingMode };
+
 export function CalendarClient() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [marketingTimezone, setMarketingTimezone] = useState("America/New_York");
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerItems, setPickerItems] = useState<AddExistingPostPickerItem[]>([]);
+  const [pickerPublications, setPickerPublications] = useState<
+    Pick<MarketingPublication, "contentId" | "platform" | "status" | "publishedAt" | "externalId">[]
+  >([]);
+  const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadCalendar = useCallback(async () => {
+    const data = await fetch("/api/admin/marketing/calendar").then((res) => res.json());
+    setEvents(data.events ?? []);
+    setMarketingTimezone(data.marketingTimezone ?? "America/New_York");
+  }, []);
 
   useEffect(() => {
-    void fetch("/api/admin/marketing/calendar")
-      .then((res) => res.json())
-      .then((data) => {
-        setEvents(data.events ?? []);
-        setMarketingTimezone(data.marketingTimezone ?? "America/New_York");
-      });
-  }, []);
+    void loadCalendar();
+  }, [loadCalendar]);
+
+  async function openPicker() {
+    setMessage(null);
+    setBusy(true);
+    try {
+      const [contentRes, settingsRes] = await Promise.all([
+        fetch("/api/admin/marketing/content"),
+        fetch("/api/admin/marketing/settings"),
+      ]);
+      const contentData = await contentRes.json();
+      const settingsData = await settingsRes.json();
+      setPickerItems(contentData.content ?? []);
+      setPickerPublications(settingsData.publications ?? []);
+      setShowPicker(true);
+    } catch {
+      setMessage("Could not load content for picker.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitSchedule(scheduledFor: string) {
+    if (!scheduleTarget) return;
+    const contentId = scheduleTarget.id;
+    const action = scheduleTarget.mode === "recycle" ? "recycle" : "schedule";
+    setBusy(true);
+    setMessage(null);
+    setScheduleTarget(null);
+    try {
+      const errorMessage = await runMarketingWeekPostAction(
+        `/api/admin/marketing/content/${contentId}`,
+        { action, scheduledFor },
+        fetch,
+        loadCalendar,
+      );
+      if (errorMessage) setMessage(errorMessage);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Network error.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const byDay = new Map<string, CalendarEvent[]>();
   for (const event of events) {
@@ -46,9 +107,15 @@ export function CalendarClient() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-brand-charcoal/70">
-        Publishing calendar · scheduled publications · times shown in {marketingTimezone}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-brand-charcoal/70">
+          Publishing calendar · scheduled publications · times shown in {marketingTimezone}
+        </p>
+        <PrimaryButton type="button" disabled={busy} onClick={() => void openPicker()}>
+          + Add existing post
+        </PrimaryButton>
+      </div>
+      {message ? <p className="text-sm font-semibold text-brand-orange-deep">{message}</p> : null}
       {sortedDays.map(([day, dayItems]) => (
         <Card key={day}>
           <h2 className="font-display text-2xl text-brand-navy">{day}</h2>
@@ -74,7 +141,36 @@ export function CalendarClient() {
         </Card>
       ))}
       {!events.length ? (
-        <p>No scheduled publications yet. Approve and schedule from Your week, or recycle published content.</p>
+        <p>
+          No scheduled publications yet. Approve and schedule from Your week, recycle published
+          content, or add an existing post above.
+        </p>
+      ) : null}
+      {showPicker ? (
+        <AddExistingPostPickerModal
+          items={pickerItems}
+          publications={pickerPublications}
+          busy={busy}
+          onClose={() => setShowPicker(false)}
+          onSelect={(item, mode) => {
+            setShowPicker(false);
+            setScheduleTarget({ ...item, mode });
+          }}
+        />
+      ) : null}
+      {scheduleTarget ? (
+        <ScheduleContentModal
+          mode={scheduleTarget.mode}
+          title={scheduleTarget.title}
+          platform={scheduleTarget.platform}
+          marketingTimezone={marketingTimezone}
+          initialScheduledFor={scheduleTarget.scheduledFor}
+          busy={busy}
+          onClose={() => setScheduleTarget(null)}
+          onConfirm={(scheduledFor) => {
+            void submitSchedule(scheduledFor);
+          }}
+        />
       ) : null}
     </div>
   );

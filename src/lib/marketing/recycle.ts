@@ -56,7 +56,7 @@ export async function recyclePublished(
   if (!isContentRecyclablePlatform(content)) {
     throw new Error("This content type cannot be recycled.");
   }
-  if (content.status !== "published") {
+  if (content.status !== "published" && content.status !== "scheduled") {
     throw new Error("Only published content can be recycled.");
   }
   const hasPublished = await hasPublishedPublicationForContent(store, content);
