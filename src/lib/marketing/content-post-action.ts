@@ -4,7 +4,7 @@ import type { MarketingStore } from "./store";
 import { NextResponse } from "next/server";
 
 export function contentActionFailureStatus(message: string): number {
-  return /^(invalid_|image_)|not found|Only approved|required|Unknown action/i.test(message)
+  return /^(invalid_|image_)|invalid_schedule_time|not found|Only approved|required|Unknown action/i.test(message)
     ? 400
     : 500;
 }
@@ -14,6 +14,7 @@ type ContentPostActionInput = {
   contentId: string;
   body?: string;
   feedback?: string;
+  scheduledFor?: string | null;
   actor?: string | null;
 };
 

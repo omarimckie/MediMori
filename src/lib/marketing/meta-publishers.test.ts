@@ -556,7 +556,9 @@ test("failed Meta publish does not mark the store publication as published", asy
     isDemo: true,
   });
   await store.updateContent(item.id, { status: "approved", assetIds: [asset.id] });
-  const publication = await scheduleApproved(store, item.id);
+  const publication = await scheduleApproved(store, item.id, {
+    scheduledFor: new Date(Date.now() - 120_000).toISOString(),
+  });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     jsonResponse(400, { error: { message: `bad token ${SECRET_TOKEN}`, code: 190 } })) as typeof fetch;

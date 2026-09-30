@@ -231,8 +231,11 @@ export class MemoryMarketingStore implements MarketingStore {
     const failedClaimable =
       current.status === "failed" &&
       (current.attemptCount < 3 || Boolean(options?.allowExhaustedRetry));
+    const scheduledDue =
+      current.status === "scheduled" &&
+      (!current.scheduledFor || new Date(current.scheduledFor).getTime() <= Date.now());
     const claimable =
-      current.status === "scheduled" ||
+      scheduledDue ||
       failedClaimable ||
       (current.status === "processing" && Date.now() - updatedAt >= staleMs);
     if (!claimable) return null;

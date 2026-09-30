@@ -142,8 +142,9 @@ test("publishing is idempotent and retries transient failures", async () => {
     "expected a needs_review Instagram item with an approved image",
   );
   await approveContent(store, item.id, "omari");
-  const first = await scheduleApproved(store, item.id);
-  const second = await scheduleApproved(store, item.id);
+  const dueAt = new Date(Date.now() - 60_000).toISOString();
+  const first = await scheduleApproved(store, item.id, { scheduledFor: dueAt });
+  const second = await scheduleApproved(store, item.id, { scheduledFor: dueAt });
   assert.equal(first.id, second.id);
 
   const failed = await publishPublication(store, first, { simulateFailure: true });
@@ -432,8 +433,9 @@ test("only one worker can claim a scheduled publication", async () => {
     "expected a needs_review Instagram item with an approved image",
   );
   await approveContent(store, item.id, "omari");
-  const publication = await scheduleApproved(store, item.id);
-  const again = await scheduleApproved(store, item.id);
+  const dueAt = new Date(Date.now() - 60_000).toISOString();
+  const publication = await scheduleApproved(store, item.id, { scheduledFor: dueAt });
+  const again = await scheduleApproved(store, item.id, { scheduledFor: dueAt });
   assert.equal(again.id, publication.id);
   const [first, second] = await Promise.all([
     store.claimPublication(publication.id),

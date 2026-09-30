@@ -122,6 +122,7 @@ export async function runApprovalAction(
     weeklyPlanId?: string;
     body?: string;
     feedback?: string;
+    scheduledFor?: string | null;
     actor?: string | null;
   },
 ) {
@@ -146,7 +147,7 @@ export async function runApprovalAction(
       return rejectAll(store, input.weeklyPlanId, input.actor ?? null, input.feedback);
     case "schedule":
       if (!input.contentId) throw new Error("contentId required");
-      return scheduleApproved(store, input.contentId);
+      return scheduleApproved(store, input.contentId, { scheduledFor: input.scheduledFor });
     case "publish_due":
       return publishDue(store);
     default:

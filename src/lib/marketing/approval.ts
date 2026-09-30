@@ -7,6 +7,7 @@ import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import { inferPreferenceSignals } from "./preference-signals";
 import { getEmailProvider, getSocialPublisher } from "./publishers";
 import { revalidatePublishedFreeResourcePaths } from "./free-resource-cache";
+import { isPublicationDue, resolveScheduleInstant } from "./marketing-scheduling";
 import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import { logMarketing } from "./logger";
 import { scanMarketingText } from "./safety";
@@ -272,6 +273,7 @@ function publicationProviderForContent(content: MarketingContent): string {
 export async function scheduleApproved(
   store: MarketingStore,
   contentId: string,
+  input?: { scheduledFor?: string | null },
 ) {
   const content = await store.getContent(contentId);
   if (!content) throw new Error("Content not found.");
@@ -282,9 +284,19 @@ export async function scheduleApproved(
   if (!preflight.ok) {
     throw new Error(formatPreflightError(preflight));
   }
+  const scheduledFor = resolveScheduleInstant(content, input?.scheduledFor);
   const key = idempotencyKey(content);
   const existing = await store.getPublicationByIdempotency(key);
-  if (existing) return existing;
+  if (existing) {
+    await store.updateContent(content.id, { status: "scheduled", scheduledFor });
+    const updated =
+      (await store.updatePublication(existing.id, {
+        status: "scheduled",
+        scheduledFor,
+        lastError: null,
+      })) ?? existing;
+    return updated;
+  }
   const publication = await store.createPublication({
     id: crypto.randomUUID(),
     contentId: content.id,
@@ -297,10 +309,10 @@ export async function scheduleApproved(
     url: null,
     attemptCount: 0,
     lastError: null,
-    scheduledFor: content.scheduledFor ?? new Date().toISOString(),
+    scheduledFor,
     publishedAt: null,
   });
-  await store.updateContent(content.id, { status: "scheduled" });
+  await store.updateContent(content.id, { status: "scheduled", scheduledFor });
   return publication;
 }
 
@@ -324,6 +336,9 @@ export async function publishPublication(
   }
 
   let current = publication;
+  if (current.status === "scheduled" && !isPublicationDue(current.scheduledFor)) {
+    return current;
+  }
   if (current.status === "scheduled" || current.status === "failed") {
     const claimed = await store.claimPublication(current.id, {
       allowExhaustedRetry: options?.allowExhaustedRetry,

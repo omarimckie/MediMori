@@ -408,7 +408,10 @@ export class PostgresMarketingStore implements MarketingStore {
       SET status = 'processing', updated_at = now()
       WHERE id = ${id}::uuid
         AND (
-          status = 'scheduled'
+          (
+            status = 'scheduled'
+            AND (scheduled_for IS NULL OR scheduled_for <= now())
+          )
           OR (status = 'failed' AND (attempt_count < 3 OR ${allowExhaustedRetry}))
           OR (status = 'processing' AND updated_at < now() - interval '15 minutes')
         )

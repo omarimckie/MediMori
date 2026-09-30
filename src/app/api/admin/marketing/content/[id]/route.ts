@@ -26,7 +26,7 @@ export async function POST(
   const auth = await requireMarketingAdmin();
   if (!auth.ok) return auth.response;
   const { id } = await context.params;
-  let body: { action?: string; body?: string; feedback?: string } = {};
+  let body: { action?: string; body?: string; feedback?: string; scheduledFor?: string | null } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -47,6 +47,7 @@ export async function POST(
     contentId: id,
     body: body.body,
     feedback: body.feedback,
+    scheduledFor: action === "schedule" ? body.scheduledFor : undefined,
     actor: auth.username,
   });
 }

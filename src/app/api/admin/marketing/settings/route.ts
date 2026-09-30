@@ -2,6 +2,7 @@ import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
 import {
   DEFAULT_CHANNEL_QUOTAS,
+  getMarketingTimezone,
   isMockMode,
   parseChannelQuotas,
 } from "@/lib/marketing/config";
@@ -25,6 +26,7 @@ export async function GET() {
     publications,
     mockMode: isMockMode(),
     pinterestLiveConfigured: isPinterestLiveConfigured(),
+    marketingTimezone: getMarketingTimezone(),
   });
 }
 

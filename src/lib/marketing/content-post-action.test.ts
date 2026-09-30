@@ -119,6 +119,7 @@ test("schedule API handler still schedules when preflight passes", async () => {
   const response = await executeMarketingContentPostAction(store, {
     action: "schedule",
     contentId: content.id,
+    scheduledFor: "2026-06-01T10:00",
     actor: "owner",
   });
 

@@ -6,6 +6,7 @@ import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { runMarketingWeekPostAction } from "./week-client-act";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
+import { ScheduleContentModal } from "./ScheduleContentModal";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
@@ -38,6 +39,7 @@ type PublicationRow = {
 type Settings = {
   mockMode?: boolean;
   pinterestLiveConfigured?: boolean;
+  marketingTimezone?: string;
   publications?: PublicationRow[];
   plans: Array<{
     id: string;
@@ -65,10 +67,12 @@ export function WeekClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [showUploadPost, setShowUploadPost] = useState(false);
   const [showUploadResource, setShowUploadResource] = useState(false);
+  const [scheduleItem, setScheduleItem] = useState<ContentItem | null>(null);
 
   const plan = settings?.plans[0];
   const mockMode = settings?.mockMode ?? true;
   const pinterestLiveConfigured = settings?.pinterestLiveConfigured ?? false;
+  const marketingTimezone = settings?.marketingTimezone ?? "America/New_York";
   const publicationByContent = useMemo(() => {
     const map = new Map<string, PublicationRow>();
     for (const row of settings?.publications ?? []) {
@@ -198,6 +202,24 @@ export function WeekClient() {
           setMessage={setMessage}
         />
       ) : null}
+      {scheduleItem ? (
+        <ScheduleContentModal
+          title={scheduleItem.title}
+          platform={scheduleItem.platform}
+          marketingTimezone={marketingTimezone}
+          initialScheduledFor={scheduleItem.scheduledFor}
+          busy={busy}
+          onClose={() => setScheduleItem(null)}
+          onConfirm={(scheduledFor) => {
+            const contentId = scheduleItem.id;
+            setScheduleItem(null);
+            void act(`/api/admin/marketing/content/${contentId}`, {
+              action: "schedule",
+              scheduledFor,
+            });
+          }}
+        />
+      ) : null}
       {message ? <p className="text-sm font-semibold text-brand-orange-deep">{message}</p> : null}
 
       {[...grouped.entries()].map(([platform, items]) => (
@@ -294,10 +316,10 @@ export function WeekClient() {
                     Reject
                   </SecondaryButton>
                   <SecondaryButton
-                    disabled={busy || item.status !== "approved"}
-                    onClick={() =>
-                      void act(`/api/admin/marketing/content/${item.id}`, { action: "schedule" })
+                    disabled={
+                      busy || (item.status !== "approved" && item.status !== "scheduled")
                     }
+                    onClick={() => setScheduleItem(item)}
                   >
                     Schedule
                   </SecondaryButton>
