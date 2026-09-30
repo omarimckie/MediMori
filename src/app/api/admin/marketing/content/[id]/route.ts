@@ -38,7 +38,8 @@ export async function POST(
     action !== "reject" &&
     action !== "edit" &&
     action !== "regenerate" &&
-    action !== "schedule"
+    action !== "schedule" &&
+    action !== "recycle"
   ) {
     return jsonError("Unsupported action.");
   }
@@ -47,7 +48,8 @@ export async function POST(
     contentId: id,
     body: body.body,
     feedback: body.feedback,
-    scheduledFor: action === "schedule" ? body.scheduledFor : undefined,
+    scheduledFor:
+      action === "schedule" || action === "recycle" ? body.scheduledFor : undefined,
     actor: auth.username,
   });
 }

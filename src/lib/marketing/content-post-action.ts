@@ -4,13 +4,15 @@ import type { MarketingStore } from "./store";
 import { NextResponse } from "next/server";
 
 export function contentActionFailureStatus(message: string): number {
-  return /^(invalid_|image_)|invalid_schedule_time|not found|Only approved|required|Unknown action/i.test(message)
+  return /^(invalid_|image_)|invalid_schedule_time|not found|Only approved|Only published|already published|cannot be recycled|No published publication|required|Unknown action/i.test(
+      message,
+    )
     ? 400
     : 500;
 }
 
 type ContentPostActionInput = {
-  action: "approve" | "reject" | "edit" | "regenerate" | "schedule";
+  action: "approve" | "reject" | "edit" | "regenerate" | "schedule" | "recycle";
   contentId: string;
   body?: string;
   feedback?: string;

@@ -7,75 +7,74 @@ import {
 import { useEffect, useState } from "react";
 import { Card, StatusPill } from "./ui";
 
-type Item = {
+type CalendarEvent = {
   id: string;
+  contentId: string;
+  publicationId: string;
   platform: string;
   title: string | null;
   status: string;
-  scheduledFor: string | null;
+  scheduledFor: string;
   timezone: string;
 };
 
 export function CalendarClient() {
-  const [items, setItems] = useState<Item[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [marketingTimezone, setMarketingTimezone] = useState("America/New_York");
 
   useEffect(() => {
-    void Promise.all([
-      fetch("/api/admin/marketing/content").then((res) => res.json()),
-      fetch("/api/admin/marketing/settings").then((res) => res.json()),
-    ]).then(([contentData, settingsData]) => {
-      setItems(contentData.content ?? []);
-      setMarketingTimezone(settingsData.marketingTimezone ?? "America/New_York");
-    });
+    void fetch("/api/admin/marketing/calendar")
+      .then((res) => res.json())
+      .then((data) => {
+        setEvents(data.events ?? []);
+        setMarketingTimezone(data.marketingTimezone ?? "America/New_York");
+      });
   }, []);
 
-  const calendarItems = items
-    .filter((item) => item.scheduledFor)
-    .sort((a, b) => String(a.scheduledFor).localeCompare(String(b.scheduledFor)));
-
-  const byDay = new Map<string, Item[]>();
-  for (const item of calendarItems) {
+  const byDay = new Map<string, CalendarEvent[]>();
+  for (const event of events) {
     const day = calendarDayKeyInMarketingTimezone(
-      String(item.scheduledFor),
-      item.timezone || marketingTimezone,
+      event.scheduledFor,
+      event.timezone || marketingTimezone,
     );
     const list = byDay.get(day) ?? [];
-    list.push(item);
+    list.push(event);
     byDay.set(day, list);
   }
+
+  const sortedDays = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-brand-charcoal/70">
-        Publishing calendar · times shown in {marketingTimezone}
+        Publishing calendar · scheduled publications · times shown in {marketingTimezone}
       </p>
-      {[...byDay.entries()].map(([day, dayItems]) => (
+      {sortedDays.map(([day, dayItems]) => (
         <Card key={day}>
           <h2 className="font-display text-2xl text-brand-navy">{day}</h2>
           <ul className="mt-3 space-y-2">
-            {dayItems.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-bold">{item.title || item.platform}</p>
-                  <p className="text-xs text-brand-charcoal/60">
-                    {item.platform} ·{" "}
-                    {item.scheduledFor
-                      ? formatMarketingScheduleDisplay(
-                          item.scheduledFor,
-                          item.timezone || marketingTimezone,
-                        )
-                      : ""}
-                  </p>
-                </div>
-                <StatusPill status={item.status} />
-              </li>
-            ))}
+            {dayItems
+              .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
+              .map((event) => (
+                <li key={event.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold">{event.title || event.platform}</p>
+                    <p className="text-xs text-brand-charcoal/60">
+                      {event.platform} ·{" "}
+                      {formatMarketingScheduleDisplay(
+                        event.scheduledFor,
+                        event.timezone || marketingTimezone,
+                      )}
+                    </p>
+                  </div>
+                  <StatusPill status={event.status} />
+                </li>
+              ))}
           </ul>
         </Card>
       ))}
-      {!calendarItems.length ? (
-        <p>No scheduled items yet. Approve and schedule from Your week.</p>
+      {!events.length ? (
+        <p>No scheduled publications yet. Approve and schedule from Your week, or recycle published content.</p>
       ) : null}
     </div>
   );

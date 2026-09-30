@@ -11,6 +11,7 @@ type Props = {
   busy: boolean;
   onClose: () => void;
   onConfirm: (marketingDatetimeLocal: string) => void;
+  mode?: "schedule" | "recycle";
 };
 
 export function ScheduleContentModal({
@@ -21,7 +22,9 @@ export function ScheduleContentModal({
   busy,
   onClose,
   onConfirm,
+  mode = "schedule",
 }: Props) {
+  const isRecycle = mode === "recycle";
   const defaultLocal =
     isoToMarketingDatetimeLocal(initialScheduledFor, marketingTimezone) ||
     isoToMarketingDatetimeLocal(new Date().toISOString(), marketingTimezone);
@@ -34,7 +37,7 @@ export function ScheduleContentModal({
         aria-labelledby="schedule-content-title"
       >
         <h2 id="schedule-content-title" className="font-display text-2xl text-brand-navy">
-          Schedule publish
+          {isRecycle ? "Recycle publish" : "Schedule publish"}
         </h2>
         <p className="mt-2 text-sm text-brand-charcoal/75">
           {title || platform}
@@ -69,7 +72,7 @@ export function ScheduleContentModal({
               Cancel
             </SecondaryButton>
             <PrimaryButton type="submit" disabled={busy}>
-              Confirm schedule
+              {isRecycle ? "Confirm recycle" : "Confirm schedule"}
             </PrimaryButton>
           </div>
         </form>

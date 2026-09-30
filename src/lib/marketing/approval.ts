@@ -287,6 +287,11 @@ export async function scheduleApproved(
   const scheduledFor = resolveScheduleInstant(content, input?.scheduledFor);
   const key = idempotencyKey(content);
   const existing = await store.getPublicationByIdempotency(key);
+  if (existing?.status === "published") {
+    throw new Error(
+      "This content was already published. Use recycle to schedule it again.",
+    );
+  }
   if (existing) {
     await store.updateContent(content.id, { status: "scheduled", scheduledFor });
     const updated =

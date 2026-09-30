@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { pickPrimaryPublication } from "@/lib/marketing/publication-selection";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
+import type { MarketingPublication } from "@/lib/marketing/types";
 import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { runMarketingWeekPostAction } from "./week-client-act";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
+import { ContentReviewCardActions, reviewScheduleModalState } from "./ContentReviewCardActions";
 import { ScheduleContentModal } from "./ScheduleContentModal";
-import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
+import { Card, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
   id: string;
@@ -28,13 +31,10 @@ type ContentItem = {
   bookId: string | null;
 };
 
-type PublicationRow = {
-  id: string;
-  contentId: string;
-  platform: string;
-  provider: string;
-  status: string;
-};
+type PublicationRow = Pick<
+  MarketingPublication,
+  "id" | "contentId" | "platform" | "provider" | "status" | "createdAt"
+>;
 
 type Settings = {
   mockMode?: boolean;
@@ -68,6 +68,7 @@ export function WeekClient() {
   const [showUploadPost, setShowUploadPost] = useState(false);
   const [showUploadResource, setShowUploadResource] = useState(false);
   const [scheduleItem, setScheduleItem] = useState<ContentItem | null>(null);
+  const [recycleItem, setRecycleItem] = useState<ContentItem | null>(null);
 
   const plan = settings?.plans[0];
   const mockMode = settings?.mockMode ?? true;
@@ -75,8 +76,11 @@ export function WeekClient() {
   const marketingTimezone = settings?.marketingTimezone ?? "America/New_York";
   const publicationByContent = useMemo(() => {
     const map = new Map<string, PublicationRow>();
-    for (const row of settings?.publications ?? []) {
-      map.set(row.contentId, row);
+    const publications = settings?.publications ?? [];
+    const contentIds = new Set(publications.map((row) => row.contentId));
+    for (const contentId of contentIds) {
+      const primary = pickPrimaryPublication(publications, contentId);
+      if (primary) map.set(contentId, primary);
     }
     return map;
   }, [settings?.publications]);
@@ -202,24 +206,33 @@ export function WeekClient() {
           setMessage={setMessage}
         />
       ) : null}
-      {scheduleItem ? (
-        <ScheduleContentModal
-          title={scheduleItem.title}
-          platform={scheduleItem.platform}
-          marketingTimezone={marketingTimezone}
-          initialScheduledFor={scheduleItem.scheduledFor}
-          busy={busy}
-          onClose={() => setScheduleItem(null)}
-          onConfirm={(scheduledFor) => {
-            const contentId = scheduleItem.id;
-            setScheduleItem(null);
-            void act(`/api/admin/marketing/content/${contentId}`, {
-              action: "schedule",
-              scheduledFor,
-            });
-          }}
-        />
-      ) : null}
+      {(() => {
+        const modal = reviewScheduleModalState(scheduleItem, recycleItem);
+        if (!modal) return null;
+        return (
+          <ScheduleContentModal
+            mode={modal.mode}
+            title={modal.item.title}
+            platform={modal.item.platform}
+            marketingTimezone={marketingTimezone}
+            initialScheduledFor={modal.item.scheduledFor}
+            busy={busy}
+            onClose={() => {
+              setScheduleItem(null);
+              setRecycleItem(null);
+            }}
+            onConfirm={(scheduledFor) => {
+              const contentId = modal.item.id;
+              setScheduleItem(null);
+              setRecycleItem(null);
+              void act(`/api/admin/marketing/content/${contentId}`, {
+                action: modal.mode === "recycle" ? "recycle" : "schedule",
+                scheduledFor,
+              });
+            }}
+          />
+        );
+      })()}
       {message ? <p className="text-sm font-semibold text-brand-orange-deep">{message}</p> : null}
 
       {[...grouped.entries()].map(([platform, items]) => (
@@ -227,6 +240,12 @@ export function WeekClient() {
           <h3 className="text-sm font-bold uppercase tracking-wide text-brand-green-deep">{platform}</h3>
           {items.map((item) => {
             const review = reviewByContentId[item.id];
+            const contentPublications = (settings?.publications ?? []).filter(
+              (row) => row.contentId === item.id,
+            );
+            const hasPublishedPublication = contentPublications.some(
+              (row) => row.status === "published",
+            );
             return (
             <Card key={item.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -276,54 +295,31 @@ export function WeekClient() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex w-40 flex-col gap-2">
-                  <PrimaryButton
-                    disabled={busy}
-                    onClick={() =>
-                      void act(`/api/admin/marketing/content/${item.id}`, { action: "approve" })
-                    }
-                  >
-                    Approve
-                  </PrimaryButton>
-                  <SecondaryButton
-                    disabled={busy}
-                    onClick={() =>
-                      void act(`/api/admin/marketing/content/${item.id}`, {
-                        action: "edit",
-                        body: editing[item.id] ?? item.body,
-                      })
-                    }
-                  >
-                    Save edit
-                  </SecondaryButton>
-                  <SecondaryButton
-                    disabled={busy}
-                    onClick={() =>
-                      void act(`/api/admin/marketing/content/${item.id}`, { action: "regenerate" })
-                    }
-                  >
-                    Regenerate
-                  </SecondaryButton>
-                  <SecondaryButton
-                    disabled={busy}
-                    onClick={() =>
-                      void act(`/api/admin/marketing/content/${item.id}`, {
-                        action: "reject",
-                        feedback: "Rejected from weekly review.",
-                      })
-                    }
-                  >
-                    Reject
-                  </SecondaryButton>
-                  <SecondaryButton
-                    disabled={
-                      busy || (item.status !== "approved" && item.status !== "scheduled")
-                    }
-                    onClick={() => setScheduleItem(item)}
-                  >
-                    Schedule
-                  </SecondaryButton>
-                </div>
+                <ContentReviewCardActions
+                  item={item}
+                  busy={busy}
+                  hasPublishedPublication={hasPublishedPublication}
+                  onApprove={() =>
+                    void act(`/api/admin/marketing/content/${item.id}`, { action: "approve" })
+                  }
+                  onSaveEdit={() =>
+                    void act(`/api/admin/marketing/content/${item.id}`, {
+                      action: "edit",
+                      body: editing[item.id] ?? item.body,
+                    })
+                  }
+                  onRegenerate={() =>
+                    void act(`/api/admin/marketing/content/${item.id}`, { action: "regenerate" })
+                  }
+                  onReject={() =>
+                    void act(`/api/admin/marketing/content/${item.id}`, {
+                      action: "reject",
+                      feedback: "Rejected from weekly review.",
+                    })
+                  }
+                  onSchedule={() => setScheduleItem(item)}
+                  onRecycle={() => setRecycleItem(item)}
+                />
               </div>
             </Card>
             );

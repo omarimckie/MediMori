@@ -9,6 +9,7 @@ import {
   rejectContent,
   scheduleApproved,
 } from "./approval";
+import { recyclePublished } from "./recycle";
 import { ensureCatalogAssets } from "./assets";
 import { recordMockMetrics } from "./attribution";
 import { allowMarketingDemoSeed, isMockMode } from "./config";
@@ -117,7 +118,16 @@ export async function overview(store: MarketingStore) {
 export async function runApprovalAction(
   store: MarketingStore,
   input: {
-    action: "approve" | "reject" | "edit" | "regenerate" | "approve_all" | "reject_all" | "schedule" | "publish_due";
+    action:
+      | "approve"
+      | "reject"
+      | "edit"
+      | "regenerate"
+      | "approve_all"
+      | "reject_all"
+      | "schedule"
+      | "recycle"
+      | "publish_due";
     contentId?: string;
     weeklyPlanId?: string;
     body?: string;
@@ -148,6 +158,9 @@ export async function runApprovalAction(
     case "schedule":
       if (!input.contentId) throw new Error("contentId required");
       return scheduleApproved(store, input.contentId, { scheduledFor: input.scheduledFor });
+    case "recycle":
+      if (!input.contentId) throw new Error("contentId required");
+      return recyclePublished(store, input.contentId, { scheduledFor: input.scheduledFor });
     case "publish_due":
       return publishDue(store);
     default:
