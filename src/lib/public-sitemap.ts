@@ -4,11 +4,12 @@ import type { PublishedFreeResource } from "@/lib/marketing/free-resources";
 import { getSiteUrl } from "@/lib/site";
 import type { MetadataRoute } from "next";
 
-const STATIC_PATHS = [
+export const PUBLIC_STATIC_SITEMAP_PATHS = [
   "/",
   "/books",
   "/authors",
   "/resources",
+  "/resources/free",
   "/contact",
   "/blog",
   "/privacy-policy",
@@ -37,7 +38,7 @@ export async function buildPublicSitemap(
   const base = getSiteUrl();
   const now = new Date();
 
-  const staticEntries: MetadataRoute.Sitemap = STATIC_PATHS.map((path) => ({
+  const staticEntries: MetadataRoute.Sitemap = PUBLIC_STATIC_SITEMAP_PATHS.map((path) => ({
     url: path === "/" ? base : `${base}${path}`,
     lastModified: now,
     changeFrequency: path === "/" || path === "/books" ? "weekly" : "monthly",

@@ -48,7 +48,18 @@ export default async function FreeResourcePage({ params }: Props) {
   return (
     <main>
       <PageSection tone="navy" containerClassName="mx-auto max-w-3xl">
-        <p className="text-sm font-extrabold uppercase tracking-wide text-brand-yellow-bright">
+        <nav aria-label="Breadcrumb" className="text-sm text-white/70">
+          <Link href="/resources" className="underline-offset-4 hover:text-white hover:underline">
+            Resources
+          </Link>
+          <span aria-hidden="true"> → </span>
+          <Link href="/resources/free" className="underline-offset-4 hover:text-white hover:underline">
+            Free Resources
+          </Link>
+          <span aria-hidden="true"> → </span>
+          <span className="text-white/90">{resource.title}</span>
+        </nav>
+        <p className="mt-4 text-sm font-extrabold uppercase tracking-wide text-brand-yellow-bright">
           Free resource · {resource.resourceTypeLabel}
         </p>
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">

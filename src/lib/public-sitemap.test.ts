@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PublishedFreeResource } from "@/lib/marketing/free-resources";
-import { freeResourceSitemapEntries } from "./public-sitemap";
+import { freeResourceSitemapEntries, PUBLIC_STATIC_SITEMAP_PATHS } from "./public-sitemap";
 
 const base = "https://twilight-feather.com";
 
@@ -57,4 +57,8 @@ test("free resource sitemap skips invalid slugs", () => {
     new Date(),
   );
   assert.equal(entries.length, 0);
+});
+
+test("public static sitemap paths include free resources collection", () => {
+  assert.ok(PUBLIC_STATIC_SITEMAP_PATHS.includes("/resources/free"));
 });

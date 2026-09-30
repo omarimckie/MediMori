@@ -3,6 +3,7 @@ import { PageSection } from "@/components/PageSection";
 import { getCombinedResources } from "@/lib/resources";
 import { SITE_NAME } from "@/lib/seo";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 const RESOURCES_DESCRIPTION =
   "Trusted children's health and wellness resources for parents, caregivers, and educators — including free Twilight Feather downloads and curated external guides.";
@@ -38,6 +39,14 @@ export default async function ResourcesPage() {
           Trusted resources and family-friendly information we&apos;ve curated to
           help parents, caregivers, and educators navigate children&apos;s health
           and wellness.
+        </p>
+        <p className="mt-6">
+          <Link
+            href="/resources/free"
+            className="text-sm font-bold text-brand-yellow-bright underline-offset-4 hover:underline"
+          >
+            Browse free Twilight Feather activities &amp; downloads
+          </Link>
         </p>
       </PageSection>
 

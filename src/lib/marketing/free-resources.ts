@@ -76,14 +76,51 @@ export function mapPublishedFreeResource(
   };
 }
 
+export function comparePublishedFreeResources(
+  a: PublishedFreeResource,
+  b: PublishedFreeResource,
+): number {
+  const byDate = (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "");
+  if (byDate !== 0) return byDate;
+  return a.title.localeCompare(b.title);
+}
+
+export function sortPublishedFreeResources(
+  items: PublishedFreeResource[],
+): PublishedFreeResource[] {
+  return [...items].sort(comparePublishedFreeResources);
+}
+
+export type PublishedFreeResourceCatalogItem = {
+  resource: PublishedFreeResource;
+  hasDeliverablePreview: boolean;
+};
+
 export async function listPublishedFreeResources(
   store: MarketingStore,
 ): Promise<PublishedFreeResource[]> {
   const [content, assets] = await Promise.all([store.listContent(), store.listAssets()]);
-  return content
+  const items = content
     .map((item) => mapPublishedFreeResource(item, assets))
-    .filter((item): item is PublishedFreeResource => Boolean(item))
-    .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+    .filter((item): item is PublishedFreeResource => Boolean(item));
+  return sortPublishedFreeResources(items);
+}
+
+export async function listPublishedFreeResourceCatalog(
+  store: MarketingStore,
+): Promise<PublishedFreeResourceCatalogItem[]> {
+  const [content, assets] = await Promise.all([store.listContent(), store.listAssets()]);
+  const items: PublishedFreeResourceCatalogItem[] = [];
+  for (const item of content) {
+    const resource = mapPublishedFreeResource(item, assets);
+    if (!resource) continue;
+    items.push({
+      resource,
+      hasDeliverablePreview: hasDeliverableFreeResourcePreview(item, assets),
+    });
+  }
+  items.sort((a, b) => comparePublishedFreeResources(a.resource, b.resource));
+  return items;
 }
 
 export async function listPublishedFreeResourcesForBook(
