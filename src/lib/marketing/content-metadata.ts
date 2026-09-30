@@ -36,6 +36,16 @@ export function isFreeResourceContent(content: MarketingContent): boolean {
   return content.platform === "website" && content.format === "free_resource";
 }
 
+/** Matches slugs produced by {@link slugifyResourceTitle} for public URL segments. */
+const PUBLIC_FREE_RESOURCE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isPublicFreeResourceSlug(slug: string): boolean {
+  const normalized = slug.trim();
+  if (!normalized || normalized.length > 80) return false;
+  if (normalized.includes("/") || normalized.includes("..")) return false;
+  return PUBLIC_FREE_RESOURCE_SLUG_PATTERN.test(normalized);
+}
+
 export function freeResourcePublicPath(slug: string): string {
   return `/resources/free/${slug}`;
 }

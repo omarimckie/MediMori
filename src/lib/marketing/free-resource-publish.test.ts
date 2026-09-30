@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 import sharp from "sharp";
 import {
   approveContent,
@@ -8,6 +8,7 @@ import {
   scheduleApproved,
 } from "./approval";
 import { freeResourcePublicPath } from "./content-metadata";
+import { setRevalidatePathForTests } from "./free-resource-cache";
 import { getPublishedFreeResourceBySlug, listPublishedFreeResources } from "./free-resources";
 import { createManualFreeResource } from "./manual-upload";
 import { MemoryMarketingStore } from "./memory-store";
@@ -17,7 +18,12 @@ import { absoluteUrl } from "@/lib/site";
 
 const originalMockMode = process.env.MARKETING_MOCK_MODE;
 
+beforeEach(() => {
+  setRevalidatePathForTests(() => {});
+});
+
 afterEach(() => {
+  setRevalidatePathForTests(null);
   if (originalMockMode === undefined) delete process.env.MARKETING_MOCK_MODE;
   else process.env.MARKETING_MOCK_MODE = originalMockMode;
 });
@@ -126,6 +132,10 @@ test("free resource publish uses WebsiteFreeResourcePublisher not mock social", 
   const content = await seedFreeResource(store);
   await approveContent(store, content.id, "owner");
   const scheduled = await scheduleApproved(store, content.id);
+  const revalidatedPaths: string[] = [];
+  setRevalidatePathForTests((path) => {
+    revalidatedPaths.push(path);
+  });
   const published = await publishPublication(store, scheduled);
   assert.equal(published.provider, "website_free_resources");
   assert.equal(published.status, "published");
@@ -141,6 +151,30 @@ test("free resource publish uses WebsiteFreeResourcePublisher not mock social", 
   assert.ok(refreshed?.metadata.resourcePublishedAt);
   const events = await store.listEvents();
   assert.ok(events.some((item) => item.name === "resource_published"));
+  assert.deepEqual(revalidatedPaths, [
+    "/resources/free",
+    "/resources",
+    "/sitemap.xml",
+    freeResourcePublicPath(slug),
+  ]);
+});
+
+test("free resource publish failure does not revalidate public routes", async () => {
+  process.env.MARKETING_MOCK_MODE = "false";
+  const store = new MemoryMarketingStore();
+  const content = await seedFreeResource(store);
+  await approveContent(store, content.id, "owner");
+  const scheduled = await scheduleApproved(store, content.id);
+  await store.updateContent(content.id, {
+    metadata: { ...content.metadata, slug: "" },
+  });
+  const revalidatedPaths: string[] = [];
+  setRevalidatePathForTests((path) => {
+    revalidatedPaths.push(path);
+  });
+  const failed = await publishPublication(store, scheduled);
+  assert.equal(failed.status, "failed");
+  assert.equal(revalidatedPaths.length, 0);
 });
 
 test("free resource publishDue leaves content published with slug for public listing", async () => {

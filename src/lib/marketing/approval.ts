@@ -6,6 +6,7 @@ import { isFreeResourceContent } from "./content-metadata";
 import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import { inferPreferenceSignals } from "./preference-signals";
 import { getEmailProvider, getSocialPublisher } from "./publishers";
+import { revalidatePublishedFreeResourcePaths } from "./free-resource-cache";
 import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import { logMarketing } from "./logger";
 import { scanMarketingText } from "./safety";
@@ -400,6 +401,18 @@ export async function publishPublication(
       success: true,
       durationMs: Date.now() - started,
     });
+    if (isFreeResourceContent(content)) {
+      const slug = content.metadata.slug;
+      if (!slug?.trim()) {
+        logMarketing({
+          operation: "revalidate_free_resource_cache",
+          contentId: content.id,
+          success: false,
+          error: "Missing metadata.slug; detail path not revalidated",
+        });
+      }
+      revalidatePublishedFreeResourcePaths(slug ?? "");
+    }
     return updated ?? current;
   }
 
