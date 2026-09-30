@@ -2,16 +2,11 @@ import { isMockMode } from "./config";
 import { isFreeResourceContent } from "./content-metadata";
 import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import { resolveScheduleInstant } from "./marketing-scheduling";
+import { isContentRecyclablePlatform } from "./recycle-eligibility";
 import { getEmailProvider, getSocialPublisher } from "./publishers";
 import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import type { MarketingStore } from "./store";
-import type { MarketingContent, MarketingPublication, Platform } from "./types";
-
-const RECYCLABLE_PLATFORMS = new Set<Platform>([
-  "instagram",
-  "facebook",
-  "pinterest",
-]);
+import type { MarketingContent, MarketingPublication } from "./types";
 
 export function recycleIdempotencyKey(content: MarketingContent, publicationId: string): string {
   return `pub:${content.id}:${content.platform}:recycle:${publicationId}`;
@@ -26,30 +21,6 @@ function publicationProviderForContent(content: MarketingContent): string {
       ? getEmailProvider().id
       : getSocialPublisher(content.platform).id;
   return isMockMode() ? `mock:${providerId}` : providerId;
-}
-
-export function isContentRecyclablePlatform(
-  content: Pick<MarketingContent, "platform" | "format">,
-): boolean {
-  if (content.platform === "website" && content.format === "free_resource") return false;
-  if (content.platform === "email") return false;
-  return RECYCLABLE_PLATFORMS.has(content.platform);
-}
-
-export type ReviewCardRecycleEligibility = {
-  status: string;
-  platform: MarketingContent["platform"];
-  format: MarketingContent["format"];
-  hasPublishedPublication: boolean;
-};
-
-/** Whether the weekly review card should offer Recycle (UI only; API re-validates). */
-export function shouldShowRecycleOnReviewCard(input: ReviewCardRecycleEligibility): boolean {
-  if (input.status !== "published") return false;
-  if (!isContentRecyclablePlatform({ platform: input.platform, format: input.format })) {
-    return false;
-  }
-  return input.hasPublishedPublication;
 }
 
 export async function hasPublishedPublicationForContent(

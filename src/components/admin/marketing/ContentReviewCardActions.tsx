@@ -1,6 +1,6 @@
 "use client";
 
-import { shouldShowRecycleOnReviewCard } from "@/lib/marketing/recycle";
+import { shouldShowRecycleOnReviewCard } from "@/lib/marketing/recycle-eligibility";
 import type { MarketingContent } from "@/lib/marketing/types";
 import { PrimaryButton, SecondaryButton } from "./ui";
 

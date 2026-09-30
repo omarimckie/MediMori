@@ -6,7 +6,7 @@ import {
   reviewScheduleModalState,
 } from "./ContentReviewCardActions";
 import { ScheduleContentModal } from "./ScheduleContentModal";
-import { shouldShowRecycleOnReviewCard } from "@/lib/marketing/recycle";
+import { shouldShowRecycleOnReviewCard } from "@/lib/marketing/recycle-eligibility";
 import { executeMarketingContentPostAction } from "@/lib/marketing/content-post-action";
 import {
   approveContent,
