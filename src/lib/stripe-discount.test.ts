@@ -3,8 +3,10 @@ import { test, afterEach } from "node:test";
 import type Stripe from "stripe";
 import {
   __setNewsletterStripeCouponIdForTests,
+  findActiveUnrestrictedNewsletterPromotionForCoupon,
   getNewsletterStripeCouponId,
   isNewsletterCouponPromotionApplication,
+  isUnrestrictedNewsletterPromotionCode,
   promotionCodeCouponId,
   resolveNewsletterCouponIdForIssuance,
 } from "./stripe-discount";
@@ -117,6 +119,44 @@ test("resolveNewsletterCouponIdForIssuance requires env in production", async ()
   const coupon = await resolveNewsletterCouponIdForIssuance(stripe);
   assert.equal(coupon, null);
   process.env.VERCEL_ENV = prev;
+});
+
+test("isUnrestrictedNewsletterPromotionCode distinguishes global vs customer", () => {
+  const globalPromo = mockPromotionCode({
+    id: "promo_global",
+    couponId: TEST_COUPON,
+  });
+  const customerPromo = mockPromotionCode({
+    id: "promo_customer",
+    couponId: TEST_COUPON,
+    customer: "cus_x",
+  });
+  assert.equal(isUnrestrictedNewsletterPromotionCode(globalPromo), true);
+  assert.equal(isUnrestrictedNewsletterPromotionCode(customerPromo), false);
+});
+
+test("findActiveUnrestrictedNewsletterPromotionForCoupon detects active global code", async () => {
+  const globalPromo = mockPromotionCode({
+    id: "promo_global_live",
+    couponId: TEST_COUPON,
+  });
+  const customerPromo = mockPromotionCode({
+    id: "promo_customer_live",
+    couponId: TEST_COUPON,
+    customer: "cus_y",
+  });
+
+  const stripe = {
+    promotionCodes: {
+      list: async () => ({ data: [globalPromo, customerPromo], has_more: false }),
+    },
+  } as unknown as Stripe;
+
+  const found = await findActiveUnrestrictedNewsletterPromotionForCoupon(
+    stripe,
+    TEST_COUPON,
+  );
+  assert.equal(found?.id, "promo_global_live");
 });
 
 test("HOLIDAY2026 with newsletter coupon is not newsletter", () => {

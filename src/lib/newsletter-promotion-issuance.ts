@@ -4,11 +4,16 @@ import {
 } from "./newsletter-promotion-redemption";
 import { getNewsletterDiscountCode } from "./newsletter-constants";
 import { getSql } from "./db";
-import { findOrCreateStripeCustomerByEmail } from "./stripe-customer";
 import {
+  findOrCreateStripeCustomerByEmail,
+  searchStripeCustomersByEmail,
+} from "./stripe-customer";
+import {
+  findActiveUnrestrictedNewsletterPromotionForCoupon,
   getNewsletterStripeCouponId,
   resolveNewsletterCouponIdForIssuance,
 } from "./stripe-discount";
+import { stripeErrorDiagnostics } from "./stripe-error-diagnostics";
 import Stripe from "stripe";
 
 export type NewsletterIssuanceSource =
@@ -230,6 +235,7 @@ export type IssueCustomerNewsletterPromotionResult =
         | "invalid_email"
         | "already_redeemed"
         | "missing_coupon_id"
+        | "deferred_global_code_active"
         | "stripe_not_configured"
         | "database_unavailable";
     }
@@ -237,6 +243,7 @@ export type IssueCustomerNewsletterPromotionResult =
       status: "failed";
       reason:
         | "ambiguous_stripe_promotions"
+        | "ambiguous_stripe_customers"
         | "stripe_error"
         | "database_error";
     };
@@ -253,8 +260,141 @@ export type IssueCustomerNewsletterPromotionOptions = {
       input: CreateIssuanceRecordInput,
     ) => Promise<NewsletterPromotionIssuanceRow>;
     resolveCouponId?: (stripe: Stripe) => Promise<string | null>;
+    findActiveUnrestrictedGlobal?: (
+      stripe: Stripe,
+      couponId: string,
+    ) => Promise<Stripe.PromotionCode | null>;
+    searchCustomersByEmail?: (
+      stripe: Stripe,
+      email: string,
+    ) => Promise<Stripe.Customer[]>;
   };
 };
+
+function logStripeIssuanceError(context: string, error: unknown): void {
+  console.error(context, stripeErrorDiagnostics(error));
+}
+
+async function reconcileCustomerNewsletterPromotionWhenPossible(
+  stripe: Stripe,
+  stripeCustomerId: string,
+  couponId: string,
+  email: string,
+  issuanceSource: NewsletterIssuanceSource,
+  options: IssueCustomerNewsletterPromotionOptions | undefined,
+  recordIssuance: (
+    input: CreateIssuanceRecordInput,
+  ) => Promise<NewsletterPromotionIssuanceRow>,
+): Promise<IssueCustomerNewsletterPromotionResult | null> {
+  let customerPromos: Stripe.PromotionCode[];
+  try {
+    customerPromos = await listCustomerSpecificNewsletterPromotionCodes(
+      stripe,
+      stripeCustomerId,
+      couponId,
+    );
+  } catch (error) {
+    logStripeIssuanceError(
+      "Newsletter issuance: Stripe promotion list error:",
+      error,
+    );
+    return { status: "failed", reason: "stripe_error" };
+  }
+
+  if (customerPromos.length > 1) {
+    console.error("Newsletter issuance: multiple customer-specific promos found.", {
+      stripeCustomerId,
+      promotionCodeIds: customerPromos.map((p) => p.id),
+    });
+    return { status: "failed", reason: "ambiguous_stripe_promotions" };
+  }
+
+  if (customerPromos.length === 1 && customerPromos[0].id) {
+    const reconciled = customerPromos[0];
+    try {
+      await recordIssuance({
+        email,
+        stripeCustomerId,
+        stripePromotionCodeId: reconciled.id,
+        stripeCouponId: couponId,
+        issuanceSource,
+        migrationRunId: options?.migrationRunId ?? null,
+      });
+    } catch (error) {
+      console.error("Newsletter issuance: failed to record reconciled promo:", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return { status: "failed", reason: "database_error" };
+    }
+    return {
+      status: "existing",
+      stripePromotionCodeId: reconciled.id,
+      stripeCustomerId,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * While an active unrestricted global newsletter code exists, new customer-specific
+ * codes cannot be created. Reconcile existing Stripe state when possible without
+ * creating customers or promotion codes.
+ */
+async function issueWhenGlobalNewsletterCodeActive(
+  stripe: Stripe,
+  email: string,
+  couponId: string,
+  issuanceSource: NewsletterIssuanceSource,
+  options: IssueCustomerNewsletterPromotionOptions | undefined,
+  recordIssuance: (
+    input: CreateIssuanceRecordInput,
+  ) => Promise<NewsletterPromotionIssuanceRow>,
+): Promise<IssueCustomerNewsletterPromotionResult> {
+  const searchCustomers =
+    options?.testOverrides?.searchCustomersByEmail ??
+    ((s, e) => searchStripeCustomersByEmail(s, e, { limit: 20 }));
+
+  let customers: Stripe.Customer[];
+  try {
+    customers = await searchCustomers(stripe, email);
+  } catch (error) {
+    logStripeIssuanceError("Newsletter issuance: Stripe customer search error:", error);
+    return { status: "failed", reason: "stripe_error" };
+  }
+
+  if (customers.length === 0) {
+    return { status: "skipped", reason: "deferred_global_code_active" };
+  }
+
+  if (customers.length > 1) {
+    console.error(
+      "Newsletter issuance: multiple Stripe customers match email during global defer.",
+      { matchCount: customers.length },
+    );
+    return { status: "failed", reason: "ambiguous_stripe_customers" };
+  }
+
+  const stripeCustomerId = customers[0].id;
+  if (!stripeCustomerId) {
+    return { status: "skipped", reason: "deferred_global_code_active" };
+  }
+
+  const reconciled = await reconcileCustomerNewsletterPromotionWhenPossible(
+    stripe,
+    stripeCustomerId,
+    couponId,
+    email,
+    issuanceSource,
+    options,
+    recordIssuance,
+  );
+  if (reconciled) {
+    return reconciled;
+  }
+
+  return { status: "skipped", reason: "deferred_global_code_active" };
+}
 
 export type IssueCustomerNewsletterPromotionFn = (
   stripe: Stripe,
@@ -330,6 +470,32 @@ export async function issueCustomerSpecificNewsletterPromotion(
     return { status: "skipped", reason: "missing_coupon_id" };
   }
 
+  const findActiveUnrestricted =
+    options?.testOverrides?.findActiveUnrestrictedGlobal ??
+    findActiveUnrestrictedNewsletterPromotionForCoupon;
+
+  let activeUnrestricted: Stripe.PromotionCode | null = null;
+  try {
+    activeUnrestricted = await findActiveUnrestricted(stripe, couponId);
+  } catch (error) {
+    logStripeIssuanceError(
+      "Newsletter issuance: unrestricted global promotion lookup failed:",
+      error,
+    );
+    return { status: "failed", reason: "stripe_error" };
+  }
+
+  if (activeUnrestricted) {
+    return issueWhenGlobalNewsletterCodeActive(
+      stripe,
+      validated.email,
+      couponId,
+      issuanceSource,
+      options,
+      recordIssuance,
+    );
+  }
+
   let stripeCustomerId: string;
   try {
     stripeCustomerId = await findOrCreateStripeCustomerByEmail(
@@ -337,57 +503,21 @@ export async function issueCustomerSpecificNewsletterPromotion(
       validated.email,
     );
   } catch (error) {
-    console.error("Newsletter issuance: Stripe customer error:", {
-      error: error instanceof Error ? error.message : "unknown",
-    });
+    logStripeIssuanceError("Newsletter issuance: Stripe customer error:", error);
     return { status: "failed", reason: "stripe_error" };
   }
 
-  let customerPromos: Stripe.PromotionCode[];
-  try {
-    customerPromos = await listCustomerSpecificNewsletterPromotionCodes(
-      stripe,
-      stripeCustomerId,
-      couponId,
-    );
-  } catch (error) {
-    console.error("Newsletter issuance: Stripe promotion list error:", {
-      error: error instanceof Error ? error.message : "unknown",
-    });
-    return { status: "failed", reason: "stripe_error" };
-  }
-
-  if (customerPromos.length > 1) {
-    console.error("Newsletter issuance: multiple customer-specific promos found.", {
-      email: validated.email,
-      stripeCustomerId,
-      promotionCodeIds: customerPromos.map((p) => p.id),
-    });
-    return { status: "failed", reason: "ambiguous_stripe_promotions" };
-  }
-
-  if (customerPromos.length === 1 && customerPromos[0].id) {
-    const reconciled = customerPromos[0];
-    try {
-      await recordIssuance({
-        email: validated.email,
-        stripeCustomerId,
-        stripePromotionCodeId: reconciled.id,
-        stripeCouponId: couponId,
-        issuanceSource,
-        migrationRunId: options?.migrationRunId ?? null,
-      });
-    } catch (error) {
-      console.error("Newsletter issuance: failed to record reconciled promo:", {
-        error: error instanceof Error ? error.message : "unknown",
-      });
-      return { status: "failed", reason: "database_error" };
-    }
-    return {
-      status: "existing",
-      stripePromotionCodeId: reconciled.id,
-      stripeCustomerId,
-    };
+  const reconciledAfterCreate = await reconcileCustomerNewsletterPromotionWhenPossible(
+    stripe,
+    stripeCustomerId,
+    couponId,
+    validated.email,
+    issuanceSource,
+    options,
+    recordIssuance,
+  );
+  if (reconciledAfterCreate) {
+    return reconciledAfterCreate;
   }
 
   try {
@@ -412,9 +542,10 @@ export async function issueCustomerSpecificNewsletterPromotion(
       ),
     );
   } catch (error) {
-    console.error("Newsletter issuance: Stripe promotion create error:", {
-      error: error instanceof Error ? error.message : "unknown",
-    });
+    logStripeIssuanceError(
+      "Newsletter issuance: Stripe promotion create error:",
+      error,
+    );
     return { status: "failed", reason: "stripe_error" };
   }
 
@@ -491,6 +622,13 @@ export async function attemptNewsletterPromotionIssuanceAfterSignup(
     ) {
       console.error(
         "Newsletter promotion issuance skipped: configure NEWSLETTER_STRIPE_COUPON_ID.",
+      );
+    } else if (
+      result.status === "skipped" &&
+      result.reason === "deferred_global_code_active"
+    ) {
+      console.info(
+        "Newsletter promotion issuance deferred: active unrestricted global newsletter code.",
       );
     }
   } catch (error) {

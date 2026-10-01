@@ -189,6 +189,98 @@ export function isNewsletterCustomerFacingPromotionCode(
   return actual === expected;
 }
 
+/** Unrestricted promotion codes are redeemable by any customer (no customer restriction). */
+export function isUnrestrictedNewsletterPromotionCode(
+  promotionCode: Stripe.PromotionCode,
+): boolean {
+  return !promotionCode.customer;
+}
+
+export function newsletterPromotionCodeMatchesCoupon(
+  promotionCode: Stripe.PromotionCode,
+  couponId: string,
+): boolean {
+  return promotionCodeCouponId(promotionCode) === couponId;
+}
+
+/**
+ * Lists active customer-facing newsletter promotion codes (any restriction).
+ * Does not create or modify Stripe objects.
+ */
+export async function listActiveNewsletterPromotionCodes(
+  stripe: Stripe,
+): Promise<Stripe.PromotionCode[]> {
+  const code = getNewsletterDiscountCode();
+  const matches: Stripe.PromotionCode[] = [];
+  let startingAfter: string | undefined;
+
+  for (let page = 0; page < 20; page += 1) {
+    const listed = await stripe.promotionCodes.list({
+      code,
+      active: true,
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    for (const promotionCode of listed.data) {
+      if (isNewsletterCustomerFacingPromotionCode(promotionCode)) {
+        matches.push(promotionCode);
+      }
+    }
+    if (!listed.has_more || listed.data.length === 0) break;
+    startingAfter = listed.data[listed.data.length - 1]?.id;
+    if (!startingAfter) break;
+  }
+
+  return matches;
+}
+
+/**
+ * Active unrestricted (global) TWILIGHTFEATHER10 for the newsletter coupon, if any.
+ * Pre-cutover issuance cannot create another active code with the same string while this exists.
+ */
+export async function findActiveUnrestrictedNewsletterPromotionForCoupon(
+  stripe: Stripe,
+  couponId: string,
+): Promise<Stripe.PromotionCode | null> {
+  const active = await listActiveNewsletterPromotionCodes(stripe);
+  const unrestricted = active.filter(
+    (promotionCode) =>
+      isUnrestrictedNewsletterPromotionCode(promotionCode) &&
+      newsletterPromotionCodeMatchesCoupon(promotionCode, couponId),
+  );
+  if (unrestricted.length === 0) return null;
+  if (unrestricted.length === 1) return unrestricted[0];
+  return unrestricted[0];
+}
+
+export type GlobalNewsletterPromotionState = {
+  hasActiveUnrestricted: boolean;
+  activeUnrestrictedPromotionCodeIds: string[];
+  activeCustomerRestrictedPromotionCodeCount: number;
+};
+
+/** Read-only summary of live newsletter promotion codes for migration preflight. */
+export async function summarizeNewsletterPromotionCodeState(
+  stripe: Stripe,
+  couponId: string,
+): Promise<GlobalNewsletterPromotionState> {
+  const active = await listActiveNewsletterPromotionCodes(stripe);
+  const matching = active.filter((promotionCode) =>
+    newsletterPromotionCodeMatchesCoupon(promotionCode, couponId),
+  );
+  const unrestricted = matching.filter(isUnrestrictedNewsletterPromotionCode);
+  const customerRestricted = matching.filter(
+    (promotionCode) => !isUnrestrictedNewsletterPromotionCode(promotionCode),
+  );
+  return {
+    hasActiveUnrestricted: unrestricted.length > 0,
+    activeUnrestrictedPromotionCodeIds: unrestricted
+      .map((promotionCode) => promotionCode.id)
+      .filter(Boolean) as string[],
+    activeCustomerRestrictedPromotionCodeCount: customerRestricted.length,
+  };
+}
+
 export function isNewsletterCouponPromotionApplication(
   promotionCode: Stripe.PromotionCode,
   newsletterCouponId: string,

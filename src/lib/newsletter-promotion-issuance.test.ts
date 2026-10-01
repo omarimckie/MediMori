@@ -30,13 +30,21 @@ function mockStripe(handlers: {
     params: Stripe.PromotionCodeCreateParams,
   ) => Promise<Stripe.PromotionCode>;
   stripeCustomerId?: string;
+  searchCustomers?: Stripe.Customer[];
 }): Stripe {
   const customerId = handlers.stripeCustomerId ?? "cus_default";
+  let customerCreateCalls = 0;
   return {
     customers: {
-      search: async () => ({ data: [] }),
-      create: async () => ({ id: customerId }),
+      search: async () => ({
+        data: handlers.searchCustomers ?? [],
+      }),
+      create: async () => {
+        customerCreateCalls += 1;
+        return { id: customerId };
+      },
     },
+    __customerCreateCalls: () => customerCreateCalls,
     promotionCodes: {
       list: async (params: Stripe.PromotionCodeListParams) =>
         handlers.listPromotions?.(params) ?? { data: [] },
@@ -203,12 +211,19 @@ test("reconciles existing Stripe promo without duplicate create", async () => {
     id: "promo_stripe_only",
     object: "promotion_code",
     code: "TWILIGHTFEATHER10",
+    customer: "cus_reconcile",
     promotion: { type: "coupon", coupon: COUPON },
   } as Stripe.PromotionCode;
 
   const stripe = mockStripe({
     stripeCustomerId: "cus_reconcile",
-    listPromotions: async () => ({ data: [existingPromo] }),
+    searchCustomers: [{ id: "cus_reconcile" } as Stripe.Customer],
+    listPromotions: async (params) => {
+      if (params.customer) {
+        return { data: [existingPromo] };
+      }
+      return { data: [] };
+    },
     createPromotion: async () => {
       createCalls += 1;
       return { id: "promo_new" } as Stripe.PromotionCode;
@@ -251,18 +266,25 @@ test("multiple matching Stripe promos fails safely", async () => {
   __setNewsletterStripeCouponIdForTests(COUPON);
   const stripe = mockStripe({
     stripeCustomerId: "cus_dup",
-    listPromotions: async () => ({
-      data: [
-        {
-          id: "promo_a",
-          promotion: { coupon: COUPON },
-        } as Stripe.PromotionCode,
-        {
-          id: "promo_b",
-          promotion: { coupon: COUPON },
-        } as Stripe.PromotionCode,
-      ],
-    }),
+    listPromotions: async (params) => {
+      if (!params.customer) {
+        return { data: [] };
+      }
+      return {
+        data: [
+          {
+            id: "promo_a",
+            customer: "cus_dup",
+            promotion: { coupon: COUPON },
+          } as Stripe.PromotionCode,
+          {
+            id: "promo_b",
+            customer: "cus_dup",
+            promotion: { coupon: COUPON },
+          } as Stripe.PromotionCode,
+        ],
+      };
+    },
   });
 
   const result = await issueCustomerSpecificNewsletterPromotion(
@@ -294,6 +316,120 @@ test("HOLIDAY2026 is not treated as newsletter promotion", () => {
     isNewsletterCouponPromotionApplication(holiday, COUPON),
     false,
   );
+});
+
+test("defers signup issuance while active unrestricted global code exists", async () => {
+  __setNewsletterStripeCouponIdForTests(COUPON);
+  let createCalls = 0;
+  let customerCreateCalls = 0;
+  const stripe = mockStripe({
+    createPromotion: async () => {
+      createCalls += 1;
+      return { id: "promo_should_not_run" } as Stripe.PromotionCode;
+    },
+  });
+  (stripe as { customers: { create: () => Promise<{ id: string }> } }).customers.create =
+    async () => {
+      customerCreateCalls += 1;
+      return { id: "cus_should_not_run" };
+    };
+
+  const globalPromo = {
+    id: "promo_global_active",
+    code: "TWILIGHTFEATHER10",
+    customer: null,
+    promotion: { type: "coupon", coupon: COUPON },
+  } as Stripe.PromotionCode;
+
+  const result = await issueCustomerSpecificNewsletterPromotion(
+    stripe,
+    "defer@example.com",
+    "signup",
+    {
+      testOverrides: {
+        hasRedeemed: async () => false,
+        getIssuanceByEmail: async () => null,
+        resolveCouponId: async () => COUPON,
+        findActiveUnrestrictedGlobal: async () => globalPromo,
+        searchCustomersByEmail: async () => [],
+      },
+    },
+  );
+
+  assert.equal(result.status, "skipped");
+  if (result.status === "skipped") {
+    assert.equal(result.reason, "deferred_global_code_active");
+  }
+  assert.equal(createCalls, 0);
+  assert.equal(customerCreateCalls, 0);
+});
+
+test("reconciles during global defer when customer-specific promo already exists", async () => {
+  __setNewsletterStripeCouponIdForTests(COUPON);
+  let createCalls = 0;
+  let customerCreateCalls = 0;
+  const existingPromo = {
+    id: "promo_existing_under_global",
+    code: "TWILIGHTFEATHER10",
+    customer: "cus_existing",
+    promotion: { type: "coupon", coupon: COUPON },
+  } as Stripe.PromotionCode;
+
+  const stripe = mockStripe({
+    createPromotion: async () => {
+      createCalls += 1;
+      return { id: "promo_new" } as Stripe.PromotionCode;
+    },
+    listPromotions: async (params) => {
+      if (params.customer === "cus_existing") {
+        return { data: [existingPromo] };
+      }
+      return { data: [] };
+    },
+  });
+  (stripe as { customers: { create: () => Promise<{ id: string }> } }).customers.create =
+    async () => {
+      customerCreateCalls += 1;
+      return { id: "cus_should_not_run" };
+    };
+
+  const result = await issueCustomerSpecificNewsletterPromotion(
+    stripe,
+    "reconcile-global@example.com",
+    "signup",
+    {
+      testOverrides: {
+        hasRedeemed: async () => false,
+        getIssuanceByEmail: async () => null,
+        resolveCouponId: async () => COUPON,
+        findActiveUnrestrictedGlobal: async () =>
+          ({
+            id: "promo_global_active",
+            customer: null,
+          }) as Stripe.PromotionCode,
+        searchCustomersByEmail: async () => [
+          { id: "cus_existing" } as Stripe.Customer,
+        ],
+        recordIssuance: async (input) => ({
+          email: input.email,
+          stripe_customer_id: input.stripeCustomerId,
+          stripe_promotion_code_id: input.stripePromotionCodeId,
+          stripe_coupon_id: input.stripeCouponId,
+          issued_at: new Date(),
+          issuance_source: input.issuanceSource,
+          last_error: null,
+          migration_run_id: null,
+        }),
+      },
+    },
+  );
+
+  assert.equal(result.status, "existing");
+  assert.equal(createCalls, 0);
+  assert.equal(customerCreateCalls, 0);
+  if (result.status === "existing") {
+    assert.equal(result.stripePromotionCodeId, "promo_existing_under_global");
+  }
 });
 
 test("attemptNewsletterPromotionIssuanceAfterSignup does not throw when issuance fails", async () => {
