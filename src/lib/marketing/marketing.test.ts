@@ -229,6 +229,13 @@ test("safety scanner flags invented statistics and mixed discount language", () 
   );
   assert.ok(flags.some((flag) => flag.code === "possible_medical_statistic"));
   assert.ok(flags.some((flag) => flag.code === "discount_channel_mix"));
+  const okWithExclusion = scanMarketingText(
+    "Use 10% off on direct checkout — Amazon excluded.",
+  );
+  assert.equal(
+    okWithExclusion.some((flag) => flag.code === "discount_channel_mix"),
+    false,
+  );
 });
 
 test("preference inference does not auto-promote a global rule", () => {

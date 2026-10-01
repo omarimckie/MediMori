@@ -101,11 +101,13 @@ test("physical checkout session uses catalog price, shipping, and US address col
     priceId: TEST_PHYSICAL_ONE,
     successUrl: "https://example.com/success",
     cancelUrl: "https://example.com/cancel",
+    customerEmail: "buyer@example.com",
+    allowPromotionCodes: true,
   });
 
   assert.equal(params.line_items?.[0]?.price, TEST_PHYSICAL_ONE);
   assert.equal(params.line_items?.[0]?.quantity, 2);
-  assert.equal(params.allow_promotion_codes, false);
+  assert.equal(params.allow_promotion_codes, true);
   assert.deepEqual(params.shipping_address_collection?.allowed_countries, ["US"]);
   assert.equal(
     params.shipping_options?.[0]?.shipping_rate_data?.fixed_amount?.amount,
@@ -126,6 +128,8 @@ test("physical checkout cannot use word search catalog", () => {
         priceId: "price_any",
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
+        customerEmail: "buyer@example.com",
+        allowPromotionCodes: true,
       }),
     /Unsupported physical book/,
   );
@@ -143,6 +147,8 @@ test("client cannot pass an arbitrary physical price id", () => {
         priceId: "price_wrong",
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
+        customerEmail: "buyer@example.com",
+        allowPromotionCodes: true,
       }),
     /does not match catalog/,
   );

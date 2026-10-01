@@ -100,7 +100,7 @@ function copyFor(args: {
   const middle = `${guidance} ${args.campaign.coreMessage}`;
   const cta =
     args.category === "conversion"
-      ? `Read the eBook on twilight-feather.com. If you joined the list, ${discount} applies to eBooks on our site only — not paperbacks.`
+      ? `Shop on twilight-feather.com. If you joined the list, ${discount} applies to eligible direct purchases on our site — not Amazon; shipping not discounted.`
       : `Visit the ${args.bookTitle} page on twilight-feather.com when you want to read together.`;
 
   if (args.platform === "pinterest") {

@@ -86,8 +86,9 @@ export const APPROVED_CALENDAR = [
 export const CTA_RULES = {
   default: "Invite the adult to read the story together — then link to the book page.",
   ebookDiscount:
-    "The newsletter/site promotion code applies to eBooks purchased on twilight-feather.com only. Never say it applies to paperbacks or Amazon.",
-  amazonPaperback: "Paperback purchase links may point to Amazon. Do not mix ebook discount language with paperback CTAs.",
+    "The newsletter/site promotion code applies to eligible direct purchases on twilight-feather.com (eBooks, word search PDF, and direct paperbacks). Never say it applies to Amazon or shipping.",
+  amazonPaperback:
+    "Amazon purchase links are separate from direct checkout. Never say the newsletter code works on Amazon.",
   noPressure: "Do not use scarcity, fear, or medical urgency to sell.",
 };
 
@@ -129,8 +130,8 @@ export function catalogAuthors() {
 export function promotionalRules() {
   return [
     `eBook price on the website is currently $7.00 for catalog titles.`,
-    `Paperback prices stay on Amazon and are not discounted by ${getNewsletterDiscountCode()}.`,
-    `${getNewsletterDiscountCode()} is an eBook-only site checkout code unless the website data changes.`,
+    `Amazon paperback prices are not discounted by ${getNewsletterDiscountCode()}.`,
+    `${getNewsletterDiscountCode()} is for eligible direct-site checkout only (not Amazon; shipping not discounted).`,
     "Do not invent bundle offers, hospital contracts, or school adoptions.",
   ];
 }
@@ -167,7 +168,7 @@ export const RESTRICTED_CLAIMS = [
   "Do not fabricate testimonials, reviews, credentials, media coverage, or institutional users.",
   "Do not imply Twilight Feather is a medical authority.",
   "Do not invent awareness dates or partnerships.",
-  "Do not say the 10% / newsletter code discounts physical books.",
+  "Do not say the 10% / newsletter code applies to Amazon or to shipping.",
 ];
 
 export const CATEGORY_GUIDANCE: Record<ContentCategory, string> = {

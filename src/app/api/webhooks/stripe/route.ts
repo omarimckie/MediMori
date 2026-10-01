@@ -8,6 +8,7 @@ import { fulfillPhysicalOrder } from "@/lib/fulfill-physical-order";
 import { evaluatePaidPhysicalCheckout, isPhysicalCheckoutSession } from "@/lib/physical-checkout-ownership";
 import { createLibraryAccessUrl } from "@/lib/magic-link";
 import { recordStripeRefundAndRecompute } from "@/lib/purchase-refunds";
+import { ensurePaidNewsletterRedemptionBeforeFulfillment } from "@/lib/newsletter-promotion-redemption";
 import { recordPurchaseAndEntitlement } from "@/lib/purchases";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -21,7 +22,11 @@ async function loadSessionWithLineItems(
   let session: Stripe.Checkout.Session;
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["line_items.data.price", "payment_intent.latest_charge"],
+      expand: [
+        "line_items.data.price",
+        "payment_intent.latest_charge",
+        "discounts.promotion_code",
+      ],
     });
   } catch {
     return null;
@@ -234,6 +239,23 @@ export async function POST(request: Request) {
       );
     }
 
+    const newsletterGate = await ensurePaidNewsletterRedemptionBeforeFulfillment(
+      stripe,
+      session,
+      {
+        purchaseType: "physical",
+        bookId: physicalEvaluation.order.bookId,
+        quantity: physicalEvaluation.order.quantity,
+      },
+    );
+    if (!newsletterGate.ok) {
+      return NextResponse.json({
+        received: true,
+        physicalFulfillment: newsletterGate.reason,
+        refunded: newsletterGate.refunded,
+      });
+    }
+
     const fulfillment = await fulfillPhysicalOrder(
       stripe,
       physicalEvaluation.order,
@@ -273,6 +295,22 @@ export async function POST(request: Request) {
       { error: evaluation.error },
       { status: evaluation.status },
     );
+  }
+
+  const newsletterGate = await ensurePaidNewsletterRedemptionBeforeFulfillment(
+    stripe,
+    session,
+    {
+      purchaseType: "ebook",
+      bookId: evaluation.purchase.bookId,
+    },
+  );
+  if (!newsletterGate.ok) {
+    return NextResponse.json({
+      received: true,
+      ebookFulfillment: newsletterGate.reason,
+      refunded: newsletterGate.refunded,
+    });
   }
 
   try {

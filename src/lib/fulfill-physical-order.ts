@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { getSql } from "./db";
 import { decrementPhysicalInventory } from "./physical-inventory";
+import { refundStripePaymentIntent } from "./stripe-payment-refund";
 import {
   getPhysicalOrderByCheckoutSessionId,
   insertPhysicalOrder,
@@ -11,22 +12,6 @@ import type { VerifiedPhysicalCheckout } from "./physical-checkout-ownership";
 export type FulfillPhysicalOrderResult =
   | { ok: true; duplicate: boolean; order: PhysicalOrderRow }
   | { ok: false; refunded: boolean; reason: string };
-
-async function refundPaymentIntent(
-  stripe: Stripe,
-  paymentIntentId: string,
-): Promise<boolean> {
-  try {
-    await stripe.refunds.create({ payment_intent: paymentIntentId });
-    return true;
-  } catch (error) {
-    console.error("Could not refund physical order payment:", {
-      paymentIntentId,
-      error: error instanceof Error ? error.message : "unknown",
-    });
-    return false;
-  }
-}
 
 async function markPhysicalOrderRefunded(orderId: string): Promise<void> {
   const sql = getSql();
@@ -78,7 +63,10 @@ export async function fulfillPhysicalOrder(
     await markPhysicalOrderRefunded(order.id);
     let refunded = false;
     if (verified.stripePaymentIntentId) {
-      refunded = await refundPaymentIntent(stripe, verified.stripePaymentIntentId);
+      refunded = await refundStripePaymentIntent(
+        stripe,
+        verified.stripePaymentIntentId,
+      );
     }
     return {
       ok: false,

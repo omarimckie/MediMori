@@ -1,8 +1,11 @@
 import { getBookById } from "@/lib/books";
 import {
+  assertCatalogPhysicalShippingCents,
+  isAllowedPhysicalCheckoutAmountTotalCents,
+} from "@/lib/newsletter-discount-pricing";
+import {
   isPhysicalCheckoutSessionMetadata,
   normalizePhysicalQuantity,
-  physicalOrderTotalCents,
   PHYSICAL_SHIPPING_PRICE_CENTS,
 } from "@/lib/physical-books";
 import type Stripe from "stripe";
@@ -71,7 +74,10 @@ export function resolveCheckoutSessionSummary(
 
     const amountTotal =
       typeof session.amount_total === "number" ? session.amount_total : null;
-    if (amountTotal === null || amountTotal !== physicalOrderTotalCents(quantity)) {
+    if (
+      amountTotal === null ||
+      !isAllowedPhysicalCheckoutAmountTotalCents(amountTotal, quantity)
+    ) {
       throw new CheckoutSessionSummaryError(
         "Paid total does not match the catalog physical order amount.",
         400,
@@ -79,6 +85,10 @@ export function resolveCheckoutSessionSummary(
     }
 
     const shippingTotal = session.total_details?.amount_shipping ?? null;
+    const shippingCheck = assertCatalogPhysicalShippingCents(shippingTotal);
+    if (!shippingCheck.ok) {
+      throw new CheckoutSessionSummaryError(shippingCheck.error, 400);
+    }
     const shippingCents =
       shippingTotal !== null ? shippingTotal : PHYSICAL_SHIPPING_PRICE_CENTS;
 

@@ -14,6 +14,7 @@ type Props = {
 type CheckoutResponse = {
   url?: string;
   error?: string;
+  newsletterPromotionAvailable?: boolean;
 };
 
 export function EbookCheckoutForm({
@@ -26,10 +27,12 @@ export function EbookCheckoutForm({
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promotionNote, setPromotionNote] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setPromotionNote(null);
     setLoading(true);
 
     try {
@@ -43,6 +46,12 @@ export function EbookCheckoutForm({
       if (!response.ok || !data.url) {
         setError(data.error ?? "Checkout could not start.");
         return;
+      }
+
+      if (data.newsletterPromotionAvailable === false) {
+        setPromotionNote(
+          "The newsletter 10% offer has already been used on this email. You can still check out at full price.",
+        );
       }
 
       window.location.href = data.url;
@@ -85,13 +94,13 @@ export function EbookCheckoutForm({
           <p className="text-sm font-bold text-brand-charcoal">Buy direct eBook</p>
           <p className="mt-1 text-xs text-brand-charcoal/70">
             Enter your name and email, then complete payment. Email subscribers
-            receive 10% off eBook purchases.
+            receive 10% off eligible direct purchases on this site (Amazon excluded).
           </p>
         </>
       ) : (
         <p className="text-xs text-brand-charcoal/70">
           Enter your name and email to complete payment. Email subscribers receive
-          10% off eBook purchases.
+          10% off eligible direct purchases on this site (Amazon excluded).
         </p>
       )}
 
@@ -165,6 +174,9 @@ export function EbookCheckoutForm({
         {loading ? "Redirecting to checkout..." : "Buy eBook now"}
       </button>
 
+      {promotionNote ? (
+        <p className="mt-2 text-sm text-brand-charcoal/80">{promotionNote}</p>
+      ) : null}
       {error ? <p className="mt-2 text-sm font-semibold text-red-600">{error}</p> : null}
     </form>
   );

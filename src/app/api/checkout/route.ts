@@ -1,12 +1,13 @@
 import { getBookById } from "@/lib/books";
+import {
+  hasRedeemedNewsletterPromotion,
+  validateRedemptionEmail,
+} from "@/lib/newsletter-promotion-redemption";
+import { findOrCreateStripeCustomerByEmail } from "@/lib/stripe-customer";
 import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
 import { getEbookStripePriceId } from "@/lib/stripe-prices";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
 
 export async function POST(request: Request) {
   const secret = process.env.STRIPE_SECRET_KEY;
@@ -59,7 +60,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isValidEmail(customerEmail)) {
+  const emailValidation = validateRedemptionEmail(customerEmail);
+  if (!emailValidation.ok) {
     return NextResponse.json(
       { error: "A valid email is required for eBook delivery." },
       { status: 400 },
@@ -100,18 +102,26 @@ export async function POST(request: Request) {
       console.error("Could not ensure newsletter promotion code:", error);
     });
 
+    const normalizedEmail = emailValidation.email;
+    const newsletterPromotionAvailable = !(await hasRedeemedNewsletterPromotion(
+      normalizedEmail,
+    ));
+    const stripeCustomerId = await findOrCreateStripeCustomerByEmail(
+      stripe,
+      normalizedEmail,
+    );
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${siteUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/books`,
-      customer_email: customerEmail,
-      // Visitor can enter their list-signup code (e.g. TWILIGHTFEATHER10) on Stripe Checkout.
-      allow_promotion_codes: true,
+      customer: stripeCustomerId,
+      allow_promotion_codes: newsletterPromotionAvailable,
       metadata: {
         bookId: book.id,
         customerName,
-        customerEmail,
+        customerEmail: normalizedEmail,
       },
     });
 
@@ -122,7 +132,10 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({
+      url: session.url,
+      newsletterPromotionAvailable,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Stripe error";
     return NextResponse.json({ error: message }, { status: 502 });

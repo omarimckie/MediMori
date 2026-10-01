@@ -3,7 +3,13 @@ import {
   getPhysicalBook,
   normalizePhysicalQuantity,
 } from "@/lib/physical-books";
+import {
+  hasRedeemedNewsletterPromotion,
+  validateRedemptionEmail,
+} from "@/lib/newsletter-promotion-redemption";
 import { buildPhysicalCheckoutSessionCreateParams } from "@/lib/physical-checkout-session";
+import { findOrCreateStripeCustomerByEmail } from "@/lib/stripe-customer";
+import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
 import { getPhysicalStripePriceId } from "@/lib/stripe-physical-prices";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -38,12 +44,28 @@ export async function POST(request: Request) {
       : 1,
   );
 
+  const customerEmail =
+    typeof body === "object" &&
+    body !== null &&
+    "customerEmail" in body &&
+    typeof (body as { customerEmail: unknown }).customerEmail === "string"
+      ? (body as { customerEmail: string }).customerEmail.trim()
+      : "";
+
   if (!bookId) {
     return NextResponse.json({ error: "bookId is required." }, { status: 400 });
   }
 
   if (!quantity) {
     return NextResponse.json({ error: "Invalid quantity." }, { status: 400 });
+  }
+
+  const emailValidation = validateRedemptionEmail(customerEmail);
+  if (!emailValidation.ok) {
+    return NextResponse.json(
+      { error: "A valid email is required for checkout." },
+      { status: 400 },
+    );
   }
 
   const book = getPhysicalBook(bookId);
@@ -84,12 +106,28 @@ export async function POST(request: Request) {
   const stripe = new Stripe(secret);
 
   try {
+    await ensureNewsletterPromotionCode(stripe).catch((error) => {
+      console.error("Could not ensure newsletter promotion code:", error);
+    });
+
+    const normalizedEmail = emailValidation.email;
+    const newsletterPromotionAvailable = !(await hasRedeemedNewsletterPromotion(
+      normalizedEmail,
+    ));
+    const stripeCustomerId = await findOrCreateStripeCustomerByEmail(
+      stripe,
+      normalizedEmail,
+    );
+
     const params = buildPhysicalCheckoutSessionCreateParams({
       bookId: book.id,
       quantity,
       priceId,
       successUrl: `${siteUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${siteUrl}/books/${book.id}`,
+      customerEmail: normalizedEmail,
+      stripeCustomerId,
+      allowPromotionCodes: newsletterPromotionAvailable,
     });
 
     const session = await stripe.checkout.sessions.create(params);
@@ -101,7 +139,10 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({
+      url: session.url,
+      newsletterPromotionAvailable,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Stripe error";
     return NextResponse.json({ error: message }, { status: 502 });

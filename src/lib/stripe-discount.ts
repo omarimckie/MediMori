@@ -6,6 +6,16 @@ let ensurePromise: Promise<void> | null = null;
 /**
  * Ensures Stripe has a 10% once-use coupon and a promotion code matching
  * the site's newsletter discount code (default TWILIGHTFEATHER10).
+ *
+ * Existing live coupons are not modified. When a new coupon must be created,
+ * set NEWSLETTER_DISCOUNT_STRIPE_PRODUCT_IDS (comma-separated Stripe Product IDs)
+ * in the Dashboard or env to scope the discount to eligible direct-site products.
+ * Production coupon scope changes require a manual Stripe Dashboard update.
+ *
+ * Per-customer one-time use is enforced in Postgres (newsletter_promotion_redemptions).
+ * For a secondary Stripe layer, set max redemptions per customer on the live promotion
+ * code in the Stripe Dashboard (the current Stripe SDK does not expose
+ * max_redemptions_per_customer on programmatic promotion code creation).
  */
 export async function ensureNewsletterPromotionCode(
   stripe: Stripe,
@@ -39,10 +49,18 @@ async function createPromotionCodeIfMissing(stripe: Stripe): Promise<void> {
     return;
   }
 
+  const productScope = process.env.NEWSLETTER_DISCOUNT_STRIPE_PRODUCT_IDS
+    ?.split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.startsWith("prod_"));
+
   const coupon = await stripe.coupons.create({
     percent_off: 10,
     duration: "once",
-    name: "Email list — 10% off",
+    name: "Email list — 10% off direct purchases",
+    ...(productScope?.length
+      ? { applies_to: { products: productScope } }
+      : {}),
     metadata: {
       source: "twilight-feather-newsletter",
       promotion_code: code,

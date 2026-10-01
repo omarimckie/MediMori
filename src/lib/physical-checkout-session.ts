@@ -8,6 +8,9 @@ export type PhysicalCheckoutSessionParams = {
   priceId: string;
   successUrl: string;
   cancelUrl: string;
+  customerEmail: string;
+  stripeCustomerId?: string;
+  allowPromotionCodes: boolean;
 };
 
 export function buildPhysicalCheckoutSessionCreateParams(
@@ -23,11 +26,16 @@ export function buildPhysicalCheckoutSessionCreateParams(
     throw new Error("Physical Stripe price does not match catalog.");
   }
 
+  const customerEmail = input.customerEmail.trim().toLowerCase();
+
   return {
     mode: "payment",
     line_items: [{ price: input.priceId, quantity: input.quantity }],
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
+    ...(input.stripeCustomerId
+      ? { customer: input.stripeCustomerId }
+      : { customer_email: customerEmail }),
     shipping_address_collection: {
       allowed_countries: ["US"],
     },
@@ -47,13 +55,13 @@ export function buildPhysicalCheckoutSessionCreateParams(
         },
       },
     ],
-    allow_promotion_codes: false,
+    allow_promotion_codes: input.allowPromotionCodes,
     metadata: {
       purchaseType: PHYSICAL_PURCHASE_TYPE,
       bookId: book.id,
       quantity: String(input.quantity),
       customerName: "",
-      customerEmail: "",
+      customerEmail,
     },
   };
 }

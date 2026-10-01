@@ -35,10 +35,23 @@ export function scanMarketingText(text: string): SafetyFlag[] {
       severity: "review_required",
     });
   }
-  if (/\b10\s?%|\bdiscount\b/i.test(text) && /\bpaperback\b|\bhardcover\b|\bamazon\b/i.test(text)) {
+  if (
+    /\b10\s?%|\bdiscount\b/i.test(text) &&
+    /\bamazon\b/i.test(text) &&
+    !/\bnot\s+(on\s+)?amazon\b|\bamazon\s+excluded\b|\bexcludes?\s+amazon\b/i.test(text)
+  ) {
     flags.push({
       code: "discount_channel_mix",
-      message: "Discount language appears near paperback/Amazon wording. The known 10% offer is eBook-only.",
+      message:
+        "Discount language appears near Amazon without clarifying Amazon is excluded from the site promotion code.",
+      severity: "review_required",
+    });
+  }
+  if (/\b10\s?%|\bdiscount\b/i.test(text) && /\bshipping\b/i.test(text) && !/\bnot\s+discounted\b|\bshipping\s+not\s+discounted\b/i.test(text)) {
+    flags.push({
+      code: "discount_shipping_mix",
+      message:
+        "Discount language appears near shipping without clarifying shipping is not discounted.",
       severity: "review_required",
     });
   }

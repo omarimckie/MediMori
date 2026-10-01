@@ -1,5 +1,9 @@
 import { customerEmailFromSession, lineItemPriceId, normalizeEmail } from "./checkout-ownership";
-import { getPhysicalBook, isPhysicalCheckoutSessionMetadata, normalizePhysicalQuantity, PHYSICAL_SHIPPING_PRICE_CENTS, PHYSICAL_UNIT_PRICE_CENTS, physicalOrderTotalCents } from "./physical-books";
+import {
+  assertCatalogPhysicalShippingCents,
+  isAllowedPhysicalCheckoutAmountTotalCents,
+} from "./newsletter-discount-pricing";
+import { getPhysicalBook, isPhysicalCheckoutSessionMetadata, normalizePhysicalQuantity, PHYSICAL_SHIPPING_PRICE_CENTS, PHYSICAL_UNIT_PRICE_CENTS } from "./physical-books";
 import { isAllowedPhysicalBookPrice } from "./stripe-physical-prices";
 import type { ShippingAddressSnapshot } from "./physical-orders";
 import type Stripe from "stripe";
@@ -138,10 +142,9 @@ export function evaluatePaidPhysicalCheckout(
     };
   }
 
-  const expectedTotal = physicalOrderTotalCents(quantity);
   const amountTotal =
     typeof session.amount_total === "number" ? session.amount_total : null;
-  if (amountTotal === null || amountTotal !== expectedTotal) {
+  if (amountTotal === null || !isAllowedPhysicalCheckoutAmountTotalCents(amountTotal, quantity)) {
     return {
       ok: false,
       status: 400,
@@ -150,11 +153,12 @@ export function evaluatePaidPhysicalCheckout(
   }
 
   const shippingTotal = session.total_details?.amount_shipping ?? null;
-  if (shippingTotal !== null && shippingTotal !== PHYSICAL_SHIPPING_PRICE_CENTS) {
+  const shippingCheck = assertCatalogPhysicalShippingCents(shippingTotal);
+  if (!shippingCheck.ok) {
     return {
       ok: false,
       status: 400,
-      error: "Paid shipping does not match the catalog shipping amount.",
+      error: shippingCheck.error,
     };
   }
 

@@ -161,8 +161,9 @@ export async function sendSignupConfirmationEmail(
           <span style="letter-spacing: 0.04em;">${code}</span>
         </p>
         <p>
-          Use this code at checkout when you buy an eBook on our website
-          (enter it in the promotion code field on the payment page).
+          Use this code at checkout when you buy directly on our website
+          (enter it in the promotion code field on the payment page). Amazon
+          purchases are excluded. Paperback shipping is not discounted.
         </p>
         <p>
           <a href="${booksUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
@@ -182,7 +183,7 @@ export async function sendSignupConfirmationEmail(
       "",
       `Your 10% off code: ${code}`,
       "",
-      "Use this code at checkout when you buy an eBook on our website.",
+      "Use this code at checkout when you buy directly on our website. Amazon excluded; paperback shipping not discounted.",
       `Shop: ${booksUrl}`,
     ].join("\n"),
   });

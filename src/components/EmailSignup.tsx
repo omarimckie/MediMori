@@ -11,7 +11,7 @@ type SignupResponse = {
 
 const DEFAULT_CODE = "TWILIGHTFEATHER10";
 
-// Shown after signup; the same code is enabled on Stripe ebook checkout.
+// Shown after signup; the same code is enabled on direct Stripe checkout (eBook + paperback).
 
 export function EmailSignup() {
   const [email, setEmail] = useState("");
@@ -95,7 +95,7 @@ export function EmailSignup() {
               Join the Twilight Feather list
             </p>
             <h2 className="mt-3 text-[2.3rem] font-extrabold leading-tight text-section-navy">
-              Get 10% off your eBook purchase
+              Get 10% off your first book purchase
             </h2>
             <p className="mt-3 text-[1.0625rem] leading-relaxed text-brand-charcoal/80 sm:text-lg">
               Sign up with your email and we&apos;ll send you exclusive deals,
@@ -125,7 +125,8 @@ export function EmailSignup() {
               {isSubmitting ? "Saving..." : "Get 10% Off"}
             </button>
             <p className="text-xs leading-relaxed text-brand-charcoal/55">
-              10% off eBook purchases only.
+              10% off eligible purchases made directly on this site. Amazon purchases
+              excluded. Paperback shipping not discounted.
             </p>
           </form>
         </div>
@@ -141,8 +142,8 @@ export function EmailSignup() {
               Discount code: {discountCode}
             </p>
             <p className="mt-2 text-xs text-brand-charcoal/70">
-              Enter this code in the promotion field when you buy an eBook on
-              this site.
+              Enter this code in the promotion field at checkout when you buy
+              directly on this site.
             </p>
           </div>
         ) : null}

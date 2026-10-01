@@ -103,6 +103,36 @@ test("resolveCheckoutSessionSummary returns ebook for paid non-physical session"
   assert.deepEqual(summary, { purchaseType: "ebook" });
 });
 
+test("resolveCheckoutSessionSummary accepts newsletter-discounted physical total with $4.99 shipping", () => {
+  const summary = resolveCheckoutSessionSummary(
+    physicalSession({ amount_total: 1399 }),
+    false,
+  );
+  assert.equal(summary.purchaseType, "physical");
+  if (summary.purchaseType !== "physical") return;
+  assert.equal(summary.amountTotalCents, 1399);
+  assert.equal(summary.shippingCents, 499);
+});
+
+test("resolveCheckoutSessionSummary rejects physical session with non-catalog shipping", () => {
+  assert.throws(
+    () =>
+      resolveCheckoutSessionSummary(
+        physicalSession({
+          total_details: { amount_shipping: 449 } as NonNullable<
+            Stripe.Checkout.Session["total_details"]
+          >,
+        }),
+        false,
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof CheckoutSessionSummaryError);
+      assert.equal(error.status, 400);
+      return true;
+    },
+  );
+});
+
 test("resolveCheckoutSessionSummary rejects ebook session without book metadata", () => {
   assert.throws(
     () =>

@@ -128,7 +128,7 @@ export function pinterestCopyFor(args: {
 
   const cta =
     args.category === "product_feature" || args.category === "conversion"
-      ? `Read the eBook on twilight-feather.com. If you joined the list, ${discount} applies to eBooks on our site only — not paperbacks.`
+      ? `Shop on twilight-feather.com. If you joined the list, ${discount} applies to eligible direct purchases on our site — not Amazon; shipping not discounted.`
       : `Visit the ${args.bookTitle} page on twilight-feather.com when you want to read together.`;
 
   const body = `${opening}\n\n${middle}\n\nPin this when you want a reminder that children's health stories can be kind, specific, and honest.\n\n${cta}`;
