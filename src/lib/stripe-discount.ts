@@ -6,7 +6,7 @@ let ensurePromise: Promise<void> | null = null;
 let newsletterStripeCouponIdOverride: string | null | undefined;
 
 /**
- * Pinned newsletter coupon id (coupon_...) from NEWSLETTER_STRIPE_COUPON_ID.
+ * Pinned newsletter coupon id from NEWSLETTER_STRIPE_COUPON_ID (opaque Stripe coupon id).
  * Production should set this explicitly. Tests may override via __setNewsletterStripeCouponIdForTests.
  */
 export function getNewsletterStripeCouponId(
@@ -17,7 +17,7 @@ export function getNewsletterStripeCouponId(
   }
   const fromEnv = env.NEWSLETTER_STRIPE_COUPON_ID?.trim();
   if (!fromEnv) return null;
-  return fromEnv.startsWith("coupon_") ? fromEnv : null;
+  return fromEnv;
 }
 
 /** @internal Test-only override for getNewsletterStripeCouponId. */

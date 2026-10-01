@@ -33,15 +33,35 @@ function mockPromotionCode(
   } as Stripe.PromotionCode;
 }
 
-test("getNewsletterStripeCouponId reads NEWSLETTER_STRIPE_COUPON_ID", () => {
+test("getNewsletterStripeCouponId accepts opaque production-style coupon ids", () => {
   assert.equal(
-    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "coupon_live_abc" }),
-    "coupon_live_abc",
+    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "s63l6Ovq" }),
+    "s63l6Ovq",
   );
+  assert.equal(
+    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "coupon_abc123" }),
+    "coupon_abc123",
+  );
+});
+
+test("getNewsletterStripeCouponId returns null when missing or empty", () => {
   assert.equal(getNewsletterStripeCouponId({}), null);
   assert.equal(
-    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "not_a_coupon" }),
+    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "" }),
     null,
+  );
+  assert.equal(
+    getNewsletterStripeCouponId({ NEWSLETTER_STRIPE_COUPON_ID: "   " }),
+    null,
+  );
+});
+
+test("getNewsletterStripeCouponId trims whitespace", () => {
+  assert.equal(
+    getNewsletterStripeCouponId({
+      NEWSLETTER_STRIPE_COUPON_ID: "  s63l6Ovq  ",
+    }),
+    "s63l6Ovq",
   );
 });
 
