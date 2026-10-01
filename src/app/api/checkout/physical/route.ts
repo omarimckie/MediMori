@@ -3,10 +3,7 @@ import {
   getPhysicalBook,
   normalizePhysicalQuantity,
 } from "@/lib/physical-books";
-import {
-  hasRedeemedNewsletterPromotion,
-  validateRedemptionEmail,
-} from "@/lib/newsletter-promotion-redemption";
+import { validateRedemptionEmail } from "@/lib/newsletter-promotion-redemption";
 import { buildPhysicalCheckoutSessionCreateParams } from "@/lib/physical-checkout-session";
 import { findOrCreateStripeCustomerByEmail } from "@/lib/stripe-customer";
 import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
@@ -111,9 +108,6 @@ export async function POST(request: Request) {
     });
 
     const normalizedEmail = emailValidation.email;
-    const newsletterPromotionAvailable = !(await hasRedeemedNewsletterPromotion(
-      normalizedEmail,
-    ));
     const stripeCustomerId = await findOrCreateStripeCustomerByEmail(
       stripe,
       normalizedEmail,
@@ -127,7 +121,6 @@ export async function POST(request: Request) {
       cancelUrl: `${siteUrl}/books/${book.id}`,
       customerEmail: normalizedEmail,
       stripeCustomerId,
-      allowPromotionCodes: newsletterPromotionAvailable,
     });
 
     const session = await stripe.checkout.sessions.create(params);
@@ -139,10 +132,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({
-      url: session.url,
-      newsletterPromotionAvailable,
-    });
+    return NextResponse.json({ url: session.url });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Stripe error";
     return NextResponse.json({ error: message }, { status: 502 });

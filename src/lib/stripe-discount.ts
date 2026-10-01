@@ -17,6 +17,32 @@ let ensurePromise: Promise<void> | null = null;
  * code in the Stripe Dashboard (the current Stripe SDK does not expose
  * max_redemptions_per_customer on programmatic promotion code creation).
  */
+/**
+ * Resolves the active Stripe Promotion Code id for TWILIGHTFEATHER10 (or env override).
+ * Returns null when the code is not present in the connected Stripe account.
+ */
+export async function resolveNewsletterPromotionCodeId(
+  stripe: Stripe,
+): Promise<string | null> {
+  const code = getNewsletterDiscountCode();
+
+  const active = await stripe.promotionCodes.list({
+    code,
+    active: true,
+    limit: 1,
+  });
+  if (active.data[0]?.id) {
+    return active.data[0].id;
+  }
+
+  const inactive = await stripe.promotionCodes.list({
+    code,
+    active: false,
+    limit: 1,
+  });
+  return inactive.data[0]?.id ?? null;
+}
+
 export async function ensureNewsletterPromotionCode(
   stripe: Stripe,
 ): Promise<void> {

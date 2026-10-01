@@ -9,6 +9,7 @@ import {
   paymentIntentIdFromCheckoutSession,
   refundStripePaymentIntent,
 } from "./stripe-payment-refund";
+import { resolveNewsletterPromotionCodeId } from "./stripe-discount";
 import type Stripe from "stripe";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -53,16 +54,50 @@ function sessionAmountTotalCents(session: Stripe.Checkout.Session): number | nul
   return typeof session.amount_total === "number" ? session.amount_total : null;
 }
 
+/** Promotion code ids applied on a paid Checkout Session (requires discounts expanded when retrieved). */
+export function checkoutSessionAppliedPromotionCodeIds(
+  session: Stripe.Checkout.Session,
+): string[] {
+  const ids: string[] = [];
+  for (const discount of session.discounts ?? []) {
+    const promotionCode = discount.promotion_code;
+    if (!promotionCode) continue;
+    if (typeof promotionCode === "string") {
+      ids.push(promotionCode);
+      continue;
+    }
+    if (promotionCode.id) {
+      ids.push(promotionCode.id);
+    }
+  }
+  return ids;
+}
+
+function sessionUsesNewsletterPromotionCode(
+  session: Stripe.Checkout.Session,
+  newsletterPromotionCodeId: string | null,
+): boolean {
+  if (!newsletterPromotionCodeId) return false;
+  return checkoutSessionAppliedPromotionCodeIds(session).includes(
+    newsletterPromotionCodeId,
+  );
+}
+
 /**
- * Detects a paid checkout that used the newsletter promotion using Stripe discount
- * totals plus centralized catalog pricing rules (not amount_total alone).
+ * Detects a paid checkout that used the live TWILIGHTFEATHER10 promotion code and
+ * matches centralized newsletter pricing rules (not amount_total alone).
  */
 export function analyzePaidCheckoutSessionNewsletterDiscount(
   session: Stripe.Checkout.Session,
   context: NewsletterRedemptionContext,
+  newsletterPromotionCodeId: string | null,
 ): NewsletterDiscountSessionAnalysis {
   const amountDiscount = sessionAmountDiscountCents(session);
   if (amountDiscount <= 0) {
+    return { status: "not_newsletter_discount" };
+  }
+
+  if (!sessionUsesNewsletterPromotionCode(session, newsletterPromotionCodeId)) {
     return { status: "not_newsletter_discount" };
   }
 
@@ -188,7 +223,12 @@ export async function ensurePaidNewsletterRedemptionBeforeFulfillment(
   session: Stripe.Checkout.Session,
   context: NewsletterRedemptionContext,
 ): Promise<EnsurePaidNewsletterRedemptionResult> {
-  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(session, context);
+  const newsletterPromotionCodeId = await resolveNewsletterPromotionCodeId(stripe);
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    session,
+    context,
+    newsletterPromotionCodeId,
+  );
   if (analysis.status === "not_newsletter_discount") {
     return { ok: true, consumedNewsletterRedemption: false };
   }

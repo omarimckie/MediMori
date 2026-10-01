@@ -13,6 +13,17 @@ import {
 } from "./newsletter-promotion-redemption";
 
 const TEST_PHYSICAL_ONE = "price_test_physical_book_one";
+const TEST_NEWSLETTER_PROMO_ID = "promo_test_twilightfeather10";
+
+function sessionWithNewsletterPromo(
+  session: Stripe.Checkout.Session,
+  promotionCodeId = TEST_NEWSLETTER_PROMO_ID,
+): Stripe.Checkout.Session {
+  return {
+    ...session,
+    discounts: [{ promotion_code: promotionCodeId }],
+  } as Stripe.Checkout.Session;
+}
 
 function physicalSession(overrides: Partial<Stripe.Checkout.Session> = {}): Stripe.Checkout.Session {
   const quantity = overrides.metadata?.quantity
@@ -131,14 +142,25 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — full price is not redempt
       total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 0 },
     }),
     { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
 
-test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook qualifies", () => {
+test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook without TWILIGHT promo is not redemption", () => {
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
     ebookSession(),
     { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_PROMO_ID,
+  );
+  assert.equal(analysis.status, "not_newsletter_discount");
+});
+
+test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook qualifies with TWILIGHT promo", () => {
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(ebookSession()),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
   if (analysis.status === "newsletter_redemption") {
@@ -146,13 +168,36 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook qualifie
   }
 });
 
+test("analyzePaidCheckoutSessionNewsletterDiscount — alternate 10% promo does not count as newsletter", () => {
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(ebookSession(), "promo_holiday_2026"),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_PROMO_ID,
+  );
+  assert.equal(analysis.status, "not_newsletter_discount");
+});
+
+test("analyzePaidCheckoutSessionNewsletterDiscount — TWILIGHT promo with invalid ebook total is rejected", () => {
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(
+      ebookSession({ amount_total: 500, total_details: { amount_discount: 200, amount_shipping: 0, amount_tax: 0 } }),
+    ),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_PROMO_ID,
+  );
+  assert.equal(analysis.status, "invalid");
+});
+
 test("analyzePaidCheckoutSessionNewsletterDiscount — eligible physical qty 1", () => {
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
-    physicalSession({
-      amount_total: 1399,
-      total_details: { amount_shipping: 499, amount_discount: 100, amount_tax: 0 },
-    }),
+    sessionWithNewsletterPromo(
+      physicalSession({
+        amount_total: 1399,
+        total_details: { amount_shipping: 499, amount_discount: 100, amount_tax: 0 },
+      }),
+    ),
     { purchaseType: "physical", bookId: "book-one", quantity: 1 },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
 });
@@ -164,34 +209,41 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — full physical total is no
       total_details: { amount_shipping: 499, amount_discount: 0, amount_tax: 0 },
     }),
     { purchaseType: "physical", bookId: "book-one", quantity: 1 },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
 
 test("analyzePaidCheckoutSessionNewsletterDiscount — book-two digital eligible", () => {
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
-    ebookSession({
-      metadata: { bookId: "book-two", customerEmail: "a@b.com", customerName: "A" },
-      customer_email: "a@b.com",
-    }),
+    sessionWithNewsletterPromo(
+      ebookSession({
+        metadata: { bookId: "book-two", customerEmail: "a@b.com", customerName: "A" },
+        customer_email: "a@b.com",
+      }),
+    ),
     { purchaseType: "ebook", bookId: "book-two" },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
 });
 
 test("analyzePaidCheckoutSessionNewsletterDiscount — book-two physical ineligible", () => {
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
-    physicalSession({
-      metadata: {
-        purchaseType: "physical",
-        bookId: "book-two",
-        quantity: "1",
-        customerEmail: "buyer@example.com",
-      },
-      amount_total: 1399,
-      total_details: { amount_shipping: 499, amount_discount: 100, amount_tax: 0 },
-    }),
+    sessionWithNewsletterPromo(
+      physicalSession({
+        metadata: {
+          purchaseType: "physical",
+          bookId: "book-two",
+          quantity: "1",
+          customerEmail: "buyer@example.com",
+        },
+        amount_total: 1399,
+        total_details: { amount_shipping: 499, amount_discount: 100, amount_tax: 0 },
+      }),
+    ),
     { purchaseType: "physical", bookId: "book-two", quantity: 1 },
+    TEST_NEWSLETTER_PROMO_ID,
   );
   assert.equal(analysis.status, "invalid");
 });
@@ -220,7 +272,7 @@ test("evaluatePaidCheckout and evaluatePaidPhysicalCheckout still accept newslet
   );
 });
 
-test("physical checkout session carries email and can disable promotion codes", () => {
+test("physical checkout session always enables promotion codes", () => {
   process.env.STRIPE_SECRET_KEY = "sk_test_local";
   process.env.STRIPE_TEST_PRICE_PHYSICAL_BOOK_ONE = TEST_PHYSICAL_ONE;
   const params = buildPhysicalCheckoutSessionCreateParams({
@@ -231,14 +283,13 @@ test("physical checkout session carries email and can disable promotion codes", 
     cancelUrl: "https://example.com/cancel",
     customerEmail: "Buyer@Example.com",
     stripeCustomerId: "cus_test",
-    allowPromotionCodes: false,
   });
   assert.equal(params.customer, "cus_test");
-  assert.equal(params.allow_promotion_codes, false);
+  assert.equal(params.allow_promotion_codes, true);
   assert.equal(params.metadata?.customerEmail, "buyer@example.com");
 });
 
-test("checkout routes enforce newsletter redemption pre-check", () => {
+test("checkout routes always allow promotion codes regardless of prior redemption", () => {
   const ebookRoute = readFileSync(
     new URL("../app/api/checkout/route.ts", import.meta.url),
     "utf8",
@@ -247,10 +298,14 @@ test("checkout routes enforce newsletter redemption pre-check", () => {
     new URL("../app/api/checkout/physical/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(ebookRoute, /hasRedeemedNewsletterPromotion/);
-  assert.match(ebookRoute, /allow_promotion_codes: newsletterPromotionAvailable/);
+  assert.doesNotMatch(ebookRoute, /hasRedeemedNewsletterPromotion/);
+  assert.match(ebookRoute, /allow_promotion_codes:\s*true/);
   assert.match(physicalRoute, /customerEmail/);
-  assert.match(physicalRoute, /allowPromotionCodes: newsletterPromotionAvailable/);
+  const physicalSessionBuilder = readFileSync(
+    new URL("../lib/physical-checkout-session.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(physicalSessionBuilder, /allow_promotion_codes:\s*true/);
 });
 
 test("webhook claims newsletter redemption before fulfillment", () => {

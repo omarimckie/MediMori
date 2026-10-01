@@ -10,7 +10,6 @@ export type PhysicalCheckoutSessionParams = {
   cancelUrl: string;
   customerEmail: string;
   stripeCustomerId?: string;
-  allowPromotionCodes: boolean;
 };
 
 export function buildPhysicalCheckoutSessionCreateParams(
@@ -55,7 +54,7 @@ export function buildPhysicalCheckoutSessionCreateParams(
         },
       },
     ],
-    allow_promotion_codes: input.allowPromotionCodes,
+    allow_promotion_codes: true,
     metadata: {
       purchaseType: PHYSICAL_PURCHASE_TYPE,
       bookId: book.id,

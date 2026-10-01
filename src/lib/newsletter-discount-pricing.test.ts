@@ -238,7 +238,6 @@ test("physical checkout session enables promotion codes", () => {
     successUrl: "https://example.com/success",
     cancelUrl: "https://example.com/cancel",
     customerEmail: "buyer@example.com",
-    allowPromotionCodes: true,
   });
   assert.equal(params.allow_promotion_codes, true);
   assert.equal(params.metadata?.customerEmail, "buyer@example.com");

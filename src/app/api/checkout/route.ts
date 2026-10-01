@@ -1,8 +1,5 @@
 import { getBookById } from "@/lib/books";
-import {
-  hasRedeemedNewsletterPromotion,
-  validateRedemptionEmail,
-} from "@/lib/newsletter-promotion-redemption";
+import { validateRedemptionEmail } from "@/lib/newsletter-promotion-redemption";
 import { findOrCreateStripeCustomerByEmail } from "@/lib/stripe-customer";
 import { ensureNewsletterPromotionCode } from "@/lib/stripe-discount";
 import { getEbookStripePriceId } from "@/lib/stripe-prices";
@@ -103,9 +100,6 @@ export async function POST(request: Request) {
     });
 
     const normalizedEmail = emailValidation.email;
-    const newsletterPromotionAvailable = !(await hasRedeemedNewsletterPromotion(
-      normalizedEmail,
-    ));
     const stripeCustomerId = await findOrCreateStripeCustomerByEmail(
       stripe,
       normalizedEmail,
@@ -117,7 +111,7 @@ export async function POST(request: Request) {
       success_url: `${siteUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/books`,
       customer: stripeCustomerId,
-      allow_promotion_codes: newsletterPromotionAvailable,
+      allow_promotion_codes: true,
       metadata: {
         bookId: book.id,
         customerName,
@@ -132,10 +126,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({
-      url: session.url,
-      newsletterPromotionAvailable,
-    });
+    return NextResponse.json({ url: session.url });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Stripe error";
     return NextResponse.json({ error: message }, { status: 502 });

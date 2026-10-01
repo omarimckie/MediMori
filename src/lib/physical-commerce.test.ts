@@ -102,7 +102,6 @@ test("physical checkout session uses catalog price, shipping, and US address col
     successUrl: "https://example.com/success",
     cancelUrl: "https://example.com/cancel",
     customerEmail: "buyer@example.com",
-    allowPromotionCodes: true,
   });
 
   assert.equal(params.line_items?.[0]?.price, TEST_PHYSICAL_ONE);
@@ -129,7 +128,6 @@ test("physical checkout cannot use word search catalog", () => {
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
         customerEmail: "buyer@example.com",
-        allowPromotionCodes: true,
       }),
     /Unsupported physical book/,
   );
@@ -148,7 +146,6 @@ test("client cannot pass an arbitrary physical price id", () => {
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
         customerEmail: "buyer@example.com",
-        allowPromotionCodes: true,
       }),
     /does not match catalog/,
   );

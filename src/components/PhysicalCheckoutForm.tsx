@@ -10,7 +10,6 @@ type Props = {
 type CheckoutResponse = {
   url?: string;
   error?: string;
-  newsletterPromotionAvailable?: boolean;
 };
 
 export function PhysicalCheckoutForm({ bookId, disabled = false }: Props) {
@@ -18,13 +17,11 @@ export function PhysicalCheckoutForm({ bookId, disabled = false }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [promotionNote, setPromotionNote] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (disabled) return;
     setError(null);
-    setPromotionNote(null);
     setLoading(true);
 
     try {
@@ -38,12 +35,6 @@ export function PhysicalCheckoutForm({ bookId, disabled = false }: Props) {
       if (!response.ok || !data.url) {
         setError(data.error ?? "Checkout could not start.");
         return;
-      }
-
-      if (data.newsletterPromotionAvailable === false) {
-        setPromotionNote(
-          "The newsletter 10% offer has already been used on this email. You can still check out at full price.",
-        );
       }
 
       window.location.href = data.url;
@@ -91,9 +82,6 @@ export function PhysicalCheckoutForm({ bookId, disabled = false }: Props) {
       >
         {loading ? "Redirecting…" : "Buy paperback directly"}
       </button>
-      {promotionNote ? (
-        <p className="text-sm text-brand-charcoal/80">{promotionNote}</p>
-      ) : null}
       {error ? (
         <p className="text-sm font-medium text-red-700" role="alert">{error}</p>
       ) : null}
