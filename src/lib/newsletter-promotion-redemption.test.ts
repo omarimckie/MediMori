@@ -13,15 +13,39 @@ import {
 } from "./newsletter-promotion-redemption";
 
 const TEST_PHYSICAL_ONE = "price_test_physical_book_one";
-const TEST_NEWSLETTER_PROMO_ID = "promo_test_twilightfeather10";
+const TEST_NEWSLETTER_COUPON_ID = "coupon_test_newsletter";
+
+function expandedNewsletterPromotionCode(
+  promotionCodeId: string,
+  couponId = TEST_NEWSLETTER_COUPON_ID,
+  code = "TWILIGHTFEATHER10",
+): Stripe.PromotionCode {
+  return {
+    id: promotionCodeId,
+    object: "promotion_code",
+    code,
+    active: true,
+    promotion: { type: "coupon", coupon: couponId },
+  } as Stripe.PromotionCode;
+}
 
 function sessionWithNewsletterPromo(
   session: Stripe.Checkout.Session,
-  promotionCodeId = TEST_NEWSLETTER_PROMO_ID,
+  promotionCodeId = "promo_test_global_twilight",
+  couponId = TEST_NEWSLETTER_COUPON_ID,
+  code = "TWILIGHTFEATHER10",
 ): Stripe.Checkout.Session {
   return {
     ...session,
-    discounts: [{ promotion_code: promotionCodeId }],
+    discounts: [
+      {
+        promotion_code: expandedNewsletterPromotionCode(
+          promotionCodeId,
+          couponId,
+          code,
+        ),
+      },
+    ],
   } as Stripe.Checkout.Session;
 }
 
@@ -142,7 +166,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — full price is not redempt
       total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 0 },
     }),
     { purchaseType: "ebook", bookId: "book-one" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
@@ -151,7 +175,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook without 
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
     ebookSession(),
     { purchaseType: "ebook", bookId: "book-one" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
@@ -160,7 +184,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook qualifie
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
     sessionWithNewsletterPromo(ebookSession()),
     { purchaseType: "ebook", bookId: "book-one" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
   if (analysis.status === "newsletter_redemption") {
@@ -168,11 +192,45 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — discounted ebook qualifie
   }
 });
 
-test("analyzePaidCheckoutSessionNewsletterDiscount — alternate 10% promo does not count as newsletter", () => {
-  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
-    sessionWithNewsletterPromo(ebookSession(), "promo_holiday_2026"),
+test("analyzePaidCheckoutSessionNewsletterDiscount — two promo ids with same code and coupon qualify", () => {
+  const global = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(ebookSession(), "promo_global"),
     { purchaseType: "ebook", bookId: "book-one" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
+  );
+  const customer = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(ebookSession(), "promo_customer_restricted"),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_COUPON_ID,
+  );
+  assert.equal(global.status, "newsletter_redemption");
+  assert.equal(customer.status, "newsletter_redemption");
+});
+
+test("analyzePaidCheckoutSessionNewsletterDiscount — HOLIDAY2026 does not count as newsletter", () => {
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(
+      ebookSession(),
+      "promo_holiday_2026",
+      TEST_NEWSLETTER_COUPON_ID,
+      "HOLIDAY2026",
+    ),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_COUPON_ID,
+  );
+  assert.equal(analysis.status, "not_newsletter_discount");
+});
+
+test("analyzePaidCheckoutSessionNewsletterDiscount — TWILIGHTFEATHER10 with wrong coupon is not newsletter", () => {
+  const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
+    sessionWithNewsletterPromo(
+      ebookSession(),
+      "promo_wrong_coupon",
+      "coupon_other_10_percent",
+      "TWILIGHTFEATHER10",
+    ),
+    { purchaseType: "ebook", bookId: "book-one" },
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
@@ -183,7 +241,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — TWILIGHT promo with inval
       ebookSession({ amount_total: 500, total_details: { amount_discount: 200, amount_shipping: 0, amount_tax: 0 } }),
     ),
     { purchaseType: "ebook", bookId: "book-one" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "invalid");
 });
@@ -197,7 +255,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — eligible physical qty 1",
       }),
     ),
     { purchaseType: "physical", bookId: "book-one", quantity: 1 },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
 });
@@ -209,7 +267,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — full physical total is no
       total_details: { amount_shipping: 499, amount_discount: 0, amount_tax: 0 },
     }),
     { purchaseType: "physical", bookId: "book-one", quantity: 1 },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "not_newsletter_discount");
 });
@@ -223,7 +281,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — book-two digital eligible
       }),
     ),
     { purchaseType: "ebook", bookId: "book-two" },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "newsletter_redemption");
 });
@@ -243,7 +301,7 @@ test("analyzePaidCheckoutSessionNewsletterDiscount — book-two physical ineligi
       }),
     ),
     { purchaseType: "physical", bookId: "book-two", quantity: 1 },
-    TEST_NEWSLETTER_PROMO_ID,
+    TEST_NEWSLETTER_COUPON_ID,
   );
   assert.equal(analysis.status, "invalid");
 });

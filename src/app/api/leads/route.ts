@@ -5,6 +5,7 @@ import {
 } from "@/lib/email";
 import { upsertLead } from "@/lib/leads-store";
 import { getNewsletterDiscountCode } from "@/lib/newsletter-constants";
+import { attemptNewsletterPromotionIssuanceAfterSignup } from "@/lib/newsletter-promotion-issuance";
 import { NextResponse } from "next/server";
 
 function isValidEmail(value: string): boolean {
@@ -41,6 +42,8 @@ export async function POST(request: Request) {
 
   try {
     const { alreadySignedUp } = await upsertLead(email);
+
+    await attemptNewsletterPromotionIssuanceAfterSignup(email);
 
     const contactResult = await addContactToNewsletterAudience(email).catch(
       (error) => {

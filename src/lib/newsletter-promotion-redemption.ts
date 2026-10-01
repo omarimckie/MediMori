@@ -9,7 +9,10 @@ import {
   paymentIntentIdFromCheckoutSession,
   refundStripePaymentIntent,
 } from "./stripe-payment-refund";
-import { resolveNewsletterPromotionCodeId } from "./stripe-discount";
+import {
+  isNewsletterCouponPromotionApplication,
+  resolveNewsletterStripeCouponId,
+} from "./stripe-discount";
 import type Stripe from "stripe";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -73,14 +76,35 @@ export function checkoutSessionAppliedPromotionCodeIds(
   return ids;
 }
 
-function sessionUsesNewsletterPromotionCode(
+/** Expanded promotion_code objects on the session (string ids are not enough for coupon matching). */
+export function checkoutSessionAppliedPromotionCodes(
   session: Stripe.Checkout.Session,
-  newsletterPromotionCodeId: string | null,
+): Stripe.PromotionCode[] {
+  const codes: Stripe.PromotionCode[] = [];
+  for (const discount of session.discounts ?? []) {
+    const promotionCode = discount.promotion_code;
+    if (!promotionCode || typeof promotionCode === "string") continue;
+    codes.push(promotionCode);
+  }
+  return codes;
+}
+
+function sessionUsesNewsletterPromotion(
+  session: Stripe.Checkout.Session,
+  newsletterCouponId: string | null,
 ): boolean {
-  if (!newsletterPromotionCodeId) return false;
-  return checkoutSessionAppliedPromotionCodeIds(session).includes(
-    newsletterPromotionCodeId,
-  );
+  if (!newsletterCouponId) return false;
+  for (const promotionCode of checkoutSessionAppliedPromotionCodes(session)) {
+    if (
+      isNewsletterCouponPromotionApplication(
+        promotionCode,
+        newsletterCouponId,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -90,14 +114,14 @@ function sessionUsesNewsletterPromotionCode(
 export function analyzePaidCheckoutSessionNewsletterDiscount(
   session: Stripe.Checkout.Session,
   context: NewsletterRedemptionContext,
-  newsletterPromotionCodeId: string | null,
+  newsletterCouponId: string | null,
 ): NewsletterDiscountSessionAnalysis {
   const amountDiscount = sessionAmountDiscountCents(session);
   if (amountDiscount <= 0) {
     return { status: "not_newsletter_discount" };
   }
 
-  if (!sessionUsesNewsletterPromotionCode(session, newsletterPromotionCodeId)) {
+  if (!sessionUsesNewsletterPromotion(session, newsletterCouponId)) {
     return { status: "not_newsletter_discount" };
   }
 
@@ -223,11 +247,11 @@ export async function ensurePaidNewsletterRedemptionBeforeFulfillment(
   session: Stripe.Checkout.Session,
   context: NewsletterRedemptionContext,
 ): Promise<EnsurePaidNewsletterRedemptionResult> {
-  const newsletterPromotionCodeId = await resolveNewsletterPromotionCodeId(stripe);
+  const newsletterCouponId = await resolveNewsletterStripeCouponId(stripe);
   const analysis = analyzePaidCheckoutSessionNewsletterDiscount(
     session,
     context,
-    newsletterPromotionCodeId,
+    newsletterCouponId,
   );
   if (analysis.status === "not_newsletter_discount") {
     return { ok: true, consumedNewsletterRedemption: false };

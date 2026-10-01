@@ -26,6 +26,7 @@ async function loadSessionWithLineItems(
         "line_items.data.price",
         "payment_intent.latest_charge",
         "discounts.promotion_code",
+        "discounts.promotion_code.promotion.coupon",
       ],
     });
   } catch {

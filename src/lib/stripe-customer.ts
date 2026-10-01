@@ -7,7 +7,8 @@ function escapeStripeSearchValue(value: string): string {
 
 /**
  * Finds an existing Stripe Customer for the normalized email or creates one.
- * Stripe does not guarantee global email uniqueness; this avoids duplicates when possible.
+ * Stripe does not guarantee global email uniqueness; search-then-create is not atomic.
+ * Concurrent signups or checkouts may create duplicate customers — Phase 2/3 should reconcile.
  */
 export async function findOrCreateStripeCustomerByEmail(
   stripe: Stripe,
