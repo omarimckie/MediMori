@@ -1,6 +1,9 @@
 "use client";
 
-import { isoToMarketingDatetimeLocal } from "@/lib/marketing/marketing-scheduling";
+import {
+  defaultRecycleScheduleDatetimeLocal,
+  isoToMarketingDatetimeLocal,
+} from "@/lib/marketing/marketing-scheduling";
 import { PrimaryButton, SecondaryButton } from "./ui";
 
 type Props = {
@@ -25,9 +28,14 @@ export function ScheduleContentModal({
   mode = "schedule",
 }: Props) {
   const isRecycle = mode === "recycle";
-  const defaultLocal =
-    isoToMarketingDatetimeLocal(initialScheduledFor, marketingTimezone) ||
-    isoToMarketingDatetimeLocal(new Date().toISOString(), marketingTimezone);
+  const defaultLocal = isRecycle
+    ? defaultRecycleScheduleDatetimeLocal(
+        initialScheduledFor,
+        new Date(),
+        marketingTimezone,
+      )
+    : isoToMarketingDatetimeLocal(initialScheduledFor, marketingTimezone) ||
+      isoToMarketingDatetimeLocal(new Date().toISOString(), marketingTimezone);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-charcoal/40 p-4">
@@ -37,9 +45,14 @@ export function ScheduleContentModal({
         aria-labelledby="schedule-content-title"
       >
         <h2 id="schedule-content-title" className="font-display text-2xl text-brand-navy">
-          {isRecycle ? "Recycle publish" : "Schedule publish"}
+          {isRecycle ? "Schedule recycled post" : "Schedule publish"}
         </h2>
-        <p className="mt-2 text-sm text-brand-charcoal/75">
+        {isRecycle ? (
+          <p className="mt-2 text-sm text-brand-charcoal/75">
+            Choose when this post should be published again.
+          </p>
+        ) : null}
+        <p className={`text-sm text-brand-charcoal/75 ${isRecycle ? "mt-1" : "mt-2"}`}>
           {title || platform}
         </p>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-brand-charcoal/55">

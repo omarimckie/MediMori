@@ -140,6 +140,94 @@ export function dayKeyFromYmd(year: number, month: number, day: number): string 
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function addCalendarDays(
+  year: number,
+  month: number,
+  day: number,
+  deltaDays: number,
+): { year: number; month: number; day: number } {
+  const shifted = new Date(Date.UTC(year, month - 1, day + deltaDays));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+function marketingDatetimeLocalFromParts(parts: ZonedParts): string {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+}
+
+/**
+ * Next strictly-future instant for recycle scheduling, using today's marketing-local date
+ * and preserving the previous scheduled time-of-day when available.
+ */
+export function nextFutureRecycleScheduleIso(
+  previousScheduledIso: string | null | undefined,
+  now: Date,
+  timeZone: string,
+): string {
+  const nowMs = now.getTime();
+  if (Number.isNaN(nowMs)) {
+    throw new Error("invalid_schedule_time: Current time is not valid.");
+  }
+
+  let hour: number;
+  let minute: number;
+  if (previousScheduledIso?.trim()) {
+    const previous = new Date(previousScheduledIso);
+    if (Number.isNaN(previous.getTime())) {
+      throw new Error("invalid_schedule_time: Previous scheduled time is not valid.");
+    }
+    const previousParts = zonedParts(previous, timeZone);
+    hour = previousParts.hour;
+    minute = previousParts.minute;
+  } else {
+    const nowParts = zonedParts(now, timeZone);
+    hour = nowParts.hour;
+    minute = nowParts.minute;
+  }
+
+  const today = zonedParts(now, timeZone);
+  let year = today.year;
+  let month = today.month;
+  let day = today.day;
+
+  const candidateIso = () =>
+    marketingDatetimeLocalToIso(
+      marketingDatetimeLocalFromParts({ year, month, day, hour, minute }),
+      timeZone,
+    );
+
+  let candidateMs = new Date(candidateIso()).getTime();
+  let guard = 0;
+  while (candidateMs <= nowMs) {
+    guard += 1;
+    if (guard > 800) {
+      throw new Error("invalid_schedule_time: Could not find a future recycle time.");
+    }
+    const nextDay = addCalendarDays(year, month, day, 1);
+    year = nextDay.year;
+    month = nextDay.month;
+    day = nextDay.day;
+    candidateMs = new Date(candidateIso()).getTime();
+  }
+
+  return new Date(candidateMs).toISOString();
+}
+
+/** Default `<input type="datetime-local">` value for recycle mode in the marketing timezone. */
+export function defaultRecycleScheduleDatetimeLocal(
+  previousScheduledIso: string | null | undefined,
+  now: Date,
+  timeZone: string,
+): string {
+  return isoToMarketingDatetimeLocal(
+    nextFutureRecycleScheduleIso(previousScheduledIso, now, timeZone),
+    timeZone,
+  );
+}
+
 export function isPublicationDue(
   scheduledFor: string | null | undefined,
   now: Date = new Date(),

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  calendarDetailScheduledDatetimeLabel,
   calendarDetailShowsRecycle,
   calendarPublishedNonRecyclableMessage,
   calendarEventStatusLabel,
@@ -63,7 +64,7 @@ export function CalendarPublicationDetailModal({
           ) : null}
           {event.scheduledFor ? (
             <div>
-              <dt className="font-bold">Scheduled for</dt>
+              <dt className="font-bold">{calendarDetailScheduledDatetimeLabel(event.eventKind)}</dt>
               <dd>{formatMarketingScheduleDisplay(event.scheduledFor, tz)}</dd>
             </div>
           ) : null}

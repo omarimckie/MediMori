@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  calendarDetailScheduledDatetimeLabel,
   calendarDetailShowsRecycle,
   calendarEventShowsRecycleBadge,
   calendarEventStatusLabel,
@@ -30,6 +31,14 @@ test("published email does not expose recycle", () => {
 
 test("scheduled event displays scheduled state label", () => {
   assert.equal(calendarEventStatusLabel({ eventKind: "scheduled", isRecycle: false }), "Scheduled");
+});
+
+test("published detail modal uses Originally scheduled label", () => {
+  assert.equal(calendarDetailScheduledDatetimeLabel("published"), "Originally scheduled");
+});
+
+test("scheduled recycle detail still uses Scheduled for label", () => {
+  assert.equal(calendarDetailScheduledDatetimeLabel("scheduled"), "Scheduled for");
 });
 
 test("recycle scheduled event displays recycle state", () => {

@@ -122,7 +122,8 @@ test("reviewScheduleModalState opens recycle scheduling modal", () => {
       onConfirm={noop}
     />,
   );
-  assert.match(html, /Recycle publish/);
+  assert.match(html, /Schedule recycled post/);
+  assert.match(html, /Choose when this post should be published again/);
   assert.match(html, /Confirm recycle/);
 });
 

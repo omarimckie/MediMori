@@ -39,5 +39,12 @@ export function calendarEventStatusLabel(
   return "Scheduled";
 }
 
+/** Label for the scheduled datetime row in the calendar publication detail modal. */
+export function calendarDetailScheduledDatetimeLabel(
+  eventKind: MarketingCalendarEvent["eventKind"],
+): string {
+  return eventKind === "published" ? "Originally scheduled" : "Scheduled for";
+}
+
 /** Mirror server recycle platform rules for display tests. */
 export { isContentRecyclablePlatform };
