@@ -111,6 +111,35 @@ export function calendarDayKeyInMarketingTimezone(iso: string, timeZone: string)
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
+export function marketingZonedYmd(
+  date: Date,
+  timeZone: string,
+): { year: number; month: number; day: number } {
+  const parts = zonedParts(date, timeZone);
+  return { year: parts.year, month: parts.month, day: parts.day };
+}
+
+/** 0 = Sunday … 6 = Saturday, in the marketing timezone. */
+export function marketingWeekdaySunday0(iso: string, timeZone: string): number {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 0;
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date);
+  const order: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return order[name] ?? 0;
+}
+
+export function dayKeyFromYmd(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function isPublicationDue(
   scheduledFor: string | null | undefined,
   now: Date = new Date(),

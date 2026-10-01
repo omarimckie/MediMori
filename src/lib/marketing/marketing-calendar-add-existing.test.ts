@@ -153,8 +153,11 @@ test("two recycle schedules create independent publications and calendar events"
 
   const events = await listMarketingCalendarEvents(store);
   const forContent = events.filter((e) => e.contentId === content.id);
-  assert.equal(forContent.length, 2);
-  const times = forContent.map((e) => e.scheduledFor).sort();
+  assert.equal(forContent.length, 3);
+  const scheduledOnly = forContent.filter((e) => e.eventKind === "scheduled");
+  assert.equal(scheduledOnly.length, 2);
+  assert.equal(scheduledOnly.every((e) => e.isRecycle), true);
+  const times = scheduledOnly.map((e) => e.scheduledFor).sort();
   assert.deepEqual(times, [monday, friday].sort());
 });
 

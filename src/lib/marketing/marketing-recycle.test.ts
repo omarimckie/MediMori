@@ -179,9 +179,14 @@ test("calendar lists recycled publication on publication.scheduledFor", async ()
   const recycleTime = "2026-09-30T20:00:00.000Z";
   await recyclePublished(store, content.id, { scheduledFor: recycleTime });
   const events = await listMarketingCalendarEvents(store);
-  assert.equal(events.length, 1);
-  assert.equal(events[0]?.scheduledFor, recycleTime);
-  assert.equal(events[0]?.publicationId, (await store.listPublications("scheduled"))[0]?.id);
+  const scheduledEvents = events.filter((event) => event.eventKind === "scheduled");
+  assert.equal(scheduledEvents.length, 1);
+  assert.equal(scheduledEvents[0]?.scheduledFor, recycleTime);
+  assert.equal(
+    scheduledEvents[0]?.publicationId,
+    (await store.listPublications("scheduled"))[0]?.id,
+  );
+  assert.equal(events.some((event) => event.eventKind === "published"), true);
 
   const originalAfter = await store.getPublication(original.id);
   assert.equal(originalAfter?.status, "published");
@@ -204,7 +209,11 @@ test("pickPrimaryPublication prefers scheduled recycle over published original",
   assert.ok(refreshedContent);
   const contentMap = new Map<string, MarketingContent>([[content.id, refreshedContent]]);
   const events = calendarEventsFromPublications(publications, contentMap);
-  assert.equal(events.filter((e) => e.publicationId === original.id).length, 0);
+  assert.equal(
+    events.filter((e) => e.eventKind === "scheduled" && e.publicationId === original.id).length,
+    0,
+  );
+  assert.equal(events.filter((e) => e.eventKind === "published" && e.publicationId === original.id).length, 1);
 });
 
 test("recycle API rejects invalid schedule time", async () => {
