@@ -2,6 +2,7 @@ import { formatAspectRatioLabel } from "./asset-truth";
 import type { MarketingAsset, MarketingContent, ResourceType } from "./types";
 
 export const MANUAL_UPLOAD_SOURCE = "manual_upload";
+export const SMART_UPLOAD_SOURCE = "smart_upload";
 export const PRIVATE_BLOB_PATH_TAG = "private_blob_path:";
 
 export const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {

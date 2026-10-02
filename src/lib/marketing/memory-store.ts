@@ -1,4 +1,9 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, asStringOrNull, toDateOnly, toIso } from "./json";
+import {
+  parseSmartUploadFinalizeRows,
+  SmartUploadFinalizeKeyConflictError,
+  smartUploadFinalizeKeyForContent,
+} from "./smart-upload-idempotency";
 import type { MarketingStore } from "./store";
 import type {
   AudienceId,
@@ -156,6 +161,20 @@ export class MemoryMarketingStore implements MarketingStore {
   }
 
   async createContent(input: Omit<MarketingContent, "createdAt" | "updatedAt">) {
+    const finalizeKey = smartUploadFinalizeKeyForContent(input as MarketingContent);
+    if (finalizeKey) {
+      const lookup = await this.findSmartUploadContentByFinalizeKey(finalizeKey);
+      if (lookup.status === "inconsistent") {
+        throw new Error(lookup.reason);
+      }
+      const platform = input.platform;
+      if (platform === "instagram" && lookup.status !== "none") {
+        throw new SmartUploadFinalizeKeyConflictError(finalizeKey, platform);
+      }
+      if (platform === "facebook" && lookup.status === "complete") {
+        throw new SmartUploadFinalizeKeyConflictError(finalizeKey, platform);
+      }
+    }
     const row: MarketingContent = { ...input, createdAt: nowIso(), updatedAt: nowIso() };
     this.content.set(row.id, row);
     return clone(row);
@@ -184,6 +203,19 @@ export class MemoryMarketingStore implements MarketingStore {
       .filter((item) => matchesFilters(item, filters))
       .map(clone)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async findSmartUploadContentByFinalizeKey(finalizeKey: string) {
+    const trimmed = finalizeKey.trim();
+    if (!trimmed) {
+      return { status: "none" as const };
+    }
+    const rows = [...this.content.values()].filter(
+      (row) =>
+        row.metadata?.source === "smart_upload" &&
+        row.metadata?.smartUploadFinalizeKey === trimmed,
+    );
+    return parseSmartUploadFinalizeRows(rows.map(clone), trimmed);
   }
 
   async deleteContent(id: string) {

@@ -1,3 +1,4 @@
+import type { SmartUploadFinalizeLookup } from "./smart-upload-idempotency";
 import type {
   ContentFilters,
   MarketingApproval,
@@ -60,6 +61,7 @@ export type MarketingStore = {
   getContent(id: string): Promise<MarketingContent | null>;
   getContentByToken(token: string): Promise<MarketingContent | null>;
   listContent(filters?: ContentFilters): Promise<MarketingContent[]>;
+  findSmartUploadContentByFinalizeKey(finalizeKey: string): Promise<SmartUploadFinalizeLookup>;
   deleteContent(id: string): Promise<boolean>;
 
   addApproval(input: Omit<MarketingApproval, "createdAt">): Promise<MarketingApproval>;

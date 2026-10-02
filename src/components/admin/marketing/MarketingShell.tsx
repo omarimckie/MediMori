@@ -9,6 +9,7 @@ const PRIMARY_NAV = [
 ];
 
 const MORE_NAV = [
+  { href: "/admin/marketing/smart-upload", label: "Smart Upload" },
   { href: "/admin/marketing/campaigns", label: "Campaigns" },
   { href: "/admin/marketing/content", label: "Content" },
   { href: "/admin/marketing/calendar", label: "Calendar" },

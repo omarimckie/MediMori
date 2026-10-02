@@ -15,6 +15,11 @@ import {
   mapRule,
   mapTemplate,
 } from "./memory-store";
+import {
+  isSmartUploadFinalizeKeyConflict,
+  parseSmartUploadFinalizeRows,
+  SmartUploadFinalizeKeyConflictError,
+} from "./smart-upload-idempotency";
 import type { MarketingStore } from "./store";
 import type {
   ContentFilters,
@@ -240,25 +245,49 @@ export class PostgresMarketingStore implements MarketingStore {
 
   async createContent(input: Omit<MarketingContent, "createdAt" | "updatedAt">) {
     const sql = getSql();
+    try {
+      const rows = await sql`
+        INSERT INTO marketing_content (
+          id, campaign_id, weekly_plan_id, platform, format, category, audience,
+          status, title, body, cta, seo_title, seo_description, scheduled_for,
+          timezone, asset_ids, needs_new_asset, warnings, safety_flags,
+          tracking_token, original_body, book_id, metadata, is_demo
+        ) VALUES (
+          ${input.id}::uuid, ${input.campaignId}::uuid, ${input.weeklyPlanId}::uuid,
+          ${input.platform}, ${input.format}, ${input.category}, ${input.audience},
+          ${input.status}, ${input.title}, ${input.body}, ${input.cta},
+          ${input.seoTitle}, ${input.seoDescription}, ${input.scheduledFor},
+          ${input.timezone}, ${json(input.assetIds)}::jsonb, ${input.needsNewAsset},
+          ${json(input.warnings)}::jsonb, ${json(input.safetyFlags)}::jsonb,
+          ${input.trackingToken}, ${input.originalBody}, ${input.bookId},
+          ${json(input.metadata ?? {})}::jsonb, ${input.isDemo}
+        )
+        RETURNING *
+      `;
+      return mapContent(rows[0] as Record<string, unknown>);
+    } catch (error) {
+      if (isSmartUploadFinalizeKeyConflict(error)) {
+        const key = input.metadata?.smartUploadFinalizeKey?.trim() ?? "";
+        throw new SmartUploadFinalizeKeyConflictError(key, input.platform);
+      }
+      throw error;
+    }
+  }
+
+  async findSmartUploadContentByFinalizeKey(finalizeKey: string) {
+    const trimmed = finalizeKey.trim();
+    if (!trimmed) {
+      return { status: "none" as const };
+    }
+    const sql = getSql();
     const rows = await sql`
-      INSERT INTO marketing_content (
-        id, campaign_id, weekly_plan_id, platform, format, category, audience,
-        status, title, body, cta, seo_title, seo_description, scheduled_for,
-        timezone, asset_ids, needs_new_asset, warnings, safety_flags,
-        tracking_token, original_body, book_id, metadata, is_demo
-      ) VALUES (
-        ${input.id}::uuid, ${input.campaignId}::uuid, ${input.weeklyPlanId}::uuid,
-        ${input.platform}, ${input.format}, ${input.category}, ${input.audience},
-        ${input.status}, ${input.title}, ${input.body}, ${input.cta},
-        ${input.seoTitle}, ${input.seoDescription}, ${input.scheduledFor},
-        ${input.timezone}, ${json(input.assetIds)}::jsonb, ${input.needsNewAsset},
-        ${json(input.warnings)}::jsonb, ${json(input.safetyFlags)}::jsonb,
-        ${input.trackingToken}, ${input.originalBody}, ${input.bookId},
-        ${json(input.metadata ?? {})}::jsonb, ${input.isDemo}
-      )
-      RETURNING *
+      SELECT *
+      FROM marketing_content
+      WHERE metadata->>'source' = 'smart_upload'
+        AND metadata->>'smartUploadFinalizeKey' = ${trimmed}
     `;
-    return mapContent(rows[0] as Record<string, unknown>);
+    const mapped = rows.map((row) => mapContent(row as Record<string, unknown>));
+    return parseSmartUploadFinalizeRows(mapped, trimmed);
   }
 
   async updateContent(id: string, patch: Partial<MarketingContent>) {

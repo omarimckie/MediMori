@@ -199,9 +199,14 @@ export type MarketingTemplate = {
 export type MarketingContentMetadata = {
   pinAltText?: string | null;
   /** Set on manual social / free-resource uploads (see MANUAL_UPLOAD_SOURCE). */
-  source?: "manual_upload";
+  source?: "manual_upload" | "smart_upload";
   placement?: ContentPlacement;
   manualUploadVersion?: number;
+  smartUploadVersion?: number;
+  batchId?: string;
+  smartUploadFinalizeKey?: string;
+  /** Original asset id for future derivative linking (same as asset when no derivative). */
+  originalAssetId?: string;
   resourceType?: ResourceType;
   slug?: string;
   relatedCondition?: string | null;
