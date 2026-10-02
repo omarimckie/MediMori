@@ -12,7 +12,7 @@ import {
   listActiveNewsletterPromotionCodes,
 } from "./stripe-discount";
 
-async function loadRedeemedEmails(): Promise<Set<string>> {
+export async function loadNewsletterRedeemedEmails(): Promise<Set<string>> {
   const sql = getSql();
   const rows = await sql`
     SELECT email FROM newsletter_promotion_redemptions
@@ -26,7 +26,7 @@ async function loadRedeemedEmails(): Promise<Set<string>> {
   );
 }
 
-async function loadIssuanceEmails(): Promise<Set<string>> {
+export async function loadNewsletterIssuanceEmails(): Promise<Set<string>> {
   const sql = getSql();
   const rows = await sql`
     SELECT email FROM newsletter_promotion_issuances
@@ -50,8 +50,8 @@ export async function executeNewsletterMigrationPreflight(): Promise<MigrationPr
   const couponId = getNewsletterStripeCouponId();
 
   const leads = await readStoredLeads();
-  const redeemedEmails = await loadRedeemedEmails();
-  const issuanceEmails = await loadIssuanceEmails();
+  const redeemedEmails = await loadNewsletterRedeemedEmails();
+  const issuanceEmails = await loadNewsletterIssuanceEmails();
 
   return runNewsletterMigrationPreflight({
     leads,

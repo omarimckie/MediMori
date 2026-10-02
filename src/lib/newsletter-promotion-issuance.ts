@@ -45,17 +45,23 @@ export type CreateIssuanceRecordInput = {
 export function buildCustomerSpecificPromotionCodeCreateParams(
   stripeCustomerId: string,
   couponId: string,
+  options?: { migrationRunId?: string },
 ): Stripe.PromotionCodeCreateParams {
+  const metadata: Record<string, string> = {
+    source: "twilight-feather-newsletter",
+    scope: "customer",
+  };
+  if (options?.migrationRunId) {
+    metadata.issuance_source = "migration";
+    metadata.migration_run_id = options.migrationRunId;
+  }
   return {
     promotion: { type: "coupon", coupon: couponId },
     code: getNewsletterDiscountCode(),
     customer: stripeCustomerId,
     max_redemptions: 1,
     active: true,
-    metadata: {
-      source: "twilight-feather-newsletter",
-      scope: "customer",
-    },
+    metadata,
   };
 }
 
