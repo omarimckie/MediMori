@@ -10,6 +10,11 @@ import { revalidatePublishedFreeResourcePaths } from "./free-resource-cache";
 import { isPublicationDue, resolveScheduleInstant } from "./marketing-scheduling";
 import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import { logMarketing } from "./logger";
+import {
+  formatPublicationFailureLastError,
+  isPublicationEligibleForCronAutoRetry,
+  shouldStampCronAutoRetryForPlatform,
+} from "./publication-cron-retry";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import type { ContentStatus, MarketingContent, MarketingPublication } from "./types";
@@ -440,7 +445,10 @@ export async function publishPublication(
   const updated = await store.updatePublication(current.id, {
     status: "failed",
     attemptCount,
-    lastError: result.error ?? "Publish failed",
+    lastError: formatPublicationFailureLastError(
+      result.error ?? "Publish failed",
+      shouldStampCronAutoRetryForPlatform(content.platform, Boolean(result.retryable)),
+    ),
   });
   await store.updateContent(content.id, { status: "failed" });
   await store.recordEvent({
@@ -480,7 +488,8 @@ export async function publishDue(store: MarketingStore, now = new Date()) {
     return new Date(item.scheduledFor).getTime() <= now.getTime();
   });
   const failedRetry = (await store.listPublications("failed")).filter(
-    (item) => item.attemptCount < 3 && item.lastError?.includes("transient"),
+    (item) =>
+      item.attemptCount < 3 && isPublicationEligibleForCronAutoRetry(item.lastError),
   );
   const results = [];
   for (const item of [...due, ...failedRetry]) {
