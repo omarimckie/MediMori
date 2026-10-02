@@ -10,7 +10,11 @@ import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
 import { ContentReviewCardActions, reviewScheduleModalState } from "./ContentReviewCardActions";
 import { ScheduleContentModal } from "./ScheduleContentModal";
-import { Card, SecondaryButton, StatusPill } from "./ui";
+import {
+  PERMANENT_DELETE_CONFIRMATION,
+  WEEK_WORKING_QUEUE_EXCLUDE_STATUSES,
+} from "@/lib/marketing/content-week-queue";
+import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 type ContentItem = {
   id: string;
@@ -69,6 +73,14 @@ export function WeekClient() {
   const [showUploadResource, setShowUploadResource] = useState(false);
   const [scheduleItem, setScheduleItem] = useState<ContentItem | null>(null);
   const [recycleItem, setRecycleItem] = useState<ContentItem | null>(null);
+  const [rejectedContent, setRejectedContent] = useState<ContentItem[]>([]);
+  const [rejectedReviewByContentId, setRejectedReviewByContentId] = useState<
+    Record<string, WeeklyItemReview>
+  >({});
+  const [rejectionFeedbackByContentId, setRejectionFeedbackByContentId] = useState<
+    Record<string, string | null>
+  >({});
+  const [showRejectedHistory, setShowRejectedHistory] = useState(false);
 
   const plan = settings?.plans[0];
   const mockMode = settings?.mockMode ?? true;
@@ -89,12 +101,39 @@ export function WeekClient() {
     const settingsData = (await fetch("/api/admin/marketing/settings").then((res) => res.json())) as Settings;
     setSettings(settingsData);
     const planId = settingsData.plans[0]?.id;
-    const query = planId
-      ? `?weeklyPlanId=${planId}&enrich=weekly`
-      : "?enrich=weekly";
-    const contentData = await fetch(`/api/admin/marketing/content${query}`).then((res) => res.json());
-    setContent(contentData.content ?? []);
-    setReviewByContentId(contentData.reviewByContentId ?? {});
+    const excludeStatus = WEEK_WORKING_QUEUE_EXCLUDE_STATUSES.join(",");
+    const activeQuery = planId
+      ? `?weeklyPlanId=${planId}&enrich=weekly&excludeStatus=${excludeStatus}`
+      : `?enrich=weekly&excludeStatus=${excludeStatus}`;
+    const rejectedQuery = planId
+      ? `?weeklyPlanId=${planId}&enrich=weekly&status=rejected`
+      : "?enrich=weekly&status=rejected";
+    const [activeData, rejectedData] = await Promise.all([
+      fetch(`/api/admin/marketing/content${activeQuery}`).then((res) => res.json()),
+      planId
+        ? fetch(`/api/admin/marketing/content${rejectedQuery}`).then((res) => res.json())
+        : Promise.resolve({ content: [], reviewByContentId: {}, rejectionFeedbackByContentId: {} }),
+    ]);
+    setContent(activeData.content ?? []);
+    setReviewByContentId(activeData.reviewByContentId ?? {});
+    setRejectedContent(rejectedData.content ?? []);
+    setRejectedReviewByContentId(rejectedData.reviewByContentId ?? {});
+    setRejectionFeedbackByContentId(rejectedData.rejectionFeedbackByContentId ?? {});
+  }
+
+  async function restoreRejected(contentId: string) {
+    await act(`/api/admin/marketing/content/${contentId}`, { action: "restore" });
+  }
+
+  async function permanentlyDeleteRejected(item: ContentItem) {
+    const confirmed = window.confirm(
+      `Permanently delete "${item.title ?? item.platform}"?\n\nThis cannot be undone. The content will be removed from marketing history.`,
+    );
+    if (!confirmed) return;
+    await act(`/api/admin/marketing/content/${item.id}`, {
+      action: "delete_permanent",
+      confirmPermanentDelete: PERMANENT_DELETE_CONFIRMATION,
+    });
   }
 
   useEffect(() => {
@@ -234,6 +273,74 @@ export function WeekClient() {
         );
       })()}
       {message ? <p className="text-sm font-semibold text-brand-orange-deep">{message}</p> : null}
+
+      {rejectedContent.length > 0 ? (
+        <Card className="border-brand-brown/20 bg-cream-deep/40">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/55">
+                Rejected / history
+              </p>
+              <p className="mt-1 text-sm font-semibold text-brand-charcoal">
+                {rejectedContent.length} rejected post{rejectedContent.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <SecondaryButton
+              disabled={busy}
+              onClick={() => setShowRejectedHistory((open) => !open)}
+            >
+              {showRejectedHistory ? "Hide rejected" : "View rejected"}
+            </SecondaryButton>
+          </div>
+          {showRejectedHistory ? (
+            <ul className="mt-4 space-y-4 border-t border-brand-brown/15 pt-4">
+              {rejectedContent.map((item) => {
+                const review = rejectedReviewByContentId[item.id];
+                const feedback = rejectionFeedbackByContentId[item.id];
+                return (
+                  <li
+                    key={item.id}
+                    className="rounded-2xl border border-brand-brown/15 bg-white p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        {review?.channelLabel ? (
+                          <p className="text-xs font-bold uppercase tracking-wide text-brand-green-deep">
+                            {review.channelLabel}
+                          </p>
+                        ) : null}
+                        <WeeklyVisualPreview review={review} title={item.title} />
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <StatusPill status="rejected" />
+                          <StatusPill status={item.platform} />
+                        </div>
+                        <h4 className="mt-2 text-lg font-extrabold">{item.title}</h4>
+                        <p className="mt-2 line-clamp-4 text-sm text-brand-charcoal/80">{item.body}</p>
+                        {feedback ? (
+                          <p className="mt-2 text-sm text-brand-orange-deep">
+                            <span className="font-bold">Reason:</span> {feedback}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <PrimaryButton disabled={busy} onClick={() => void restoreRejected(item.id)}>
+                          Restore
+                        </PrimaryButton>
+                        <SecondaryButton
+                          disabled={busy}
+                          onClick={() => void permanentlyDeleteRejected(item)}
+                        >
+                          Delete permanently
+                        </SecondaryButton>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </Card>
+      ) : null}
 
       {[...grouped.entries()].map(([platform, items]) => (
         <section key={platform} className="space-y-3">

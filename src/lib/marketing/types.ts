@@ -247,7 +247,8 @@ export type MarketingApproval = {
     | "regenerate"
     | "feedback"
     | "approve_all"
-    | "reject_all";
+    | "reject_all"
+    | "restore";
   actor: string | null;
   feedback: string | null;
   previousBody: string | null;
@@ -375,6 +376,7 @@ export type ContentFilters = {
   audience?: AudienceId;
   category?: ContentCategory;
   status?: ContentStatus;
+  excludeStatuses?: ContentStatus[];
 };
 
 export type PurchaseSnapshot = {

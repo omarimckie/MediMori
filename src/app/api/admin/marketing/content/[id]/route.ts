@@ -26,7 +26,13 @@ export async function POST(
   const auth = await requireMarketingAdmin();
   if (!auth.ok) return auth.response;
   const { id } = await context.params;
-  let body: { action?: string; body?: string; feedback?: string; scheduledFor?: string | null } = {};
+  let body: {
+    action?: string;
+    body?: string;
+    feedback?: string;
+    scheduledFor?: string | null;
+    confirmPermanentDelete?: unknown;
+  } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -39,7 +45,9 @@ export async function POST(
     action !== "edit" &&
     action !== "regenerate" &&
     action !== "schedule" &&
-    action !== "recycle"
+    action !== "recycle" &&
+    action !== "restore" &&
+    action !== "delete_permanent"
   ) {
     return jsonError("Unsupported action.");
   }
@@ -50,6 +58,7 @@ export async function POST(
     feedback: body.feedback,
     scheduledFor:
       action === "schedule" || action === "recycle" ? body.scheduledFor : undefined,
+    confirmPermanentDelete: action === "delete_permanent" ? body.confirmPermanentDelete : undefined,
     actor: auth.username,
   });
 }

@@ -45,6 +45,7 @@ export type MarketingStore = {
   ): Promise<MarketingAsset | null>;
   getAsset(id: string): Promise<MarketingAsset | null>;
   listAssets(): Promise<MarketingAsset[]>;
+  deleteAsset(id: string): Promise<boolean>;
 
   createTemplate(input: Omit<MarketingTemplate, "createdAt">): Promise<MarketingTemplate>;
   listTemplates(): Promise<MarketingTemplate[]>;
@@ -59,6 +60,7 @@ export type MarketingStore = {
   getContent(id: string): Promise<MarketingContent | null>;
   getContentByToken(token: string): Promise<MarketingContent | null>;
   listContent(filters?: ContentFilters): Promise<MarketingContent[]>;
+  deleteContent(id: string): Promise<boolean>;
 
   addApproval(input: Omit<MarketingApproval, "createdAt">): Promise<MarketingApproval>;
   listApprovals(contentId?: string): Promise<MarketingApproval[]>;

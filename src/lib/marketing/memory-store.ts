@@ -41,6 +41,7 @@ function matchesFilters(item: MarketingContent, filters?: ContentFilters) {
   if (filters.audience && item.audience !== filters.audience) return false;
   if (filters.category && item.category !== filters.category) return false;
   if (filters.status && item.status !== filters.status) return false;
+  if (filters.excludeStatuses?.includes(item.status)) return false;
   return true;
 }
 
@@ -140,6 +141,10 @@ export class MemoryMarketingStore implements MarketingStore {
     return [...this.assets.values()].map(clone);
   }
 
+  async deleteAsset(id: string) {
+    return this.assets.delete(id);
+  }
+
   async createTemplate(input: Omit<MarketingTemplate, "createdAt">) {
     const row: MarketingTemplate = { ...input, createdAt: nowIso() };
     this.templates.set(row.id, row);
@@ -179,6 +184,18 @@ export class MemoryMarketingStore implements MarketingStore {
       .filter((item) => matchesFilters(item, filters))
       .map(clone)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteContent(id: string) {
+    if (!this.content.has(id)) return false;
+    this.content.delete(id);
+    for (const [approvalId, approval] of this.approvals.entries()) {
+      if (approval.contentId === id) this.approvals.delete(approvalId);
+    }
+    for (const [publicationId, publication] of this.publications.entries()) {
+      if (publication.contentId === id) this.publications.delete(publicationId);
+    }
+    return true;
   }
 
   async addApproval(input: Omit<MarketingApproval, "createdAt">) {

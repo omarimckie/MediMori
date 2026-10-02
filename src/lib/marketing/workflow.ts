@@ -9,6 +9,10 @@ import {
   rejectContent,
   scheduleApproved,
 } from "./approval";
+import {
+  permanentlyDeleteRejectedContent,
+  restoreRejectedContent,
+} from "./content-lifecycle";
 import { recyclePublished } from "./recycle";
 import { ensureCatalogAssets } from "./assets";
 import { recordMockMetrics } from "./attribution";
@@ -127,7 +131,10 @@ export async function runApprovalAction(
       | "reject_all"
       | "schedule"
       | "recycle"
-      | "publish_due";
+      | "publish_due"
+      | "restore"
+      | "delete_permanent";
+    confirmPermanentDelete?: unknown;
     contentId?: string;
     weeklyPlanId?: string;
     body?: string;
@@ -163,6 +170,15 @@ export async function runApprovalAction(
       return recyclePublished(store, input.contentId, { scheduledFor: input.scheduledFor });
     case "publish_due":
       return publishDue(store);
+    case "restore":
+      if (!input.contentId) throw new Error("contentId required");
+      return restoreRejectedContent(store, input.contentId, input.actor ?? null);
+    case "delete_permanent":
+      if (!input.contentId) throw new Error("contentId required");
+      return permanentlyDeleteRejectedContent(store, input.contentId, {
+        confirmPermanentDelete: input.confirmPermanentDelete,
+        actor: input.actor ?? null,
+      });
     default:
       throw new Error("Unknown action");
   }

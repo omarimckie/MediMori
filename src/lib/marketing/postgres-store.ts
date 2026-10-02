@@ -314,8 +314,23 @@ export class PostgresMarketingStore implements MarketingStore {
       if (filters.audience && item.audience !== filters.audience) return false;
       if (filters.category && item.category !== filters.category) return false;
       if (filters.status && item.status !== filters.status) return false;
+      if (filters.excludeStatuses?.includes(item.status)) return false;
       return true;
     });
+  }
+
+  async deleteContent(id: string) {
+    const sql = getSql();
+    const rows =
+      await sql`DELETE FROM marketing_content WHERE id = ${id}::uuid RETURNING id`;
+    return rows.length > 0;
+  }
+
+  async deleteAsset(id: string) {
+    const sql = getSql();
+    const rows =
+      await sql`DELETE FROM marketing_assets WHERE id = ${id}::uuid RETURNING id`;
+    return rows.length > 0;
   }
 
   async addApproval(input: Omit<MarketingApproval, "createdAt">) {
