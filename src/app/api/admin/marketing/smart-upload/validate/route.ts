@@ -1,5 +1,5 @@
 import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
-import { validateSmartUploadStagedBlob } from "@/lib/marketing/smart-upload";
+import { isSmartUploadAspectRatioOnlyFailure, validateSmartUploadStagedBlob } from "@/lib/marketing/smart-upload";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -21,7 +21,14 @@ export async function POST(request: Request) {
       const { validateSmartUploadImageBytes } = await import("@/lib/marketing/smart-upload");
       const result = await validateSmartUploadImageBytes(buffer);
       if (!result.ok) {
-        return NextResponse.json({ ok: false, issues: result.issues }, { status: 422 });
+        return NextResponse.json(
+          {
+            ok: false,
+            issues: result.issues,
+            fixable: isSmartUploadAspectRatioOnlyFailure(result.issues),
+          },
+          { status: 422 },
+        );
       }
       return NextResponse.json({
         ok: true,
@@ -53,7 +60,14 @@ export async function POST(request: Request) {
       actor: auth.username,
     });
     if (!result.ok) {
-      return NextResponse.json({ ok: false, issues: result.issues }, { status: 422 });
+      return NextResponse.json(
+        {
+          ok: false,
+          issues: result.issues,
+          fixable: isSmartUploadAspectRatioOnlyFailure(result.issues),
+        },
+        { status: 422 },
+      );
     }
     return NextResponse.json({
       ok: true,

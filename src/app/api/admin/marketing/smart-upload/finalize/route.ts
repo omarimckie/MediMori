@@ -95,6 +95,7 @@ export async function POST(request: Request) {
       pathname: parsed.pathname,
       publicUrl: parsed.publicUrl,
       imageFilename: parsed.imageFilename,
+      fix: parsed.fix,
     });
     return NextResponse.json(result);
   } catch (error) {

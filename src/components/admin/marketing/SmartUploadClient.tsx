@@ -7,12 +7,18 @@ import {
   resourceBlobStorageUnavailableMessage,
   shouldUseResourceMultipartFallbackWhenBlobUnavailable,
 } from "@/lib/marketing/resource-multipart-fallback";
+import {
+  canStartPreviewGeneration,
+  invalidateAcceptedBeforePreviewRegeneration,
+} from "@/lib/marketing/smart-upload-preview-client";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 const UPLOAD_INTENT_URL = "/api/admin/marketing/smart-upload/upload-intent";
 const UPLOAD_URL = "/api/admin/marketing/smart-upload/upload-url";
 const VALIDATE_URL = "/api/admin/marketing/smart-upload/validate";
 const FINALIZE_URL = "/api/admin/marketing/smart-upload/finalize";
+const PREVIEW_FIX_URL = "/api/admin/marketing/smart-upload/preview-fix";
+const DISCARD_PREVIEW_URL = "/api/admin/marketing/smart-upload/discard-preview";
 
 const BOOKS = booksData.books as Array<{ id: string; title: string }>;
 
@@ -24,6 +30,19 @@ type FileStatus =
   | "failed"
   | "submitted";
 
+type FixStrategy = "pad" | "crop";
+type FixTargetRatio = "4:5" | "1:1";
+
+type PreviewState = {
+  uploadIntent: string;
+  pathname: string;
+  publicUrl: string;
+  strategy: FixStrategy;
+  targetRatio: FixTargetRatio;
+  width: number;
+  height: number;
+};
+
 type SmartUploadFile = {
   id: string;
   file: File;
@@ -34,6 +53,11 @@ type SmartUploadFile = {
   pathname: string | null;
   publicUrl: string | null;
   finalizeKey: string;
+  fixPanelOpen: boolean;
+  fixStrategy: FixStrategy;
+  fixTargetRatio: FixTargetRatio;
+  preview: PreviewState | null;
+  acceptedPreview: PreviewState | null;
 };
 
 type WeeklyPlanOption = { id: string; weekStart: string; campaignId: string };
@@ -50,7 +74,27 @@ function newFileEntry(file: File): SmartUploadFile {
     pathname: null,
     publicUrl: null,
     finalizeKey: crypto.randomUUID(),
+    fixPanelOpen: false,
+    fixStrategy: "pad",
+    fixTargetRatio: "4:5",
+    preview: null,
+    acceptedPreview: null,
   };
+}
+
+function isAspectRatioFixable(item: SmartUploadFile): boolean {
+  if (!item.validationIssues.length) return false;
+  if (!item.uploadIntent || !item.pathname || !item.publicUrl) return false;
+  if (item.uploadIntent === "local-multipart") return false;
+  return item.validationIssues.every((issue) => issue.code === "invalid_aspect_ratio");
+}
+
+function previewMatchesSettings(
+  preview: PreviewState | null,
+  strategy: FixStrategy,
+  targetRatio: FixTargetRatio,
+): boolean {
+  return Boolean(preview && preview.strategy === strategy && preview.targetRatio === targetRatio);
 }
 
 function statusLabel(status: FileStatus): string {
@@ -114,6 +158,7 @@ export function SmartUploadClient() {
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previewGeneratingEntryId, setPreviewGeneratingEntryId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadMeta = useCallback(async () => {
@@ -342,7 +387,100 @@ export function SmartUploadClient() {
     });
   }
 
+  async function discardPreviewForEntry(entry: SmartUploadFile, preview: PreviewState): Promise<void> {
+    if (preview.pathname === entry.pathname) return;
+    try {
+      await fetch(DISCARD_PREVIEW_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uploadIntent: preview.uploadIntent,
+          pathname: preview.pathname,
+          publicUrl: preview.publicUrl,
+        }),
+      });
+    } catch {
+      // best-effort discard
+    }
+  }
+
+  async function generatePreview(entry: SmartUploadFile): Promise<void> {
+    if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
+    if (!canStartPreviewGeneration(entry.id, previewGeneratingEntryId)) return;
+
+    setPreviewGeneratingEntryId(entry.id);
+    const previousPreview = entry.preview;
+    updateFile(entry.id, {
+      ...invalidateAcceptedBeforePreviewRegeneration(),
+      error: null,
+    });
+
+    try {
+      if (previousPreview) {
+        await discardPreviewForEntry(entry, previousPreview);
+      }
+      updateFile(entry.id, { status: "validating" });
+      const response = await fetch(PREVIEW_FIX_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          finalizeKey: entry.finalizeKey,
+          uploadIntent: entry.uploadIntent,
+          pathname: entry.pathname,
+          publicUrl: entry.publicUrl,
+          strategy: entry.fixStrategy,
+          targetRatio: entry.fixTargetRatio,
+          imageFilename: entry.file.name,
+        }),
+      });
+      if (!response.ok) {
+        updateFile(entry.id, {
+          status: "needs_attention",
+          error: await parseApiError(response),
+          acceptedPreview: null,
+        });
+        return;
+      }
+      const json = (await response.json()) as {
+        preview: PreviewState;
+      };
+      updateFile(entry.id, {
+        status: "needs_attention",
+        error: null,
+        preview: json.preview,
+        acceptedPreview: null,
+      });
+    } finally {
+      setPreviewGeneratingEntryId(null);
+    }
+  }
+
+  async function discardPreviewAction(entry: SmartUploadFile): Promise<void> {
+    if (entry.preview) {
+      await discardPreviewForEntry(entry, entry.preview);
+    }
+    updateFile(entry.id, {
+      preview: null,
+      acceptedPreview: null,
+      status: "needs_attention",
+    });
+  }
+
+  function acceptPreview(entry: SmartUploadFile): void {
+    if (!entry.preview) return;
+    if (!previewMatchesSettings(entry.preview, entry.fixStrategy, entry.fixTargetRatio)) {
+      return;
+    }
+    updateFile(entry.id, {
+      acceptedPreview: entry.preview,
+      status: "ready",
+      error: null,
+      validationIssues: [],
+    });
+  }
+
   async function finalizeOne(entry: SmartUploadFile): Promise<void> {
+    const derivative = entry.acceptedPreview;
     if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
     updateFile(entry.id, { status: "validating", error: null });
 
@@ -358,21 +496,33 @@ export function SmartUploadClient() {
       if (bookId) form.set("bookId", bookId);
       response = await fetch(FINALIZE_URL, { method: "POST", body: form });
     } else {
+      const body: Record<string, unknown> = {
+        caption: caption.trim(),
+        batchId,
+        finalizeKey: entry.finalizeKey,
+        weeklyPlanId: weeklyPlanId || null,
+        campaignId: campaignId || null,
+        bookId: bookId || null,
+        imageFilename: entry.file.name,
+      };
+      if (derivative) {
+        body.uploadIntent = derivative.uploadIntent;
+        body.pathname = derivative.pathname;
+        body.publicUrl = derivative.publicUrl;
+        body.smartUploadFixStrategy = derivative.strategy;
+        body.smartUploadFixTargetRatio = derivative.targetRatio;
+        body.originalUploadIntent = entry.uploadIntent;
+        body.originalPathname = entry.pathname;
+        body.originalPublicUrl = entry.publicUrl;
+      } else {
+        body.uploadIntent = entry.uploadIntent;
+        body.pathname = entry.pathname;
+        body.publicUrl = entry.publicUrl;
+      }
       response = await fetch(FINALIZE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caption: caption.trim(),
-          batchId,
-          finalizeKey: entry.finalizeKey,
-          weeklyPlanId: weeklyPlanId || null,
-          campaignId: campaignId || null,
-          bookId: bookId || null,
-          uploadIntent: entry.uploadIntent,
-          pathname: entry.pathname,
-          publicUrl: entry.publicUrl,
-          imageFilename: entry.file.name,
-        }),
+        body: JSON.stringify(body),
       });
     }
     if (response.status === 422) {
@@ -431,7 +581,12 @@ export function SmartUploadClient() {
     setBusy(false);
   }
 
-  const submittableCount = files.filter((f) => f.status === "ready" && f.uploadIntent).length;
+  const submittableCount = files.filter(
+    (f) =>
+      f.status === "ready" &&
+      f.uploadIntent &&
+      (!f.acceptedPreview || previewMatchesSettings(f.preview, f.fixStrategy, f.fixTargetRatio)),
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -561,10 +716,161 @@ export function SmartUploadClient() {
                       ))}
                     </ul>
                   ) : null}
-                  {item.status === "needs_attention" ? (
+                  {isAspectRatioFixable(item) ? (
+                    <div className="mt-3 space-y-3 rounded-lg border border-brand-brown/15 bg-white p-3">
+                      {!item.fixPanelOpen ? (
+                        <SecondaryButton
+                          type="button"
+                          disabled={busy}
+                          onClick={() => updateFile(item.id, { fixPanelOpen: true })}
+                        >
+                          Fix + Preview
+                        </SecondaryButton>
+                      ) : (
+                        <>
+                          <p className="text-sm font-bold text-brand-navy">Fix Image</p>
+                          <fieldset className="space-y-2 text-sm">
+                            <p className="font-semibold text-brand-charcoal">Strategy</p>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`strategy-${item.id}`}
+                                checked={item.fixStrategy === "pad"}
+                                onChange={() =>
+                                  updateFile(item.id, {
+                                    fixStrategy: "pad",
+                                    acceptedPreview: null,
+                                    preview: null,
+                                  })
+                                }
+                              />
+                              Fit with padding
+                            </label>
+                            <p className="ml-6 text-xs text-brand-charcoal/65">
+                              Keep the entire image. Padding is added where needed.
+                            </p>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`strategy-${item.id}`}
+                                checked={item.fixStrategy === "crop"}
+                                onChange={() =>
+                                  updateFile(item.id, {
+                                    fixStrategy: "crop",
+                                    acceptedPreview: null,
+                                    preview: null,
+                                  })
+                                }
+                              />
+                              Crop
+                            </label>
+                            <p className="ml-6 text-xs text-brand-charcoal/65">
+                              Fill the entire frame. Some content around the edges may be removed.
+                            </p>
+                            <p className="pt-1 font-semibold text-brand-charcoal">Target</p>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`target-${item.id}`}
+                                checked={item.fixTargetRatio === "4:5"}
+                                onChange={() =>
+                                  updateFile(item.id, {
+                                    fixTargetRatio: "4:5",
+                                    acceptedPreview: null,
+                                    preview: null,
+                                  })
+                                }
+                              />
+                              4:5
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`target-${item.id}`}
+                                checked={item.fixTargetRatio === "1:1"}
+                                onChange={() =>
+                                  updateFile(item.id, {
+                                    fixTargetRatio: "1:1",
+                                    acceptedPreview: null,
+                                    preview: null,
+                                  })
+                                }
+                              />
+                              Square
+                            </label>
+                          </fieldset>
+                          <SecondaryButton
+                            type="button"
+                            disabled={
+                              busy || !canStartPreviewGeneration(item.id, previewGeneratingEntryId)
+                            }
+                            onClick={() => void generatePreview(item)}
+                          >
+                            Generate Preview
+                          </SecondaryButton>
+                          {item.preview ? (
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold text-brand-charcoal">
+                                Preview · {item.preview.strategy === "pad" ? "Fit with padding" : "Crop"} ·{" "}
+                                {item.preview.targetRatio === "4:5" ? "4:5" : "Square"} (
+                                {item.preview.width}×{item.preview.height})
+                              </p>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Original</p>
+                                  {item.publicUrl ? (
+                                    <img
+                                      src={item.publicUrl}
+                                      alt="Original upload"
+                                      className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
+                                    />
+                                  ) : null}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Preview</p>
+                                  <img
+                                    src={item.preview.publicUrl}
+                                    alt="Corrected preview"
+                                    className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <SecondaryButton
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void discardPreviewAction(item)}
+                                >
+                                  Discard
+                                </SecondaryButton>
+                                <PrimaryButton
+                                  type="button"
+                                  disabled={
+                                    busy ||
+                                    !previewMatchesSettings(
+                                      item.preview,
+                                      item.fixStrategy,
+                                      item.fixTargetRatio,
+                                    )
+                                  }
+                                  onClick={() => acceptPreview(item)}
+                                >
+                                  Use This Image
+                                </PrimaryButton>
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  ) : item.status === "needs_attention" ? (
                     <p className="mt-2 text-xs text-brand-charcoal/70">
-                      Correct the image (aspect ratio / format) and re-add it to upload again. Fix +
-                      Preview is not available yet.
+                      This issue cannot be fixed here. Adjust the file and upload again.
+                    </p>
+                  ) : null}
+                  {item.acceptedPreview && item.status === "ready" ? (
+                    <p className="mt-2 text-xs font-semibold text-brand-green-deep">
+                      Corrected image accepted — included in Submit valid.
                     </p>
                   ) : null}
                 </div>

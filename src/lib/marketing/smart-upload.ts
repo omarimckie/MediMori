@@ -7,6 +7,7 @@ import {
   assertPreviewPublicUrlMatchesPathname,
   deleteMarketingBlob,
   readMarketingBlobBuffer,
+  tryResolveMarketingBlobPathnameFromUrl,
   uploadPublicMarketingFile,
 } from "./marketing-blob";
 import {
@@ -14,11 +15,25 @@ import {
   isAssetSuitableForPlatform,
 } from "./platform-suitability";
 import { scanMarketingText } from "./safety";
-import { verifySmartUploadIntentForPathname } from "./smart-upload-intent";
+import {
+  issueSmartUploadPreviewDerivativeIntent,
+  verifySmartUploadIntentForPathname,
+  verifySmartUploadPreviewDerivativeIntentForFinalize,
+  verifySmartUploadPreviewDerivativeIntentForPathname,
+} from "./smart-upload-intent";
 import {
   isSmartUploadFinalizeKeyConflict,
   type SmartUploadFinalizeLookup,
 } from "./smart-upload-idempotency";
+import {
+  isSmartUploadAspectRatioOnlyFailure,
+  SMART_UPLOAD_DERIVATIVE_TAG,
+  smartUploadOriginalTag,
+  transformSmartUploadImage,
+  type SmartUploadFixStrategy,
+  type SmartUploadFixTargetRatio,
+} from "./smart-upload-fix";
+import type { SmartUploadStagedBlobRef } from "./smart-upload-api";
 import type { MarketingStore } from "./store";
 import type {
   AudienceId,
@@ -51,11 +66,20 @@ export type SmartUploadFinalizeInput = {
   actor: string | null;
 };
 
+export type SmartUploadFixFinalizeBundle = {
+  strategy: SmartUploadFixStrategy;
+  targetRatio: SmartUploadFixTargetRatio;
+  original: SmartUploadStagedBlobRef;
+};
+
 export type SmartUploadBlobFinalizeInput = SmartUploadFinalizeInput & {
   uploadIntent: string;
   pathname: string;
   publicUrl: string;
+  fix?: SmartUploadFixFinalizeBundle;
 };
+
+export { isSmartUploadAspectRatioOnlyFailure } from "./smart-upload-fix";
 
 export type SmartUploadBufferFinalizeInput = SmartUploadFinalizeInput & {
   imageBuffer: Buffer;
@@ -159,8 +183,7 @@ export async function findSmartUploadFinalizeResult(
 
 type OwnedFinalizeResources = {
   contentIds: string[];
-  assetCreated: boolean;
-  assetId: string | null;
+  createdAssetIds: string[];
   blobPathname: string | null;
 };
 
@@ -170,16 +193,18 @@ async function rollbackOwnedFinalizeAttempt(
   finalizeKey?: string,
 ) {
   const protectedContentIds = new Set<string>();
-  let protectedAssetId: string | null = null;
+  const protectedAssetIds = new Set<string>();
   if (finalizeKey?.trim()) {
     const lookup = await store.findSmartUploadContentByFinalizeKey(finalizeKey);
     if (lookup.status === "complete") {
       protectedContentIds.add(lookup.instagram.id);
       protectedContentIds.add(lookup.facebook.id);
-      protectedAssetId = lookup.assetId;
+      protectedAssetIds.add(lookup.assetId);
+      const originalId = lookup.instagram.metadata?.originalAssetId?.trim();
+      if (originalId) protectedAssetIds.add(originalId);
     } else if (lookup.status === "partial") {
       protectedContentIds.add(lookup.instagram.id);
-      protectedAssetId = lookup.assetId;
+      protectedAssetIds.add(lookup.assetId);
     }
   }
 
@@ -187,8 +212,9 @@ async function rollbackOwnedFinalizeAttempt(
     if (protectedContentIds.has(contentId)) continue;
     await store.deleteContent(contentId);
   }
-  if (owned.assetCreated && owned.assetId && owned.assetId !== protectedAssetId) {
-    await store.deleteAsset(owned.assetId);
+  for (const assetId of owned.createdAssetIds) {
+    if (protectedAssetIds.has(assetId)) continue;
+    await store.deleteAsset(assetId);
   }
   if (owned.blobPathname) {
     await deleteMarketingBlob(owned.blobPathname);
@@ -365,8 +391,7 @@ async function completePartialSmartUpload(
   const assetId = lookup.assetId;
   const owned: OwnedFinalizeResources = {
     contentIds: [],
-    assetCreated: false,
-    assetId,
+    createdAssetIds: [],
     blobPathname: null,
   };
 
@@ -374,7 +399,7 @@ async function completePartialSmartUpload(
   if (!asset) {
     const ctxForAsset = await buildSmartUploadPersistContext(store, input, validation, assetId);
     asset = await createSmartUploadAsset(store, input, ctxForAsset, assetId);
-    owned.assetCreated = true;
+    owned.createdAssetIds.push(assetId);
   } else {
     assertSmartUploadAssetRecord(asset, assetId);
   }
@@ -442,8 +467,7 @@ async function persistSmartUploadRecords(
   const ctx = await buildSmartUploadPersistContext(store, input, validation, assetId);
   const owned: OwnedFinalizeResources = {
     contentIds: [],
-    assetCreated: false,
-    assetId,
+    createdAssetIds: [],
     blobPathname: input.rollbackBlobPathname,
   };
 
@@ -477,7 +501,7 @@ async function persistSmartUploadRecords(
     }
 
     const asset = await createSmartUploadAsset(store, input, ctx, assetId);
-    owned.assetCreated = true;
+    owned.createdAssetIds.push(asset.id);
 
     await recordSmartUploadFinalizedEvent(store, ctx, input, instagram, facebook, asset.id);
 
@@ -524,6 +548,472 @@ export async function validateSmartUploadStagedBlob(input: {
   return validateSmartUploadImageBytes(buffer);
 }
 
+async function probeSmartUploadOriginalTruth(buffer: Buffer): Promise<AssetImageTruth> {
+  assertImageUpload(buffer);
+  const dimensions = await probeImageDimensions(buffer);
+  return truthFromDimensions(dimensions.width, dimensions.height, dimensions.mimeType);
+}
+
+async function createSmartUploadOriginalAssetRecord(
+  store: MarketingStore,
+  input: SmartUploadPersistInput,
+  ctx: {
+    caption: string;
+    campaignId: string | null;
+    truth: AssetImageTruth;
+    mime: string;
+  },
+  assetId: string,
+  assetUrl: string,
+): Promise<MarketingAsset> {
+  const truth = ctx.truth;
+  return store.createAsset({
+    id: assetId,
+    name: sanitizeUploadFilename(input.imageFilename),
+    type: "upload",
+    source: SMART_UPLOAD_SOURCE,
+    bookId: input.bookId ?? null,
+    characterId: null,
+    campaignId: ctx.campaignId,
+    approved: true,
+    usageRestrictions: "Smart Upload original image (immutable).",
+    aspectRatio: formatAspectRatioLabel(truth.width, truth.height),
+    imageWidth: truth.width,
+    imageHeight: truth.height,
+    mimeType: truth.mimeType,
+    tags: ["smart_upload", `batch:${input.batchId}`],
+    url: assetUrl,
+    altText: ctx.caption.slice(0, 120),
+    isDemo: false,
+  });
+}
+
+async function createSmartUploadDerivativeAssetRecord(
+  store: MarketingStore,
+  input: SmartUploadPersistInput,
+  ctx: {
+    caption: string;
+    campaignId: string | null;
+    truth: AssetImageTruth;
+    mime: string;
+    strategy: SmartUploadFixStrategy;
+    targetRatio: SmartUploadFixTargetRatio;
+    originalAssetId: string;
+  },
+  assetId: string,
+  assetUrl: string,
+): Promise<MarketingAsset> {
+  const truth = ctx.truth;
+  return store.createAsset({
+    id: assetId,
+    name: `${sanitizeUploadFilename(input.imageFilename)} (corrected)`,
+    type: "upload",
+    source: SMART_UPLOAD_SOURCE,
+    bookId: input.bookId ?? null,
+    characterId: null,
+    campaignId: ctx.campaignId,
+    approved: true,
+    usageRestrictions: `Smart Upload corrected derivative (${ctx.strategy}, ${ctx.targetRatio}).`,
+    aspectRatio: formatAspectRatioLabel(truth.width, truth.height),
+    imageWidth: truth.width,
+    imageHeight: truth.height,
+    mimeType: truth.mimeType,
+    tags: [
+      "smart_upload",
+      SMART_UPLOAD_DERIVATIVE_TAG,
+      smartUploadOriginalTag(ctx.originalAssetId),
+      `batch:${input.batchId}`,
+    ],
+    url: assetUrl,
+    altText: ctx.caption.slice(0, 120),
+    isDemo: false,
+  });
+}
+
+async function buildFixedSmartUploadPersistContext(
+  store: MarketingStore,
+  input: SmartUploadPersistInput,
+  derivativeValidation: { truth: AssetImageTruth; mime: string },
+  derivativeAssetId: string,
+  originalAssetId: string,
+  fix: SmartUploadFixFinalizeBundle,
+): Promise<SmartUploadPersistContext> {
+  const caption = input.caption.trim();
+  const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
+    store,
+    input.weeklyPlanId,
+    input.campaignId,
+  );
+  const flags = scanMarketingText(caption);
+  const warnings = [
+    "Smart Upload — corrected image validated for Instagram and Facebook feed.",
+    `Fix: ${fix.strategy} · ${fix.targetRatio}`,
+  ];
+
+  const sharedMetadata: MarketingContentMetadata = {
+    source: "smart_upload",
+    batchId: input.batchId,
+    smartUploadFinalizeKey: input.finalizeKey,
+    smartUploadVersion: 1,
+    placement: "feed",
+    originalAssetId,
+    smartUploadFixStrategy: fix.strategy,
+    smartUploadFixTargetRatio: fix.targetRatio,
+  };
+
+  const baseContent = {
+    campaignId,
+    weeklyPlanId,
+    format: "post" as const,
+    category: input.category ?? "educational",
+    audience: input.audience ?? "parents",
+    status: "needs_review" as const,
+    body: caption,
+    cta: null,
+    seoTitle: null,
+    seoDescription: null,
+    scheduledFor: null,
+    timezone: getMarketingTimezone(),
+    assetIds: [derivativeAssetId],
+    needsNewAsset: false,
+    warnings,
+    safetyFlags: flags,
+    originalBody: null,
+    bookId: input.bookId ?? null,
+    isDemo: false,
+  };
+
+  return {
+    caption,
+    weeklyPlanId,
+    campaignId,
+    truth: derivativeValidation.truth,
+    sharedMetadata,
+    baseContent,
+  };
+}
+
+export function assertDistinctSmartUploadOriginalAndDerivativePathnames(
+  originalPathname: string,
+  derivativePathname: string,
+): void {
+  if (originalPathname.trim() === derivativePathname.trim()) {
+    throw new Error("Original and derivative pathnames must differ for fixed Smart Upload finalize.");
+  }
+}
+
+async function persistFixedSmartUploadRecords(
+  store: MarketingStore,
+  input: SmartUploadPersistInput,
+  originalTruth: AssetImageTruth,
+  originalMime: string,
+  derivativeValidation: { truth: AssetImageTruth; mime: string },
+  fix: SmartUploadFixFinalizeBundle,
+  originalAssetUrl: string,
+  derivativeAssetUrl: string,
+): Promise<SmartUploadFinalizeResult> {
+  const initialLookup = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+  if (initialLookup.status === "inconsistent") {
+    throw new Error(initialLookup.reason);
+  }
+  if (initialLookup.status === "complete") {
+    return finalizeResultFromComplete(initialLookup, true);
+  }
+  if (initialLookup.status === "partial") {
+    throw new Error(
+      "Smart Upload finalize key is in a partial state; fixed finalize cannot complete it safely.",
+    );
+  }
+
+  const originalAssetId = crypto.randomUUID();
+  const derivativeAssetId = crypto.randomUUID();
+  const ctx = await buildFixedSmartUploadPersistContext(
+    store,
+    input,
+    derivativeValidation,
+    derivativeAssetId,
+    originalAssetId,
+    fix,
+  );
+
+  const owned: OwnedFinalizeResources = {
+    contentIds: [],
+    createdAssetIds: [],
+    blobPathname: null,
+  };
+
+  try {
+    const instagram = await store.createContent({
+      ...ctx.baseContent,
+      id: crypto.randomUUID(),
+      platform: "instagram",
+      title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Instagram post",
+      trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
+      metadata: { ...ctx.sharedMetadata },
+    });
+    owned.contentIds.push(instagram.id);
+
+    let facebook: MarketingContent;
+    try {
+      facebook = await store.createContent({
+        ...ctx.baseContent,
+        id: crypto.randomUUID(),
+        platform: "facebook",
+        title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
+        trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
+        metadata: { ...ctx.sharedMetadata },
+      });
+      owned.contentIds.push(facebook.id);
+    } catch (error) {
+      if (isSmartUploadFinalizeKeyConflict(error)) {
+        return recoverSmartUploadAfterConflict(store, input, derivativeValidation, owned);
+      }
+      throw error;
+    }
+
+    const originalAsset = await createSmartUploadOriginalAssetRecord(
+      store,
+      input,
+      { caption: ctx.caption, campaignId: ctx.campaignId, truth: originalTruth, mime: originalMime },
+      originalAssetId,
+      originalAssetUrl,
+    );
+    owned.createdAssetIds.push(originalAsset.id);
+
+    const derivativeAsset = await createSmartUploadDerivativeAssetRecord(
+      store,
+      input,
+      {
+        caption: ctx.caption,
+        campaignId: ctx.campaignId,
+        truth: derivativeValidation.truth,
+        mime: derivativeValidation.mime,
+        strategy: fix.strategy,
+        targetRatio: fix.targetRatio,
+        originalAssetId,
+      },
+      derivativeAssetId,
+      derivativeAssetUrl,
+    );
+    owned.createdAssetIds.push(derivativeAsset.id);
+
+    await recordSmartUploadFinalizedEvent(
+      store,
+      ctx,
+      input,
+      instagram,
+      facebook,
+      derivativeAsset.id,
+    );
+
+    return {
+      assetId: derivativeAsset.id,
+      instagramContentId: instagram.id,
+      facebookContentId: facebook.id,
+      instagram,
+      facebook,
+      idempotentReplay: false,
+    };
+  } catch (error) {
+    if (isSmartUploadFinalizeKeyConflict(error)) {
+      return recoverSmartUploadAfterConflict(store, input, derivativeValidation, owned);
+    }
+    await rollbackOwnedFinalizeAttempt(store, owned, input.finalizeKey);
+    throw error;
+  }
+}
+
+export async function finalizeSmartUploadFixedFromStagedBlobs(
+  store: MarketingStore,
+  input: SmartUploadBlobFinalizeInput,
+): Promise<SmartUploadFinalizeResult> {
+  if (!input.fix) {
+    throw new Error("Fixed finalize requires a fix bundle.");
+  }
+
+  assertDistinctSmartUploadOriginalAndDerivativePathnames(
+    input.fix.original.pathname,
+    input.pathname,
+  );
+
+  verifySmartUploadIntentForPathname(
+    input.fix.original.uploadIntent,
+    input.actor,
+    input.fix.original.pathname,
+  );
+  assertPreviewPublicUrlMatchesPathname(
+    input.fix.original.pathname,
+    input.fix.original.publicUrl,
+  );
+
+  verifySmartUploadPreviewDerivativeIntentForFinalize(
+    input.uploadIntent,
+    input.actor,
+    {
+      derivativePathname: input.pathname,
+      originalPathname: input.fix.original.pathname,
+      finalizeKey: input.finalizeKey,
+      strategy: input.fix.strategy,
+      targetRatio: input.fix.targetRatio,
+    },
+  );
+  assertPreviewPublicUrlMatchesPathname(input.pathname, input.publicUrl);
+
+  const originalBuffer = await readMarketingBlobBuffer(input.fix.original.pathname, "public");
+  const originalMime = assertImageUpload(originalBuffer).mime;
+  const originalTruth = await probeSmartUploadOriginalTruth(originalBuffer);
+
+  const derivativeBuffer = await readMarketingBlobBuffer(input.pathname, "public");
+  const derivativeValidation = assertValidationOk(
+    await validateSmartUploadImageBytes(derivativeBuffer),
+  );
+
+  return persistFixedSmartUploadRecords(
+    store,
+    {
+      ...input,
+      imageBuffer: await readMarketingBlobBuffer(input.pathname, "public"),
+      imageFilename: input.imageFilename ?? "upload.jpg",
+      assetUrl: input.publicUrl.trim(),
+      rollbackBlobPathname: null,
+    },
+    originalTruth,
+    originalMime,
+    derivativeValidation,
+    input.fix,
+    input.fix.original.publicUrl.trim(),
+    input.publicUrl.trim(),
+  );
+}
+
+/** Test helper: finalize fixed upload from in-memory buffers (no blob I/O). */
+export async function finalizeSmartUploadFixedFromBuffers(
+  store: MarketingStore,
+  input: SmartUploadFinalizeInput & {
+    fix: SmartUploadFixFinalizeBundle;
+    originalBuffer: Buffer;
+    derivativeBuffer: Buffer;
+    originalAssetUrl: string;
+    derivativeAssetUrl: string;
+    imageFilename?: string;
+  },
+): Promise<SmartUploadFinalizeResult> {
+  const existing = await findSmartUploadFinalizeResult(store, input.finalizeKey);
+  if (existing) return existing;
+
+  const derivativePathname =
+    tryResolveMarketingBlobPathnameFromUrl(input.derivativeAssetUrl) ?? "";
+  assertDistinctSmartUploadOriginalAndDerivativePathnames(
+    input.fix.original.pathname,
+    derivativePathname,
+  );
+
+  const caption = input.caption.trim();
+  if (!caption) throw new Error("Caption is required.");
+
+  const originalMime = assertImageUpload(input.originalBuffer).mime;
+  const originalTruth = await probeSmartUploadOriginalTruth(input.originalBuffer);
+  const derivativeValidation = assertValidationOk(
+    await validateSmartUploadImageBytes(input.derivativeBuffer),
+  );
+
+  return persistFixedSmartUploadRecords(
+    store,
+    {
+      ...input,
+      imageBuffer: input.derivativeBuffer,
+      imageFilename: input.imageFilename ?? "upload.jpg",
+      assetUrl: input.derivativeAssetUrl,
+      rollbackBlobPathname: null,
+    },
+    originalTruth,
+    originalMime,
+    derivativeValidation,
+    input.fix,
+    input.originalAssetUrl,
+    input.derivativeAssetUrl,
+  );
+}
+
+export async function generateSmartUploadPreviewFix(input: {
+  actor: string | null;
+  finalizeKey: string;
+  original: SmartUploadStagedBlobRef;
+  strategy: SmartUploadFixStrategy;
+  targetRatio: SmartUploadFixTargetRatio;
+  imageFilename?: string;
+}): Promise<{
+  uploadIntent: string;
+  pathname: string;
+  publicUrl: string;
+  strategy: SmartUploadFixStrategy;
+  targetRatio: SmartUploadFixTargetRatio;
+  width: number;
+  height: number;
+  mime: string;
+}> {
+  verifySmartUploadIntentForPathname(
+    input.original.uploadIntent,
+    input.actor,
+    input.original.pathname,
+  );
+  assertPreviewPublicUrlMatchesPathname(input.original.pathname, input.original.publicUrl);
+  const originalBuffer = await readMarketingBlobBuffer(input.original.pathname, "public");
+  const validation = await validateSmartUploadImageBytes(originalBuffer);
+  if (validation.ok) {
+    throw new Error("Image already passes Smart Upload validation; fix is not required.");
+  }
+  if (!isSmartUploadAspectRatioOnlyFailure(validation.issues)) {
+    throw new Error("Only invalid aspect ratio images can be fixed in Smart Upload Phase 3.");
+  }
+
+  const transformed = await transformSmartUploadImage({
+    buffer: originalBuffer,
+    strategy: input.strategy,
+    targetRatio: input.targetRatio,
+  });
+
+  const { kind } = assertImageUpload(transformed.buffer);
+  const extension = extensionForKind(kind);
+  const uploaded = await uploadPublicMarketingFile(transformed.buffer, transformed.mime, extension);
+  assertDistinctSmartUploadOriginalAndDerivativePathnames(
+    input.original.pathname,
+    uploaded.pathname,
+  );
+  const { uploadIntent } = issueSmartUploadPreviewDerivativeIntent({
+    username: input.actor ?? "",
+    pathname: uploaded.pathname,
+    originalPathname: input.original.pathname,
+    finalizeKey: input.finalizeKey,
+    strategy: input.strategy,
+    targetRatio: input.targetRatio,
+  });
+
+  return {
+    uploadIntent,
+    pathname: uploaded.pathname,
+    publicUrl: uploaded.url,
+    strategy: input.strategy,
+    targetRatio: input.targetRatio,
+    width: transformed.truth.width,
+    height: transformed.truth.height,
+    mime: transformed.mime,
+  };
+}
+
+export async function discardSmartUploadPreviewDerivative(input: {
+  actor: string | null;
+  preview: SmartUploadStagedBlobRef;
+}): Promise<void> {
+  verifySmartUploadPreviewDerivativeIntentForPathname(
+    input.preview.uploadIntent,
+    input.actor,
+    input.preview.pathname,
+  );
+  assertPreviewPublicUrlMatchesPathname(input.preview.pathname, input.preview.publicUrl);
+  await deleteMarketingBlob(input.preview.pathname);
+}
+
 export async function finalizeSmartUploadFromBuffer(
   store: MarketingStore,
   input: SmartUploadBufferFinalizeInput,
@@ -564,6 +1054,17 @@ export async function finalizeSmartUploadFromBlob(
   const existing = await findSmartUploadFinalizeResult(store, input.finalizeKey);
   if (existing) return existing;
 
+  const caption = input.caption.trim();
+  if (!caption) throw new Error("Caption is required.");
+
+  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
+    throw new Error("Unknown book.");
+  }
+
+  if (input.fix) {
+    return finalizeSmartUploadFixedFromStagedBlobs(store, input);
+  }
+
   const validation = assertValidationOk(
     await validateSmartUploadStagedBlob({
       uploadIntent: input.uploadIntent,
@@ -572,13 +1073,6 @@ export async function finalizeSmartUploadFromBlob(
       actor: input.actor,
     }),
   );
-
-  const caption = input.caption.trim();
-  if (!caption) throw new Error("Caption is required.");
-
-  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
-    throw new Error("Unknown book.");
-  }
 
   const buffer = await readMarketingBlobBuffer(input.pathname, "public");
 
