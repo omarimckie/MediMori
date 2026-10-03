@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 import { MemoryMarketingStore } from "./memory-store";
 import { resolveContentImageUrl } from "./assets";
 import {
@@ -13,7 +13,24 @@ const PHASE2_ASSET_ID = "239a03b0-2182-4a21-a997-052514c1cec4";
 const BLOB_URL =
   "https://Q7Bbz4IQuVq0GO24.public.blob.vercel-storage.com/marketing/public/e9383e40db0141b2b4b8e5bdc44663c2.png";
 
-const env = { NEXT_PUBLIC_SITE_URL: "https://twilight-feather.com" };
+const CANONICAL_SITE = "https://twilight-feather.com";
+
+let savedNextPublicSiteUrl: string | undefined;
+let savedVercelUrl: string | undefined;
+
+beforeEach(() => {
+  savedNextPublicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  savedVercelUrl = process.env.VERCEL_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = CANONICAL_SITE;
+  delete process.env.VERCEL_URL;
+});
+
+afterEach(() => {
+  if (savedNextPublicSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+  else process.env.NEXT_PUBLIC_SITE_URL = savedNextPublicSiteUrl;
+  if (savedVercelUrl === undefined) delete process.env.VERCEL_URL;
+  else process.env.VERCEL_URL = savedVercelUrl;
+});
 
 function blobAsset(id: string = PHASE2_ASSET_ID) {
   return {
@@ -39,20 +56,20 @@ function blobAsset(id: string = PHASE2_ASSET_ID) {
 }
 
 test("marketingAssetPublicImageUrl uses canonical site origin", () => {
-  const url = marketingAssetPublicImageUrl(PHASE2_ASSET_ID, env);
-  assert.equal(url, `https://twilight-feather.com/api/marketing/assets/${PHASE2_ASSET_ID}/image`);
+  const url = marketingAssetPublicImageUrl(PHASE2_ASSET_ID);
+  assert.equal(url, `${CANONICAL_SITE}/api/marketing/assets/${PHASE2_ASSET_ID}/image`);
 });
 
 test("Phase 2 style blob URL resolves to canonical app URL when content approved", () => {
-  const resolved = resolvePublishableMarketingAssetUrl(blobAsset(), "approved", env);
+  const resolved = resolvePublishableMarketingAssetUrl(blobAsset(), "approved");
   assert.equal(
     resolved,
-    `https://twilight-feather.com/api/marketing/assets/${PHASE2_ASSET_ID}/image`,
+    `${CANONICAL_SITE}/api/marketing/assets/${PHASE2_ASSET_ID}/image`,
   );
 });
 
 test("blob-backed asset with needs_review content keeps raw blob URL for resolution", () => {
-  const resolved = resolvePublishableMarketingAssetUrl(blobAsset(), "needs_review", env);
+  const resolved = resolvePublishableMarketingAssetUrl(blobAsset(), "needs_review");
   assert.equal(resolved, BLOB_URL);
 });
 
@@ -65,14 +82,11 @@ test("legitimate external public image URL is preserved", () => {
       url: external,
     },
     "approved",
-    env,
   );
   assert.equal(resolved, external);
 });
 
 test("resolveContentImageUrl returns canonical URL only when content is approved", async () => {
-  const prevSite = process.env.NEXT_PUBLIC_SITE_URL;
-  process.env.NEXT_PUBLIC_SITE_URL = "https://twilight-feather.com";
   const store = new MemoryMarketingStore();
   await store.createAsset(blobAsset());
   const approvedContent: MarketingContent = {
@@ -109,9 +123,6 @@ test("resolveContentImageUrl returns canonical URL only when content is approved
   const needsReview = { ...approvedContent, status: "needs_review" as const };
   const raw = await resolveContentImageUrl(store, needsReview);
   assert.equal(raw, BLOB_URL);
-
-  if (prevSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
-  else process.env.NEXT_PUBLIC_SITE_URL = prevSite;
 });
 
 test("protected non-image asset is not rewritten to proxy URL", () => {
@@ -122,7 +133,6 @@ test("protected non-image asset is not rewritten to proxy URL", () => {
       url: "https://store.public.blob.vercel-storage.com/marketing/private/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
     },
     "approved",
-    env,
   );
   assert.match(resolved, /marketing\/private/);
 });
