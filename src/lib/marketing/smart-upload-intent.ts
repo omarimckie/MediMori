@@ -255,3 +255,30 @@ export function verifySmartUploadPreviewDerivativeIntentForFinalize(
   }
   return payload;
 }
+
+/** Authorize admin staged-image display for original or preview-derivative intents. */
+export function verifySmartUploadStagedDisplayIntentForPathname(
+  uploadIntent: string,
+  actorUsername: string | null,
+  pathname: string,
+): SmartUploadIntentPayload | SmartUploadPreviewDerivativeIntentPayload {
+  const payloadSegment = verifySignature(uploadIntent);
+  let kind: string | undefined;
+  try {
+    kind = (JSON.parse(Buffer.from(payloadSegment, "base64url").toString("utf8")) as { kind?: string })
+      .kind;
+  } catch {
+    throw new Error("Invalid upload intent.");
+  }
+  if (kind === SMART_UPLOAD_INTENT_KIND_UPLOAD) {
+    return verifySmartUploadIntentForPathname(uploadIntent, actorUsername, pathname);
+  }
+  if (kind === SMART_UPLOAD_INTENT_KIND_PREVIEW_DERIVATIVE) {
+    return verifySmartUploadPreviewDerivativeIntentForPathname(
+      uploadIntent,
+      actorUsername,
+      pathname,
+    );
+  }
+  throw new Error("Unsupported upload intent kind for staged image display.");
+}

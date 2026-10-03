@@ -11,6 +11,7 @@ import {
   canStartPreviewGeneration,
   invalidateAcceptedBeforePreviewRegeneration,
 } from "@/lib/marketing/smart-upload-preview-client";
+import { smartUploadStagedImageUrl } from "@/lib/marketing/smart-upload-staged-image-url";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 const UPLOAD_INTENT_URL = "/api/admin/marketing/smart-upload/upload-intent";
@@ -37,7 +38,6 @@ type PreviewState = {
   uploadIntent: string;
   pathname: string;
   publicUrl: string;
-  previewSignedUrl: string;
   strategy: FixStrategy;
   targetRatio: FixTargetRatio;
   width: number;
@@ -819,9 +819,12 @@ export function SmartUploadClient() {
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                   <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Original</p>
-                                  {item.publicUrl ? (
+                                  {item.pathname && item.uploadIntent ? (
                                     <img
-                                      src={item.publicUrl}
+                                      src={smartUploadStagedImageUrl({
+                                        pathname: item.pathname,
+                                        uploadIntent: item.uploadIntent,
+                                      })}
                                       alt="Original upload"
                                       className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
                                     />
@@ -830,7 +833,10 @@ export function SmartUploadClient() {
                                 <div>
                                   <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Preview</p>
                                   <img
-                                    src={item.preview.previewSignedUrl}
+                                    src={smartUploadStagedImageUrl({
+                                      pathname: item.preview.pathname,
+                                      uploadIntent: item.preview.uploadIntent,
+                                    })}
                                     alt="Corrected preview"
                                     className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
                                   />
