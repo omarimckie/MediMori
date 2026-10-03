@@ -37,6 +37,7 @@ type PreviewState = {
   uploadIntent: string;
   pathname: string;
   publicUrl: string;
+  previewSignedUrl: string;
   strategy: FixStrategy;
   targetRatio: FixTargetRatio;
   width: number;
@@ -829,7 +830,7 @@ export function SmartUploadClient() {
                                 <div>
                                   <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Preview</p>
                                   <img
-                                    src={item.preview.publicUrl}
+                                    src={item.preview.previewSignedUrl}
                                     alt="Corrected preview"
                                     className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
                                   />

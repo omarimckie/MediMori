@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import sharp from "sharp";
 import { MemoryMarketingStore } from "./memory-store";
@@ -339,6 +341,31 @@ test("transform input pixel limits accept representative sizes under 32 MP", () 
   assertTransformInputWithinLimits(4032, 3024);
   assertTransformInputWithinLimits(5000, 4000);
   assertTransformInputWithinLimits(6000, 4000);
+});
+
+test("preview display signed URL is not the stable lineage publicUrl", () => {
+  const source = readFileSync(path.join(process.cwd(), "src/lib/marketing/smart-upload.ts"), "utf8");
+  const fn = source.slice(
+    source.indexOf("export async function generateSmartUploadPreviewFix"),
+    source.indexOf("export async function discardSmartUploadPreviewDerivative"),
+  );
+  assert.match(fn, /previewSignedUrl/);
+  assert.match(fn, /publicUrl: uploaded\.url/);
+  assert.doesNotMatch(fn, /publicUrl:\s*previewSignedUrl/);
+  assert.doesNotMatch(fn, /publicUrl:\s*await createMarketingPublicImageSignedGetUrl/);
+});
+
+test("generateSmartUploadPreviewFix does not call uploadPublicMarketingFile", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "src/lib/marketing/smart-upload.ts"),
+    "utf8",
+  );
+  const fn = source.slice(
+    source.indexOf("export async function generateSmartUploadPreviewFix"),
+    source.indexOf("export async function discardSmartUploadPreviewDerivative"),
+  );
+  assert.match(fn, /uploadPrivateMarketingPublicImage/);
+  assert.doesNotMatch(fn, /uploadPublicMarketingFile/);
 });
 
 test("transform input pixel limits reject over 32 MP", () => {

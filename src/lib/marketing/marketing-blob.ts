@@ -70,6 +70,80 @@ export type PrivateUploadResult = {
   storage: "blob" | "local";
 };
 
+/** Synthetic delegation URL for intent binding (not necessarily anonymously readable). */
+export function syntheticMarketingPublicBlobUrl(
+  pathname: string,
+  referenceBlobUrl: string,
+): string {
+  const ref = tryResolveMarketingBlobPathnameFromUrl(referenceBlobUrl);
+  if (!ref) {
+    throw new Error("Invalid reference blob URL for marketing public pathname binding.");
+  }
+  try {
+    const parsed = new URL(referenceBlobUrl.trim());
+    if (!parsed.hostname.endsWith(".blob.vercel-storage.com")) {
+      throw new Error("Invalid reference blob host.");
+    }
+    const host = parsed.hostname;
+    return `https://${host}/${pathname}`;
+  } catch {
+    throw new Error("Invalid reference blob URL for marketing public pathname binding.");
+  }
+}
+
+export async function createMarketingPublicImageSignedGetUrl(pathname: string): Promise<string> {
+  if (!isMarketingPublicResourcePreviewPathname(pathname)) {
+    throw new Error("Invalid marketing public image pathname.");
+  }
+  if (!hasBlobToken()) {
+    throw new Error("Blob storage is not configured.");
+  }
+  const validUntil = Date.now() + MARKETING_SIGNED_URL_TTL_MS;
+  const signedToken = await issueSignedToken({
+    pathname,
+    operations: ["get"],
+    validUntil,
+  });
+  const { presignedUrl } = await presignUrl(signedToken, {
+    operation: "get",
+    pathname,
+    access: "private",
+    validUntil,
+  });
+  return presignedUrl;
+}
+
+export async function uploadPrivateMarketingPublicImage(
+  buffer: Buffer,
+  mime: string,
+  extension: string,
+  referenceBlobUrl: string,
+): Promise<PublicUploadResult> {
+  const pathname = `marketing/public/${randomSegment()}${extension}`;
+  if (hasBlobToken()) {
+    await put(pathname, buffer, {
+      access: "private",
+      contentType: mime,
+      addRandomSuffix: false,
+    });
+    return {
+      url: syntheticMarketingPublicBlobUrl(pathname, referenceBlobUrl),
+      pathname,
+      storage: "blob",
+    };
+  }
+  const fileName = `${randomSegment()}${extension}`;
+  const dir = path.join(LOCAL_PUBLIC_ROOT);
+  await mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, fileName);
+  await writeFile(filePath, buffer);
+  return {
+    url: `/marketing-uploads/${fileName}`,
+    pathname: `local-public/${fileName}`,
+    storage: "local",
+  };
+}
+
 export async function uploadPublicMarketingFile(
   buffer: Buffer,
   mime: string,

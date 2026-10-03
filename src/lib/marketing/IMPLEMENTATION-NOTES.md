@@ -5,9 +5,9 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 ## Provider alternatives (not silently locked)
 
 ### Social publishing
-- **Chosen:** `SocialPublisher` interface + `MockSocialPublisher` default. Live Instagram and Facebook use native Meta Graph publishers (`InstagramPublisher`, `FacebookPagePublisher`) when `MARKETING_MOCK_MODE=false`.
+- **Chosen:** `SocialPublisher` interface + `MockSocialPublisher` default. Live Instagram and Facebook use native Meta Graph publishers (`InstagramPublisher`, `FacebookPagePublisher`) when `MARKETING_MOCK_MODE=false`. Live Pinterest uses `PinterestPublisher` + Pinterest API v5 when credentials are configured (see `docs/PINTEREST-PUBLISHING.md`).
 - **Not used:** Buffer, Hootsuite, or other third-party schedulers.
-- **Alternatives:** Pinterest/Google later, or a different scheduler. Changing vendors should only require a new class behind the interface.
+- **Alternatives:** Google later, or a different scheduler. Changing vendors should only require a new class behind the interface.
 
 ### Email
 - **Chosen for V1:** Reuse existing Resend for the storefront; marketing campaigns use `MockEmailProvider` unless mock mode is off, and even then the Resend campaign sender is a stub so we do not accidentally email the list.
@@ -37,6 +37,29 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 ## Autonomy
 - Phase 1 only: nothing publishes without approval, then schedule.
 - Hybrid autopilot (Phase 2) is not implemented.
+
+## Visual asset selection (Phase 3)
+- **Call site:** `generateWeeklyContent` in `content-engine.ts` → `selectVisualAssetAsync` in `visual-asset-selection.ts`.
+- **Legacy implementation:** `selectAssetWithTruths` / `selectAssetAsync` in `asset-selection.ts` (unchanged).
+- **Flag:** `MARKETING_VISUAL_STRATEGY` — `off` (default) | `shadow` | `on`. Parsed in `config.ts`.
+- **off:** Legacy result only.
+- **shadow:** Legacy result returned; `shadowComparison` attached for evaluation (also logged on `content_generated` events when present).
+- **on:** Visual Strategy plan → semantic pick → technical gate. Statuses: `selected_existing`, `needs_new_asset`, `needs_adaptation` (no cover fallback).
+- **Read-only compare:** `npx tsx scripts/visual-strategy-legacy-compare-readonly.ts`
+
+## Visual composition (Phase 4)
+- **Flag:** `MARKETING_VISUAL_COMPOSITION` — `off` (default) | `on`. Requires `MARKETING_VISUAL_STRATEGY=on` to run.
+- **Module:** `src/lib/marketing/visual-composition/` — brief, template selection, layout, Sharp render.
+- **Rendering:** Sharp (existing dependency; also used by `asset-truth.ts`).
+- **Outcomes:** `composed_existing`, `composed_adaptation`, `needs_new_asset`, `unsupported` on `ExtendedSelectAssetResult.composition`.
+- **Phase 5 local eval:** `npx tsx scripts/run-visual-composition-eval.ts` → `tmp/marketing-visual-evaluation/` (gitignored). Fixtures in `visual-composition/evaluation-fixtures.ts`.
+- **Phase 6 refinement:** `headline-selection.ts` (deterministic headlines/CTAs), `layout-zones.ts` (template-specific safe areas), bottom-aligned character fit, distinct ENGAGEMENT / CHARACTER_BOOK / educational overlays, subtle navy footer brand strip.
+- **Phase 7 post assembly (local):** `post-assembly/` + `npx tsx scripts/run-marketing-post-assembly.ts` → `tmp/marketing-post-evaluation/` (manifest, PNG, admin-review.txt). Strategy/composition flags enabled only inside assembly helper.
+- **Phase 8 environments (local):** `MARKETING_VISUAL_ENVIRONMENT=off` (default). `visual-composition/environments/` + `npx tsx scripts/run-visual-composition-eval-phase8.ts` → `tmp/marketing-visual-evaluation-phase8/` (scene vs minimal PNGs).
+- **Phase 9 template polish (local):** Branded frame primitives, larger platform-aware hero zones, richer illustrated scenes, content-specific headlines (generic title rejection), brush CTA ribbons on book scenes only.
+- **Phase 10 template parity (local):** Transparent navy/gold poster overlay frame, template-specific scene zones (Meet Amara hero + supporting panel + book badge), removed duplicate translucent header bands from backgrounds, composition bounds tests for CTA/book/character.
+- **Phase 11 art-directed templates (local):** `visual-composition/art-directed/` blueprints (Meet Character, Education, Book Promotion, Engagement), story column panel, book-cover dedupe when character holds book, `compositionValidation` on layout + eval manifest.
+- **Phase 12A polish (local):** Meet headline plaque + editorial story column, larger hero/typography, CTA only via `displayCta` (removed composition-invented intro CTA). Go-or-pivot visual test.
 
 ## POTENTIAL SIMPLIFICATION
 
@@ -77,3 +100,9 @@ These remain in the prototype so the full workflow is inspectable. Do not remove
 - **What it does:** Polls scheduled publications every 15 minutes on Vercel.
 - **Could replace it:** Manual publish only, or a vendor scheduler (Buffer).
 - **What would be lost:** Hands-off posting after weekly approval.
+
+## Marketing asset public image proxy
+- **Route:** `GET`/`HEAD` `/api/marketing/assets/{assetId}/image` serves approved Blob-backed `marketing/public/*` raster images when at least one referencing `marketing_content` row has status `approved`, `scheduled`, `published`, or `failed` (explicit allowlist). `needs_review` / `rejected` / `draft` / `archived` are not eligible.
+- **Canonical URL:** `resolveContentImageUrl` → `resolvePublishableMarketingAssetUrl(asset, content.status)` uses the same allowlist; publication still gates on `contentMayBePublished` before live publish.
+- **Smart Upload:** Finalize leaves content `needs_review`, so the proxy returns 404 until a human approves content (intentional).
+- **Manual upload follow-up (pre-existing):** `manual-upload.ts` still uses server `uploadPublicMarketingFile` against a private Blob store. That path is unchanged in the proxy hardening pass and does not block Smart Upload Phase 3 verification; fix separately (e.g. presigned client put or private upload + proxy).

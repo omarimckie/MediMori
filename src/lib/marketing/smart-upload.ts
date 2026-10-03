@@ -6,8 +6,10 @@ import { assertImageUpload, extensionForKind, probeImageDimensions, sanitizeUplo
 import {
   assertPreviewPublicUrlMatchesPathname,
   deleteMarketingBlob,
+  createMarketingPublicImageSignedGetUrl,
   readMarketingBlobBuffer,
   tryResolveMarketingBlobPathnameFromUrl,
+  uploadPrivateMarketingPublicImage,
   uploadPublicMarketingFile,
 } from "./marketing-blob";
 import {
@@ -946,6 +948,7 @@ export async function generateSmartUploadPreviewFix(input: {
   uploadIntent: string;
   pathname: string;
   publicUrl: string;
+  previewSignedUrl: string;
   strategy: SmartUploadFixStrategy;
   targetRatio: SmartUploadFixTargetRatio;
   width: number;
@@ -975,11 +978,20 @@ export async function generateSmartUploadPreviewFix(input: {
 
   const { kind } = assertImageUpload(transformed.buffer);
   const extension = extensionForKind(kind);
-  const uploaded = await uploadPublicMarketingFile(transformed.buffer, transformed.mime, extension);
+  const uploaded = await uploadPrivateMarketingPublicImage(
+    transformed.buffer,
+    transformed.mime,
+    extension,
+    input.original.publicUrl,
+  );
   assertDistinctSmartUploadOriginalAndDerivativePathnames(
     input.original.pathname,
     uploaded.pathname,
   );
+  const previewSignedUrl =
+    uploaded.storage === "local"
+      ? uploaded.url
+      : await createMarketingPublicImageSignedGetUrl(uploaded.pathname);
   const { uploadIntent } = issueSmartUploadPreviewDerivativeIntent({
     username: input.actor ?? "",
     pathname: uploaded.pathname,
@@ -993,6 +1005,7 @@ export async function generateSmartUploadPreviewFix(input: {
     uploadIntent,
     pathname: uploaded.pathname,
     publicUrl: uploaded.url,
+    previewSignedUrl,
     strategy: input.strategy,
     targetRatio: input.targetRatio,
     width: transformed.truth.width,
