@@ -164,6 +164,16 @@ export class PostgresMarketingStore implements MarketingStore {
     return rows[0] ? mapPlan(rows[0] as Record<string, unknown>) : null;
   }
 
+  async findCampaignlessWeeklyPlan(weekStart: string) {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT * FROM marketing_weekly_plans
+      WHERE campaign_id IS NULL AND week_start = ${weekStart}
+      LIMIT 1
+    `;
+    return rows[0] ? mapPlan(rows[0] as Record<string, unknown>) : null;
+  }
+
   async createAsset(input: Omit<MarketingAsset, "createdAt">) {
     const sql = getSql();
     const rows = await sql`

@@ -123,6 +123,13 @@ export class MemoryMarketingStore implements MarketingStore {
     return row ? clone(row) : null;
   }
 
+  async findCampaignlessWeeklyPlan(weekStart: string) {
+    const row = [...this.plans.values()].find(
+      (plan) => plan.campaignId === null && plan.weekStart === weekStart,
+    );
+    return row ? clone(row) : null;
+  }
+
   async createAsset(input: Omit<MarketingAsset, "createdAt">) {
     const row: MarketingAsset = { ...input, createdAt: nowIso() };
     this.assets.set(row.id, row);

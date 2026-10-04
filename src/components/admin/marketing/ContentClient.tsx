@@ -7,6 +7,7 @@ import {
   contentBodyExcerpt,
   formatContentCreatedAt,
   formatContentWeekLabel,
+  pickOperationalWeeklyPlanId,
 } from "@/lib/marketing/content-client-utils";
 import { AddToWeekModal } from "./AddToWeekModal";
 import { Card, SecondaryButton, StatusPill } from "./ui";
@@ -66,7 +67,7 @@ export function ContentClient() {
       const settings = (await settingsRes.json()) as { plans?: WeeklyPlanOption[] };
       const planList = settings.plans ?? [];
       setPlans(planList);
-      setCurrentWeekPlanId(planList[0]?.id ?? null);
+      setCurrentWeekPlanId(pickOperationalWeeklyPlanId(planList));
     }
   }, [filters]);
 
@@ -230,7 +231,9 @@ export function ContentClient() {
           anchorBody={weekModal.body}
           previewUrl={previewByContentId[weekModal.id]?.previewUrl ?? null}
           plans={plans}
-          initialWeeklyPlanId={weekModal.weeklyPlanId}
+          initialWeeklyPlanId={
+            weekModal.weeklyPlanId ?? pickOperationalWeeklyPlanId(plans)
+          }
           onClose={() => setWeekModal(null)}
           modalTitle={weekModal.weeklyPlanId ? "Change Week" : "Add to Week"}
           confirmLabel={weekModal.weeklyPlanId ? "Save week" : "Add to Week"}

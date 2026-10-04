@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   contentBodyExcerpt,
   formatContentWeekLabel,
+  formatWeekPlanSelectorLabel,
+  pickOperationalWeeklyPlanId,
 } from "./content-client-utils";
 
 test("contentBodyExcerpt truncates long body", () => {
@@ -22,8 +24,17 @@ test("formatContentWeekLabel assigned plan", () => {
   assert.equal(result.label, "Week of 2026-04-07");
 });
 
-test("no-week empty state copy is documented in AddToWeekModal", () => {
+test("no-week empty state copy references New Week", () => {
   const message =
-    "No weekly plans are available yet. Create a campaign and generate a week first.";
-  assert.match(message, /weekly plans are available/i);
+    "No weekly plans are available yet. Create an empty week from Your Week, or generate a campaign package.";
+  assert.match(message, /Your Week/i);
+});
+
+test("pickOperationalWeeklyPlanId and week labels", () => {
+  const plans = [
+    { id: "a", weekStart: "2026-09-14" },
+    { id: "b", weekStart: "2026-10-05" },
+  ];
+  assert.equal(pickOperationalWeeklyPlanId(plans, "2026-10-04"), "b");
+  assert.match(formatWeekPlanSelectorLabel("2026-10-05", "2026-10-04"), /Upcoming/);
 });

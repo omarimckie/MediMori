@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { contentBodyExcerpt } from "@/lib/marketing/content-client-utils";
 import type { SmartUploadPairResolution } from "@/lib/marketing/content-assign-week";
+import { formatWeekPlanSelectorLabel } from "@/lib/marketing/content-client-utils";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 type WeeklyPlanOption = {
@@ -49,7 +50,7 @@ export function AddToWeekModal({
 
   useEffect(() => {
     if (!open) return;
-    setWeeklyPlanId(initialWeeklyPlanId ?? plans[0]?.id ?? "");
+    setWeeklyPlanId(initialWeeklyPlanId ?? "");
     setIncludeInstagram(true);
     setIncludeFacebook(true);
     setPair(null);
@@ -101,16 +102,16 @@ export function AddToWeekModal({
         <h3 className="text-lg font-extrabold text-brand-navy">{modalTitle}</h3>
         {plans.length === 0 ? (
           <div className="mt-4 space-y-3 text-sm text-brand-charcoal/80">
-            <p>No weekly plans are available yet. Create a campaign and generate a week first.</p>
+            <p>No weekly plans are available yet. Create an empty week from Your Week, or generate a campaign package.</p>
+            <Link href="/admin/marketing/week" className="font-bold text-brand-navy underline">
+              New Week (Your Week)
+            </Link>
+            <span className="text-brand-charcoal/50"> · </span>
             <Link
               href="/admin/marketing/campaigns"
               className="font-bold text-brand-navy underline"
             >
-              Go to Campaigns
-            </Link>
-            <span className="text-brand-charcoal/50"> · </span>
-            <Link href="/admin/marketing/week" className="font-bold text-brand-navy underline">
-              Your week
+              Campaigns
             </Link>
           </div>
         ) : (
@@ -142,7 +143,7 @@ export function AddToWeekModal({
               >
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
-                    Week of {plan.weekStart}
+                    {formatWeekPlanSelectorLabel(plan.weekStart)}
                   </option>
                 ))}
               </select>

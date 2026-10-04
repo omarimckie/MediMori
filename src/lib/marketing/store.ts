@@ -38,6 +38,7 @@ export type MarketingStore = {
   getWeeklyPlan(id: string): Promise<WeeklyPlan | null>;
   listWeeklyPlans(campaignId?: string): Promise<WeeklyPlan[]>;
   findWeeklyPlan(campaignId: string, weekStart: string): Promise<WeeklyPlan | null>;
+  findCampaignlessWeeklyPlan(weekStart: string): Promise<WeeklyPlan | null>;
 
   createAsset(input: Omit<MarketingAsset, "createdAt">): Promise<MarketingAsset>;
   updateAsset(
