@@ -65,6 +65,9 @@ test("content preview enrichment returns thumbnail for needs_review Smart Upload
 
   const rows = await store.listContent();
   const preview = await buildContentListPreviewById(store, rows);
-  assert.ok(preview[contentId]?.previewUrl);
-  assert.match(preview[contentId]!.previewUrl!, /^https?:\/\//);
+  const url = preview[contentId]?.previewUrl;
+  assert.ok(url);
+  assert.match(url!, /^\/api\/admin\/marketing\/assets\/[0-9a-f-]+\/image$/);
+  assert.doesNotMatch(url!, /blob\.vercel-storage/i);
+  assert.doesNotMatch(url!, /token/i);
 });

@@ -1,5 +1,5 @@
 import { getAssetImageTruth } from "./asset-truth";
-import { resolveContentImageUrl } from "./assets";
+import { resolveAdminContentPreviewImageUrl } from "./marketing-admin-asset-image";
 import { PLATFORM_LABELS } from "./config";
 import { isFreeResourceContent } from "./content-metadata";
 import {
@@ -78,7 +78,7 @@ export async function buildWeeklyItemReview(
 
   const previewUrl = isFreeResourceContent(content)
     ? await resourcePreviewUrl.resolveFreeResourcePreviewUrlForContent(store, content)
-    : await resolveContentImageUrl(store, content);
+    : await resolveAdminContentPreviewImageUrl(store, content);
   const asset = await resolvePrimaryApprovedAsset(store, content);
   let dimensionsLabel: string | null = null;
   let visualSuitabilityWarning: string | null = null;
