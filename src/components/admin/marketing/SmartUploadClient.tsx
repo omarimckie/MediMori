@@ -12,6 +12,15 @@ import {
   invalidateAcceptedBeforePreviewRegeneration,
 } from "@/lib/marketing/smart-upload-preview-client";
 import { smartUploadStagedImageUrl } from "@/lib/marketing/smart-upload-staged-image-url";
+import {
+  composeSharedCaptionPreview,
+  createDefaultCaptionAssistantState,
+  findSubmitValidCaptionPreflightFailure,
+  refreshCaptionAssistantStale,
+  type CaptionAssistantState,
+  type CaptionFingerprintContext,
+} from "@/lib/marketing/smart-upload-caption-client-state";
+import { SmartUploadCaptionAssistant } from "./SmartUploadCaptionAssistant";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 const UPLOAD_INTENT_URL = "/api/admin/marketing/smart-upload/upload-intent";
@@ -59,6 +68,7 @@ type SmartUploadFile = {
   fixTargetRatio: FixTargetRatio;
   preview: PreviewState | null;
   acceptedPreview: PreviewState | null;
+  captionAssistant: CaptionAssistantState;
 };
 
 type WeeklyPlanOption = { id: string; weekStart: string; campaignId: string };
@@ -80,6 +90,32 @@ function newFileEntry(file: File): SmartUploadFile {
     fixTargetRatio: "4:5",
     preview: null,
     acceptedPreview: null,
+    captionAssistant: createDefaultCaptionAssistantState(),
+  };
+}
+
+function captionFingerprintContext(
+  item: SmartUploadFile,
+  bookId: string,
+  campaignId: string,
+): CaptionFingerprintContext {
+  return {
+    mode: item.captionAssistant.mode,
+    instructions: item.captionAssistant.instructions,
+    bookId: bookId.trim() || null,
+    campaignId: campaignId.trim() || null,
+    advanced: item.captionAssistant.advanced,
+    originalPathname: item.pathname,
+    originalUploadIntent: item.uploadIntent,
+    acceptedDerivative: item.acceptedPreview
+      ? {
+          pathname: item.acceptedPreview.pathname,
+          uploadIntent: item.acceptedPreview.uploadIntent,
+        }
+      : null,
+    fixStrategy: item.fixStrategy,
+    fixTargetRatio: item.fixTargetRatio,
+    finalizeKey: item.finalizeKey,
   };
 }
 
@@ -146,7 +182,6 @@ async function parseApiError(response: Response): Promise<string> {
 
 export function SmartUploadClient() {
   const [batchId] = useState(() => crypto.randomUUID());
-  const [caption, setCaption] = useState("");
   const [weeklyPlanId, setWeeklyPlanId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [bookId, setBookId] = useState("");
@@ -183,6 +218,20 @@ export function SmartUploadClient() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load selectors once on mount
   }, []);
+
+  useEffect(() => {
+    setFiles((prev) => {
+      const next = prev.map((item) => ({
+        ...item,
+        captionAssistant: refreshCaptionAssistantStale(
+          item.captionAssistant,
+          captionFingerprintContext(item, bookId, campaignId),
+        ),
+      }));
+      filesRef.current = next;
+      return next;
+    });
+  }, [bookId, campaignId]);
 
   const summary = useMemo(() => {
     const counts: Record<FileStatus, number> = {
@@ -225,7 +274,34 @@ export function SmartUploadClient() {
 
   function updateFile(id: string, patch: Partial<SmartUploadFile>) {
     setFiles((prev) => {
-      const next = prev.map((item) => (item.id === id ? { ...item, ...patch } : item));
+      const next = prev.map((item) => {
+        if (item.id !== id) return item;
+        const merged = { ...item, ...patch };
+        return {
+          ...merged,
+          captionAssistant: refreshCaptionAssistantStale(
+            merged.captionAssistant,
+            captionFingerprintContext(merged, bookId, campaignId),
+          ),
+        };
+      });
+      filesRef.current = next;
+      return next;
+    });
+  }
+
+  function updateCaptionAssistant(id: string, nextAssistant: CaptionAssistantState) {
+    setFiles((prev) => {
+      const next = prev.map((item) => {
+        if (item.id !== id) return item;
+        return {
+          ...item,
+          captionAssistant: refreshCaptionAssistantStale(
+            nextAssistant,
+            captionFingerprintContext(item, bookId, campaignId),
+          ),
+        };
+      });
       filesRef.current = next;
       return next;
     });
@@ -480,7 +556,7 @@ export function SmartUploadClient() {
     });
   }
 
-  async function finalizeOne(entry: SmartUploadFile): Promise<void> {
+  async function finalizeOne(entry: SmartUploadFile, captionText: string): Promise<void> {
     const derivative = entry.acceptedPreview;
     if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
     updateFile(entry.id, { status: "validating", error: null });
@@ -489,7 +565,7 @@ export function SmartUploadClient() {
     if (entry.uploadIntent === "local-multipart") {
       const form = new FormData();
       form.set("image", entry.file);
-      form.set("caption", caption.trim());
+      form.set("caption", captionText);
       form.set("batchId", batchId);
       form.set("finalizeKey", entry.finalizeKey);
       if (weeklyPlanId) form.set("weeklyPlanId", weeklyPlanId);
@@ -498,7 +574,7 @@ export function SmartUploadClient() {
       response = await fetch(FINALIZE_URL, { method: "POST", body: form });
     } else {
       const body: Record<string, unknown> = {
-        caption: caption.trim(),
+        caption: captionText,
         batchId,
         finalizeKey: entry.finalizeKey,
         weeklyPlanId: weeklyPlanId || null,
@@ -561,13 +637,31 @@ export function SmartUploadClient() {
 
   async function submitValid() {
     setSessionMessage(null);
-    if (!caption.trim()) {
-      setSessionMessage("Caption is required before submitting.");
+    const snapshot = [...filesRef.current];
+    const preflightFailure = findSubmitValidCaptionPreflightFailure(
+      snapshot.map((entry) => ({
+        fileName: entry.file.name,
+        status: entry.status,
+        uploadIntent: entry.uploadIntent,
+        acceptedDerivative: entry.acceptedPreview
+          ? { strategy: entry.acceptedPreview.strategy, targetRatio: entry.acceptedPreview.targetRatio }
+          : null,
+        previewDerivative: entry.preview
+          ? { strategy: entry.preview.strategy, targetRatio: entry.preview.targetRatio }
+          : null,
+        fixStrategy: entry.fixStrategy,
+        fixTargetRatio: entry.fixTargetRatio,
+        shared: entry.captionAssistant.shared,
+      })),
+    );
+    if (preflightFailure) {
+      setSessionMessage(
+        `Caption or CTA is required for "${preflightFailure}" before submitting.`,
+      );
       return;
     }
 
     setBusy(true);
-    const snapshot = [...filesRef.current];
     for (const entry of snapshot) {
       if (entry.status === "submitted" || entry.status === "needs_attention") continue;
       const latest = getFileById(entry.id) ?? entry;
@@ -576,7 +670,8 @@ export function SmartUploadClient() {
       }
       const afterUpload = getFileById(entry.id);
       if (afterUpload?.status === "ready" && afterUpload.uploadIntent) {
-        await finalizeOne(afterUpload);
+        const captionText = composeSharedCaptionPreview(afterUpload.captionAssistant.shared);
+        await finalizeOne(afterUpload, captionText);
       }
     }
     setBusy(false);
@@ -600,16 +695,6 @@ export function SmartUploadClient() {
       </Card>
 
       <Card className="space-y-4">
-        <label className="block text-sm font-bold">
-          Caption (shared for Instagram and Facebook)
-          <textarea
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            rows={4}
-            className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
-            placeholder="Write one caption copied to both platforms…"
-          />
-        </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-bold">
             Weekly plan (optional)
@@ -879,6 +964,13 @@ export function SmartUploadClient() {
                     <p className="mt-2 text-xs font-semibold text-brand-green-deep">
                       Corrected image accepted — included in Submit valid.
                     </p>
+                  ) : null}
+                  {item.status !== "submitted" ? (
+                    <SmartUploadCaptionAssistant
+                      state={item.captionAssistant}
+                      disabled={busy}
+                      onChange={(next) => updateCaptionAssistant(item.id, next)}
+                    />
                   ) : null}
                 </div>
                 <span
