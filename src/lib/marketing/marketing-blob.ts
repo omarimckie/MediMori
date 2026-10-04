@@ -8,12 +8,25 @@ export const MARKETING_SIGNED_URL_TTL_MS = 10 * 60 * 1000;
 const LOCAL_PUBLIC_ROOT = path.join(process.cwd(), "public", "marketing-uploads");
 const LOCAL_PRIVATE_ROOT = path.join(process.cwd(), "private", "marketing-uploads");
 
-export function hasMarketingBlobToken(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+type EnvLike = Record<string, string | undefined>;
+
+function nonblankEnv(name: string, env: EnvLike = process.env): boolean {
+  return Boolean(env[name]?.trim());
+}
+
+/** True when Vercel Blob can authenticate via read-write token or OIDC + store id. */
+export function hasMarketingBlobCredentials(env: EnvLike = process.env): boolean {
+  if (nonblankEnv("BLOB_READ_WRITE_TOKEN", env)) return true;
+  return nonblankEnv("VERCEL_OIDC_TOKEN", env) && nonblankEnv("BLOB_STORE_ID", env);
+}
+
+/** @deprecated Prefer hasMarketingBlobCredentials — name retained for existing imports. */
+export function hasMarketingBlobToken(env: EnvLike = process.env): boolean {
+  return hasMarketingBlobCredentials(env);
 }
 
 function hasBlobToken(): boolean {
-  return hasMarketingBlobToken();
+  return hasMarketingBlobCredentials();
 }
 
 const RESOURCE_BLOB_SEGMENT = "[a-f0-9]{32}";

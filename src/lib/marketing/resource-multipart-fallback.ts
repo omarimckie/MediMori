@@ -26,5 +26,5 @@ export function shouldUseResourceMultipartFallbackWhenBlobUnavailable(
 }
 
 export function resourceBlobStorageUnavailableMessage(): string {
-  return "Blob storage is not configured for this deployment. Add BLOB_READ_WRITE_TOKEN in Vercel environment variables and redeploy.";
+  return "Blob storage is not configured. Set BLOB_READ_WRITE_TOKEN or configure Vercel Blob with VERCEL_OIDC_TOKEN and BLOB_STORE_ID, then restart the dev server.";
 }

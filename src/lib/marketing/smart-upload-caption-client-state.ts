@@ -40,6 +40,11 @@ export type CaptionInputFingerprint = {
   finalizeKey: string;
 };
 
+export type CaptionGenerationSnapshot = {
+  fingerprint: CaptionInputFingerprint;
+  explicitCtaAtGeneration: string | null;
+};
+
 export type CaptionFingerprintContext = {
   mode: CaptionAssistantMode;
   instructions: string;
@@ -63,9 +68,12 @@ export type CaptionAssistantState = {
   genError: string | null;
   warnings: string[];
   provenance: CaptionAssistantProvenance | null;
-  generatedFrom: CaptionInputFingerprint | null;
+  /** Inputs used for the last successful generation (explicit CTA sent is stored but not used for stale-on-CTA-edit). */
+  generatedFrom: CaptionGenerationSnapshot | null;
   stale: boolean;
   staleAcknowledged: boolean;
+  /** Generation-input fingerprint the user acknowledged via Keep Caption Anyway (if any). */
+  staleAcknowledgedFingerprint: CaptionInputFingerprint | null;
   shared: CaptionAssistantDraft;
 };
 
@@ -81,6 +89,7 @@ export function createDefaultCaptionAssistantState(): CaptionAssistantState {
     generatedFrom: null,
     stale: false,
     staleAcknowledged: false,
+    staleAcknowledgedFingerprint: null,
     shared: { body: "", cta: "", instagramHashtags: [] },
   };
 }
@@ -141,18 +150,43 @@ export function buildCaptionInputFingerprint(context: CaptionFingerprintContext)
   };
 }
 
+export function buildCaptionGenerationSnapshot(
+  context: CaptionFingerprintContext,
+  explicitCtaAtGeneration: string | null,
+): CaptionGenerationSnapshot {
+  const cta = explicitCtaAtGeneration?.trim() || null;
+  return {
+    fingerprint: buildCaptionInputFingerprint(context),
+    explicitCtaAtGeneration: cta,
+  };
+}
+
 export function isCaptionDraftStale(
   state: CaptionAssistantState,
   context: CaptionFingerprintContext,
 ): boolean {
   if (!state.generatedFrom) return false;
   const current = buildCaptionInputFingerprint(context);
-  return !captionInputFingerprintsEqual(current, state.generatedFrom);
+  return !captionInputFingerprintsEqual(current, state.generatedFrom.fingerprint);
 }
 
-export function acknowledgeStaleCaption(state: CaptionAssistantState): CaptionAssistantState {
+/** Meaningful user-edited draft; overwrite confirmation required before generation. */
+export function hasReviewedDraftContent(draft: CaptionAssistantDraft): boolean {
+  return Boolean(
+    draft.body.trim() || draft.cta.trim() || draft.instagramHashtags.length > 0,
+  );
+}
+
+export function acknowledgeStaleCaption(
+  state: CaptionAssistantState,
+  context: CaptionFingerprintContext,
+): CaptionAssistantState {
   if (!state.stale) return state;
-  return { ...state, staleAcknowledged: true };
+  return {
+    ...state,
+    staleAcknowledged: true,
+    staleAcknowledgedFingerprint: buildCaptionInputFingerprint(context),
+  };
 }
 
 /** Recompute stale flag when generation inputs or image identity change (no fetch). */
@@ -161,18 +195,37 @@ export function refreshCaptionAssistantStale(
   context: CaptionFingerprintContext,
 ): CaptionAssistantState {
   if (!state.generatedFrom) {
-    return state.stale || state.staleAcknowledged
-      ? { ...state, stale: false, staleAcknowledged: false }
+    return state.stale || state.staleAcknowledged || state.staleAcknowledgedFingerprint
+      ? {
+          ...state,
+          stale: false,
+          staleAcknowledged: false,
+          staleAcknowledgedFingerprint: null,
+        }
       : state;
   }
   const stale = isCaptionDraftStale(state, context);
   if (!stale) {
-    return { ...state, stale: false, staleAcknowledged: false };
+    return {
+      ...state,
+      stale: false,
+      staleAcknowledged: false,
+      staleAcknowledgedFingerprint: null,
+    };
   }
-  if (!state.stale) {
-    return { ...state, stale: true, staleAcknowledged: false };
-  }
-  return { ...state, stale: true };
+  const currentFingerprint = buildCaptionInputFingerprint(context);
+  const acknowledgmentStillValid =
+    state.staleAcknowledged &&
+    state.staleAcknowledgedFingerprint !== null &&
+    captionInputFingerprintsEqual(currentFingerprint, state.staleAcknowledgedFingerprint);
+  return {
+    ...state,
+    stale: true,
+    staleAcknowledged: acknowledgmentStillValid,
+    staleAcknowledgedFingerprint: acknowledgmentStillValid
+      ? state.staleAcknowledgedFingerprint
+      : null,
+  };
 }
 
 export function parseHashtagInput(raw: string): string[] {
@@ -217,7 +270,14 @@ export type SubmitValidCaptionPreflightEntry = {
   fixStrategy: string;
   fixTargetRatio: string;
   shared: CaptionAssistantDraft;
+  generatedFrom: CaptionGenerationSnapshot | null;
+  stale: boolean;
+  staleAcknowledged: boolean;
 };
+
+export type SubmitValidCaptionPreflightIssue =
+  | { kind: "missing_caption"; fileName: string }
+  | { kind: "stale_generated"; fileName: string };
 
 /**
  * Whether this file is in scope for caption preflight on Submit Valid.
@@ -246,17 +306,28 @@ export function isSubmitValidCaptionPreflightTarget(
   return true;
 }
 
-/** First file name failing caption preflight, or null if all targets are complete. */
-export function findSubmitValidCaptionPreflightFailure(
+export function findSubmitValidCaptionPreflightIssue(
   entries: SubmitValidCaptionPreflightEntry[],
-): string | null {
+): SubmitValidCaptionPreflightIssue | null {
   for (const entry of entries) {
     if (!isSubmitValidCaptionPreflightTarget(entry)) continue;
     if (!hasSubmittableSharedCaption(entry.shared)) {
-      return entry.fileName;
+      return { kind: "missing_caption", fileName: entry.fileName };
+    }
+    if (entry.generatedFrom && entry.stale && !entry.staleAcknowledged) {
+      return { kind: "stale_generated", fileName: entry.fileName };
     }
   }
   return null;
+}
+
+/** @deprecated Use findSubmitValidCaptionPreflightIssue */
+export function findSubmitValidCaptionPreflightFailure(
+  entries: SubmitValidCaptionPreflightEntry[],
+): string | null {
+  const issue = findSubmitValidCaptionPreflightIssue(entries);
+  if (!issue) return null;
+  return issue.fileName;
 }
 
 /** Composed caption for preview and finalize bridge (single string until Phase 4C). */

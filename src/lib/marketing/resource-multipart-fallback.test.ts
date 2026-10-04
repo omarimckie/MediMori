@@ -56,6 +56,8 @@ test("multipart fallback is not used without 503 or when files exceed limit", ()
   );
 });
 
-test("blob unavailable message mentions Vercel configuration", () => {
-  assert.match(resourceBlobStorageUnavailableMessage(), /BLOB_READ_WRITE_TOKEN/i);
+test("blob unavailable message mentions OIDC and legacy configuration", () => {
+  const message = resourceBlobStorageUnavailableMessage();
+  assert.match(message, /BLOB_READ_WRITE_TOKEN/i);
+  assert.match(message, /VERCEL_OIDC_TOKEN/i);
 });

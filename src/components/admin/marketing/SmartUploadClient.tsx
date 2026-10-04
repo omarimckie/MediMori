@@ -13,13 +13,42 @@ import {
 } from "@/lib/marketing/smart-upload-preview-client";
 import { smartUploadStagedImageUrl } from "@/lib/marketing/smart-upload-staged-image-url";
 import {
+  createSmartUploadSessionBatchId,
+  SMART_UPLOAD_SESSION_BATCH_ID_UNASSIGNED,
+} from "@/lib/marketing/smart-upload-session-batch";
+import {
+  acknowledgeStaleCaption,
   composeSharedCaptionPreview,
   createDefaultCaptionAssistantState,
-  findSubmitValidCaptionPreflightFailure,
+  findSubmitValidCaptionPreflightIssue,
+  hasReviewedDraftContent,
   refreshCaptionAssistantStale,
   type CaptionAssistantState,
   type CaptionFingerprintContext,
+  type SubmitValidCaptionPreflightEntry,
 } from "@/lib/marketing/smart-upload-caption-client-state";
+import {
+  applyFailedCaptionGeneration,
+  applySuccessfulCaptionGeneration,
+  assessCaptionGenerationReadiness,
+  beginCaptionGeneration,
+  buildGenerateCaptionsImageContextFromFile,
+  buildGenerateCaptionsRequestBody,
+  buildGenerationSnapshotForRequest,
+  GENERATE_CAPTIONS_URL,
+  mapCaptionGenerationHttpError,
+  nextCaptionGenerationRequestSeq,
+  parseGenerateCaptionsResponse,
+  shouldApplyCaptionGenerationResponse,
+} from "@/lib/marketing/smart-upload-caption-client";
+import {
+  ensureStagedForCaptionGeneration,
+  type CaptionGenerationFileSnapshot,
+} from "@/lib/marketing/smart-upload-caption-one-click";
+import {
+  formatStaleCaptionSubmitPreflightMessage,
+  reconcileStaleCaptionSubmitSessionMessage,
+} from "@/lib/marketing/smart-upload-caption-submit-message";
 import { SmartUploadCaptionAssistant } from "./SmartUploadCaptionAssistant";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
@@ -91,6 +120,30 @@ function newFileEntry(file: File): SmartUploadFile {
     preview: null,
     acceptedPreview: null,
     captionAssistant: createDefaultCaptionAssistantState(),
+  };
+}
+
+function captionGenerationFileSnapshot(item: SmartUploadFile): CaptionGenerationFileSnapshot {
+  return {
+    uploadIntent: item.uploadIntent,
+    pathname: item.pathname,
+    publicUrl: item.publicUrl,
+    status: item.status,
+    error: item.error,
+    finalizeKey: item.finalizeKey,
+    fixStrategy: item.fixStrategy,
+    fixTargetRatio: item.fixTargetRatio,
+    acceptedPreview: item.acceptedPreview
+      ? {
+          uploadIntent: item.acceptedPreview.uploadIntent,
+          pathname: item.acceptedPreview.pathname,
+          strategy: item.acceptedPreview.strategy,
+          targetRatio: item.acceptedPreview.targetRatio,
+        }
+      : null,
+    preview: item.preview
+      ? { strategy: item.preview.strategy, targetRatio: item.preview.targetRatio }
+      : null,
   };
 }
 
@@ -181,7 +234,7 @@ async function parseApiError(response: Response): Promise<string> {
 }
 
 export function SmartUploadClient() {
-  const [batchId] = useState(() => crypto.randomUUID());
+  const [batchId, setBatchId] = useState<string | null>(SMART_UPLOAD_SESSION_BATCH_ID_UNASSIGNED);
   const [weeklyPlanId, setWeeklyPlanId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [bookId, setBookId] = useState("");
@@ -190,11 +243,17 @@ export function SmartUploadClient() {
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    setBatchId(createSmartUploadSessionBatchId());
+  }, []);
   const [plans, setPlans] = useState<WeeklyPlanOption[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewGeneratingEntryId, setPreviewGeneratingEntryId] = useState<string | null>(null);
+  const [generatingCaptionFileId, setGeneratingCaptionFileId] = useState<string | null>(null);
+  const captionGenerationSeqRef = useRef<Map<string, number>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadMeta = useCallback(async () => {
@@ -231,6 +290,8 @@ export function SmartUploadClient() {
       filesRef.current = next;
       return next;
     });
+    reconcileSessionMessageAfterCaptionPreflightState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile after batch stale refresh
   }, [bookId, campaignId]);
 
   const summary = useMemo(() => {
@@ -272,47 +333,261 @@ export function SmartUploadClient() {
     setFiles((prev) => [...prev, ...next]);
   }
 
+  function mergeSmartUploadFile(
+    item: SmartUploadFile,
+    patch: Partial<SmartUploadFile>,
+  ): SmartUploadFile {
+    const merged = { ...item, ...patch };
+    return {
+      ...merged,
+      captionAssistant: refreshCaptionAssistantStale(
+        merged.captionAssistant,
+        captionFingerprintContext(merged, bookId, campaignId),
+      ),
+    };
+  }
+
+  function reconcileSessionMessageAfterCaptionPreflightState() {
+    setSessionMessage((prev) =>
+      reconcileStaleCaptionSubmitSessionMessage(
+        prev,
+        filesRef.current.map((entry) => captionPreflightEntry(entry)),
+      ),
+    );
+  }
+
+  function commitFile(id: string, patch: Partial<SmartUploadFile>): SmartUploadFile {
+    const item = filesRef.current.find((f) => f.id === id);
+    if (!item) {
+      throw new Error("Smart Upload file not found.");
+    }
+    const merged = mergeSmartUploadFile(item, patch);
+    const next = filesRef.current.map((f) => (f.id === id ? merged : f));
+    filesRef.current = next;
+    setFiles(next);
+    reconcileSessionMessageAfterCaptionPreflightState();
+    return merged;
+  }
+
   function updateFile(id: string, patch: Partial<SmartUploadFile>) {
-    setFiles((prev) => {
-      const next = prev.map((item) => {
-        if (item.id !== id) return item;
-        const merged = { ...item, ...patch };
-        return {
-          ...merged,
-          captionAssistant: refreshCaptionAssistantStale(
-            merged.captionAssistant,
-            captionFingerprintContext(merged, bookId, campaignId),
-          ),
-        };
-      });
-      filesRef.current = next;
-      return next;
-    });
+    commitFile(id, patch);
   }
 
   function updateCaptionAssistant(id: string, nextAssistant: CaptionAssistantState) {
-    setFiles((prev) => {
-      const next = prev.map((item) => {
-        if (item.id !== id) return item;
-        return {
-          ...item,
-          captionAssistant: refreshCaptionAssistantStale(
-            nextAssistant,
-            captionFingerprintContext(item, bookId, campaignId),
-          ),
-        };
-      });
-      filesRef.current = next;
-      return next;
-    });
+    commitFile(id, { captionAssistant: nextAssistant });
   }
 
   function getFileById(id: string): SmartUploadFile | undefined {
     return filesRef.current.find((item) => item.id === id);
   }
 
-  async function uploadAndValidateOne(entry: SmartUploadFile): Promise<void> {
-    updateFile(entry.id, { status: "uploading", error: null, validationIssues: [] });
+  function captionPreflightEntry(entry: SmartUploadFile): SubmitValidCaptionPreflightEntry {
+    const captionAssistant = refreshCaptionAssistantStale(
+      entry.captionAssistant,
+      captionFingerprintContext(entry, bookId, campaignId),
+    );
+    return {
+      fileName: entry.file.name,
+      status: entry.status,
+      uploadIntent: entry.uploadIntent,
+      acceptedDerivative: entry.acceptedPreview
+        ? {
+            strategy: entry.acceptedPreview.strategy,
+            targetRatio: entry.acceptedPreview.targetRatio,
+          }
+        : null,
+      previewDerivative: entry.preview
+        ? { strategy: entry.preview.strategy, targetRatio: entry.preview.targetRatio }
+        : null,
+      fixStrategy: entry.fixStrategy,
+      fixTargetRatio: entry.fixTargetRatio,
+      shared: captionAssistant.shared,
+      generatedFrom: captionAssistant.generatedFrom,
+      stale: captionAssistant.stale,
+      staleAcknowledged: captionAssistant.staleAcknowledged,
+    };
+  }
+
+  function captionGenerationUi(item: SmartUploadFile): { ready: boolean; reason?: string } {
+    if (item.status === "submitted" || item.status === "failed") {
+      return { ready: false, reason: "This image cannot be used for caption generation." };
+    }
+    if (item.status === "needs_attention") {
+      return { ready: false, reason: "Fix image validation issues before generating a caption." };
+    }
+    if (!item.uploadIntent || !item.pathname) {
+      return { ready: true };
+    }
+    const assessed = assessCaptionGenerationReadiness({
+      status: item.status,
+      uploadIntent: item.uploadIntent,
+      pathname: item.pathname,
+      acceptedPreview: item.acceptedPreview
+        ? {
+            strategy: item.acceptedPreview.strategy,
+            targetRatio: item.acceptedPreview.targetRatio,
+          }
+        : null,
+      preview: item.preview
+        ? { strategy: item.preview.strategy, targetRatio: item.preview.targetRatio }
+        : null,
+      fixStrategy: item.fixStrategy,
+      fixTargetRatio: item.fixTargetRatio,
+    });
+    return assessed.ready ? { ready: true } : { ready: false, reason: assessed.reason };
+  }
+
+  async function runCaptionGeneration(fileId: string) {
+    if (generatingCaptionFileId === fileId) return;
+
+    const initial = getFileById(fileId);
+    if (!initial) return;
+
+    if (initial.uploadIntent && initial.pathname) {
+      const readinessBefore = captionGenerationUi(initial);
+      if (!readinessBefore.ready && readinessBefore.reason) {
+        updateCaptionAssistant(
+          fileId,
+          applyFailedCaptionGeneration(initial.captionAssistant, readinessBefore.reason),
+        );
+        return;
+      }
+    }
+
+    if (hasReviewedDraftContent(initial.captionAssistant.shared)) {
+      const confirmed = window.confirm(
+        "Replace the current caption draft with a generated draft?",
+      );
+      if (!confirmed) return;
+    }
+
+    setGeneratingCaptionFileId(fileId);
+    const requestSeq = nextCaptionGenerationRequestSeq(captionGenerationSeqRef.current, fileId);
+
+    const started = getFileById(fileId);
+    if (started) {
+      updateCaptionAssistant(fileId, beginCaptionGeneration(started.captionAssistant));
+    }
+
+    let file = getFileById(fileId);
+    if (!file) {
+      setGeneratingCaptionFileId(null);
+      return;
+    }
+
+    const fileForStaging = file;
+    const prepared = await ensureStagedForCaptionGeneration(
+      captionGenerationFileSnapshot(fileForStaging),
+      async () => {
+        const latest = getFileById(fileId) ?? fileForStaging;
+        const staged = await uploadAndValidateOne(latest);
+        return captionGenerationFileSnapshot(staged);
+      },
+    );
+
+    if (!prepared.ok) {
+      if (shouldApplyCaptionGenerationResponse(captionGenerationSeqRef.current, fileId, requestSeq)) {
+        const current = getFileById(fileId) ?? file;
+        updateCaptionAssistant(
+          fileId,
+          applyFailedCaptionGeneration(current.captionAssistant, prepared.message),
+        );
+        setGeneratingCaptionFileId(null);
+      }
+      return;
+    }
+
+    file = getFileById(fileId) ?? file;
+
+    const imageContext = buildGenerateCaptionsImageContextFromFile({
+      uploadIntent: file.uploadIntent,
+      pathname: file.pathname,
+      finalizeKey: file.finalizeKey,
+      acceptedPreview: file.acceptedPreview,
+    });
+    if (!imageContext) {
+      if (shouldApplyCaptionGenerationResponse(captionGenerationSeqRef.current, fileId, requestSeq)) {
+        updateCaptionAssistant(
+          fileId,
+          applyFailedCaptionGeneration(
+            file.captionAssistant,
+            "Upload and validate this image before generating a caption.",
+          ),
+        );
+        setGeneratingCaptionFileId(null);
+      }
+      return;
+    }
+
+    const explicitCta = file.captionAssistant.shared.cta.trim() || null;
+    const fpContext = captionFingerprintContext(file, bookId, campaignId);
+    const snapshot = buildGenerationSnapshotForRequest(fpContext, explicitCta);
+    const requestBody = buildGenerateCaptionsRequestBody({
+      instructions: file.captionAssistant.instructions,
+      explicitCta,
+      bookId: bookId.trim() || null,
+      campaignId: campaignId.trim() || null,
+      advanced: file.captionAssistant.advanced,
+      image: imageContext,
+    });
+
+    try {
+      const response = await fetch(GENERATE_CAPTIONS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!shouldApplyCaptionGenerationResponse(captionGenerationSeqRef.current, fileId, requestSeq)) {
+        return;
+      }
+
+      const current = getFileById(fileId);
+      if (!current) return;
+
+      if (!response.ok) {
+        const serverMessage = await parseApiError(response);
+        updateCaptionAssistant(
+          fileId,
+          applyFailedCaptionGeneration(
+            current.captionAssistant,
+            mapCaptionGenerationHttpError(response.status, serverMessage),
+          ),
+        );
+        return;
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      const parsed = parseGenerateCaptionsResponse(payload);
+      const afterParse = getFileById(fileId);
+      if (!afterParse) return;
+      updateCaptionAssistant(
+        fileId,
+        applySuccessfulCaptionGeneration(afterParse.captionAssistant, parsed, snapshot),
+      );
+    } catch {
+      if (!shouldApplyCaptionGenerationResponse(captionGenerationSeqRef.current, fileId, requestSeq)) {
+        return;
+      }
+      const current = getFileById(fileId);
+      if (!current) return;
+      updateCaptionAssistant(
+        fileId,
+        applyFailedCaptionGeneration(
+          current.captionAssistant,
+          "Caption generation failed. Try again.",
+        ),
+      );
+    } finally {
+      if (shouldApplyCaptionGenerationResponse(captionGenerationSeqRef.current, fileId, requestSeq)) {
+        setGeneratingCaptionFileId(null);
+      }
+    }
+  }
+
+  async function uploadAndValidateOne(entry: SmartUploadFile): Promise<SmartUploadFile> {
+    const fileId = entry.id;
+    let file = commitFile(fileId, { status: "uploading", error: null, validationIssues: [] });
 
     const intentRes = await fetch(UPLOAD_INTENT_URL, {
       method: "POST",
@@ -327,29 +602,27 @@ export function SmartUploadClient() {
       });
 
     if (useMultipart) {
-      updateFile(entry.id, { status: "validating" });
+      file = commitFile(fileId, { status: "validating" });
       const form = new FormData();
-      form.set("image", entry.file);
+      form.set("image", file.file);
       const response = await fetch(VALIDATE_URL, { method: "POST", body: form });
       if (response.status === 422) {
         const json = (await response.json()) as {
           issues?: Array<{ code: string; message: string; platform?: string }>;
         };
-        updateFile(entry.id, {
+        return commitFile(fileId, {
           status: "needs_attention",
           error: json.issues?.map((i) => i.message).join(" ") ?? "Validation failed.",
           validationIssues: json.issues ?? [],
         });
-        return;
       }
       if (!response.ok) {
-        updateFile(entry.id, {
+        return commitFile(fileId, {
           status: "failed",
           error: await parseApiError(response),
         });
-        return;
       }
-      updateFile(entry.id, {
+      return commitFile(fileId, {
         status: "ready",
         error: null,
         validationIssues: [],
@@ -357,7 +630,6 @@ export function SmartUploadClient() {
         pathname: "local-multipart",
         publicUrl: "local-multipart",
       });
-      return;
     }
 
     if (!intentRes.ok) {
@@ -365,8 +637,7 @@ export function SmartUploadClient() {
         intentRes.status === 503
           ? resourceBlobStorageUnavailableMessage()
           : await parseApiError(intentRes);
-      updateFile(entry.id, { status: "failed", error: message });
-      return;
+      return commitFile(fileId, { status: "failed", error: message });
     }
 
     const intentJson = (await intentRes.json()) as {
@@ -383,11 +654,10 @@ export function SmartUploadClient() {
       }),
     });
     if (!urlRes.ok) {
-      updateFile(entry.id, {
+      return commitFile(fileId, {
         status: "failed",
         error: await parseApiError(urlRes),
       });
-      return;
     }
 
     const urlJson = (await urlRes.json()) as {
@@ -397,22 +667,21 @@ export function SmartUploadClient() {
     };
 
     const headers: HeadersInit = {};
-    if (entry.file.type) headers["Content-Type"] = entry.file.type;
+    if (file.file.type) headers["Content-Type"] = file.file.type;
     const putRes = await fetch(urlJson.presignedUrl, {
       method: "PUT",
-      body: entry.file,
+      body: file.file,
       headers,
     });
     if (!putRes.ok) {
-      updateFile(entry.id, {
+      return commitFile(fileId, {
         status: "failed",
         error: `Direct blob upload failed (${putRes.status}).`,
       });
-      return;
     }
 
     const publicUrl = urlJson.publicUrl ?? "";
-    updateFile(entry.id, {
+    file = commitFile(fileId, {
       status: "validating",
       uploadIntent: intentJson.uploadIntent,
       pathname: urlJson.pathname,
@@ -433,7 +702,7 @@ export function SmartUploadClient() {
       const json = (await validateRes.json()) as {
         issues?: Array<{ code: string; message: string; platform?: string }>;
       };
-      updateFile(entry.id, {
+      return commitFile(fileId, {
         status: "needs_attention",
         error: json.issues?.map((i) => i.message).join(" ") ?? "Validation failed.",
         validationIssues: json.issues ?? [],
@@ -441,20 +710,18 @@ export function SmartUploadClient() {
         pathname: urlJson.pathname,
         publicUrl,
       });
-      return;
     }
     if (!validateRes.ok) {
-      updateFile(entry.id, {
+      return commitFile(fileId, {
         status: "failed",
         error: await parseApiError(validateRes),
         uploadIntent: intentJson.uploadIntent,
         pathname: urlJson.pathname,
         publicUrl,
       });
-      return;
     }
 
-    updateFile(entry.id, {
+    return commitFile(fileId, {
       status: "ready",
       error: null,
       validationIssues: [],
@@ -557,6 +824,7 @@ export function SmartUploadClient() {
   }
 
   async function finalizeOne(entry: SmartUploadFile, captionText: string): Promise<void> {
+    if (!batchId) return;
     const derivative = entry.acceptedPreview;
     if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
     updateFile(entry.id, { status: "validating", error: null });
@@ -637,27 +905,22 @@ export function SmartUploadClient() {
 
   async function submitValid() {
     setSessionMessage(null);
+    if (!batchId) {
+      setSessionMessage("Session is still starting. Try again in a moment.");
+      return;
+    }
     const snapshot = [...filesRef.current];
-    const preflightFailure = findSubmitValidCaptionPreflightFailure(
-      snapshot.map((entry) => ({
-        fileName: entry.file.name,
-        status: entry.status,
-        uploadIntent: entry.uploadIntent,
-        acceptedDerivative: entry.acceptedPreview
-          ? { strategy: entry.acceptedPreview.strategy, targetRatio: entry.acceptedPreview.targetRatio }
-          : null,
-        previewDerivative: entry.preview
-          ? { strategy: entry.preview.strategy, targetRatio: entry.preview.targetRatio }
-          : null,
-        fixStrategy: entry.fixStrategy,
-        fixTargetRatio: entry.fixTargetRatio,
-        shared: entry.captionAssistant.shared,
-      })),
+    const preflightIssue = findSubmitValidCaptionPreflightIssue(
+      snapshot.map((entry) => captionPreflightEntry(entry)),
     );
-    if (preflightFailure) {
+    if (preflightIssue?.kind === "missing_caption") {
       setSessionMessage(
-        `Caption or CTA is required for "${preflightFailure}" before submitting.`,
+        `Caption or CTA is required for "${preflightIssue.fileName}" before submitting.`,
       );
+      return;
+    }
+    if (preflightIssue?.kind === "stale_generated") {
+      setSessionMessage(formatStaleCaptionSubmitPreflightMessage(preflightIssue.fileName));
       return;
     }
 
@@ -691,7 +954,9 @@ export function SmartUploadClient() {
           Upload images once to create paired Instagram and Facebook feed posts (needs review). Images
           are validated on the server for both platforms before any content is created.
         </p>
-        <p className="mt-2 text-xs text-brand-charcoal/50">Session batch ID: {batchId}</p>
+        {batchId ? (
+          <p className="mt-2 text-xs text-brand-charcoal/50">Session batch ID: {batchId}</p>
+        ) : null}
       </Card>
 
       <Card className="space-y-4">
@@ -969,7 +1234,20 @@ export function SmartUploadClient() {
                     <SmartUploadCaptionAssistant
                       state={item.captionAssistant}
                       disabled={busy}
+                      generating={generatingCaptionFileId === item.id}
+                      generationReady={captionGenerationUi(item).ready}
+                      generationReadyReason={captionGenerationUi(item).reason}
                       onChange={(next) => updateCaptionAssistant(item.id, next)}
+                      onGenerate={() => void runCaptionGeneration(item.id)}
+                      onKeepStaleCaption={() =>
+                        updateCaptionAssistant(
+                          item.id,
+                          acknowledgeStaleCaption(
+                            item.captionAssistant,
+                            captionFingerprintContext(item, bookId, campaignId),
+                          ),
+                        )
+                      }
                     />
                   ) : null}
                 </div>

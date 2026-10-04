@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   acknowledgeStaleCaption,
+  buildCaptionGenerationSnapshot,
   buildCaptionInputFingerprint,
   composeSharedCaptionPreview,
   createDefaultCaptionAssistantState,
   findSubmitValidCaptionPreflightFailure,
+  findSubmitValidCaptionPreflightIssue,
+  hasReviewedDraftContent,
   hasSubmittableSharedCaption,
   isCaptionDraftStale,
+  refreshCaptionAssistantStale,
   type CaptionAssistantState,
   type CaptionFingerprintContext,
   type SubmitValidCaptionPreflightEntry,
@@ -36,8 +40,19 @@ function withGeneratedFrom(
 ): CaptionAssistantState {
   return {
     ...state,
-    generatedFrom: buildCaptionInputFingerprint(context),
+    generatedFrom: buildCaptionGenerationSnapshot(context, null),
     genStatus: "generated",
+  };
+}
+
+function preflightRowWithAssistant(
+  overrides: Partial<SubmitValidCaptionPreflightEntry> & { fileName: string },
+): SubmitValidCaptionPreflightEntry {
+  return {
+    ...preflightRow(overrides),
+    generatedFrom: overrides.generatedFrom ?? null,
+    stale: overrides.stale ?? false,
+    staleAcknowledged: overrides.staleAcknowledged ?? false,
   };
 }
 
@@ -226,11 +241,16 @@ test("compose preview omits empty CTA and hashtags", () => {
 });
 
 test("acknowledgeStaleCaption sets flag when stale", () => {
-  const ctx = baseContext();
-  let state = withGeneratedFrom(createDefaultCaptionAssistantState(), ctx);
-  state = { ...state, stale: true };
-  const ack = acknowledgeStaleCaption(state);
+  const ctx = baseContext({ instructions: "Keep the caption concise." });
+  let state = withGeneratedFrom(createDefaultCaptionAssistantState(), baseContext());
+  state = refreshCaptionAssistantStale(
+    { ...state, instructions: "Keep the caption concise." },
+    ctx,
+  );
+  assert.equal(state.stale, true);
+  const ack = acknowledgeStaleCaption(state, ctx);
   assert.equal(ack.staleAcknowledged, true);
+  assert.ok(ack.staleAcknowledgedFingerprint);
 });
 
 function preflightRow(
@@ -244,6 +264,9 @@ function preflightRow(
     fixStrategy: "pad",
     fixTargetRatio: "4:5",
     shared: { body: "", cta: "", instagramHashtags: [] },
+    generatedFrom: null,
+    stale: false,
+    staleAcknowledged: false,
     ...overrides,
   };
 }
@@ -328,4 +351,191 @@ test("preflight ignores submitted file with empty caption", () => {
     preflightRow({ fileName: "b.png", status: "submitted" }),
   ]);
   assert.equal(failure, null);
+});
+
+test("CTA edit does not stale after generation", () => {
+  const ctx = baseContext();
+  const state = withGeneratedFrom(createDefaultCaptionAssistantState(), ctx);
+  const edited = { ...state, shared: { ...state.shared, cta: "Edited CTA" } };
+  assert.equal(isCaptionDraftStale(edited, ctx), false);
+});
+
+test("hasReviewedDraftContent includes hashtags only", () => {
+  assert.equal(hasReviewedDraftContent({ body: "", cta: "", instagramHashtags: ["Asthma"] }), true);
+});
+
+test("preflight blocks stale unacknowledged generated caption", () => {
+  const ctx = baseContext();
+  const issue = findSubmitValidCaptionPreflightIssue([
+    preflightRowWithAssistant({
+      fileName: "a.png",
+      shared: { body: "A", cta: "", instagramHashtags: [] },
+      generatedFrom: buildCaptionGenerationSnapshot(ctx, null),
+      stale: true,
+      staleAcknowledged: false,
+    }),
+  ]);
+  assert.equal(issue?.kind, "stale_generated");
+});
+
+test("preflight allows stale acknowledged generated caption", () => {
+  const ctx = baseContext();
+  const issue = findSubmitValidCaptionPreflightIssue([
+    preflightRowWithAssistant({
+      fileName: "a.png",
+      shared: { body: "A", cta: "", instagramHashtags: [] },
+      generatedFrom: buildCaptionGenerationSnapshot(ctx, null),
+      stale: true,
+      staleAcknowledged: true,
+    }),
+  ]);
+  assert.equal(issue, null);
+});
+
+test("regression: instructions change after generation marks stale via refresh", () => {
+  const ctxBlank = baseContext({ instructions: "" });
+  const state = withGeneratedFrom(
+    { ...createDefaultCaptionAssistantState(), instructions: "" },
+    ctxBlank,
+  );
+  assert.equal(refreshCaptionAssistantStale(state, ctxBlank).stale, false);
+
+  const afterInstructionsEdit = {
+    ...state,
+    instructions: "Keep the caption concise.",
+  };
+  const ctxNew = baseContext({ instructions: "Keep the caption concise." });
+  const refreshed = refreshCaptionAssistantStale(afterInstructionsEdit, ctxNew);
+  assert.equal(refreshed.stale, true);
+  assert.equal(refreshed.staleAcknowledged, false);
+  assert.equal(refreshed.staleAcknowledgedFingerprint, null);
+});
+
+test("regression: refresh must use current instructions in fingerprint context", () => {
+  const ctxBlank = baseContext({ instructions: "" });
+  const state = withGeneratedFrom(
+    { ...createDefaultCaptionAssistantState(), instructions: "" },
+    ctxBlank,
+  );
+  const afterInstructionsEdit = {
+    ...state,
+    instructions: "Keep the caption concise.",
+  };
+  const wrongContextRefresh = refreshCaptionAssistantStale(afterInstructionsEdit, ctxBlank);
+  assert.equal(wrongContextRefresh.stale, false);
+  const correctContextRefresh = refreshCaptionAssistantStale(
+    afterInstructionsEdit,
+    baseContext({ instructions: "Keep the caption concise." }),
+  );
+  assert.equal(correctContextRefresh.stale, true);
+});
+
+test("regression: instructions change blocks submit preflight until acknowledged", () => {
+  const ctxBlank = baseContext({ instructions: "" });
+  let assistant = withGeneratedFrom(
+    { ...createDefaultCaptionAssistantState(), instructions: "" },
+    ctxBlank,
+  );
+  assistant = refreshCaptionAssistantStale(
+    { ...assistant, instructions: "Keep the caption concise." },
+    baseContext({ instructions: "Keep the caption concise." }),
+  );
+  const blocked = findSubmitValidCaptionPreflightIssue([
+    preflightRowWithAssistant({
+      fileName: "2 - Who is Twilight Feather.png",
+      shared: { body: "Generated body", cta: "CTA", instagramHashtags: ["Tag"] },
+      generatedFrom: assistant.generatedFrom,
+      stale: assistant.stale,
+      staleAcknowledged: assistant.staleAcknowledged,
+    }),
+  ]);
+  assert.equal(blocked?.kind, "stale_generated");
+
+  const acknowledged = acknowledgeStaleCaption(
+    assistant,
+    baseContext({ instructions: "Keep the caption concise." }),
+  );
+  const allowed = findSubmitValidCaptionPreflightIssue([
+    preflightRowWithAssistant({
+      fileName: "2 - Who is Twilight Feather.png",
+      shared: { body: "Generated body", cta: "CTA", instagramHashtags: ["Tag"] },
+      generatedFrom: acknowledged.generatedFrom,
+      stale: acknowledged.stale,
+      staleAcknowledged: acknowledged.staleAcknowledged,
+    }),
+  ]);
+  assert.equal(allowed, null);
+});
+
+test("regression: instructions change after keep-caption-anyway blocks submit again", () => {
+  const ctxBlank = baseContext({ instructions: "" });
+  let assistant = withGeneratedFrom(
+    { ...createDefaultCaptionAssistantState(), instructions: "" },
+    ctxBlank,
+  );
+  assistant = refreshCaptionAssistantStale(
+    { ...assistant, instructions: "Keep the caption concise." },
+    baseContext({ instructions: "Keep the caption concise." }),
+  );
+  assistant = acknowledgeStaleCaption(
+    assistant,
+    baseContext({ instructions: "Keep the caption concise." }),
+  );
+  assistant = refreshCaptionAssistantStale(
+    { ...assistant, instructions: "Use a warmer tone." },
+    baseContext({ instructions: "Use a warmer tone." }),
+  );
+  assert.equal(assistant.stale, true);
+  assert.equal(assistant.staleAcknowledged, false);
+  const blocked = findSubmitValidCaptionPreflightIssue([
+    preflightRowWithAssistant({
+      fileName: "a.png",
+      shared: { body: "A", cta: "", instagramHashtags: [] },
+      generatedFrom: assistant.generatedFrom,
+      stale: assistant.stale,
+      staleAcknowledged: assistant.staleAcknowledged,
+    }),
+  ]);
+  assert.equal(blocked?.kind, "stale_generated");
+});
+
+test("regression: body CTA hashtag edits do not stale after generation", () => {
+  const ctx = baseContext();
+  let assistant = withGeneratedFrom(createDefaultCaptionAssistantState(), ctx);
+  assistant = refreshCaptionAssistantStale(
+    {
+      ...assistant,
+      shared: {
+        body: "edited",
+        cta: "edited cta",
+        instagramHashtags: ["Edited"],
+      },
+    },
+    ctx,
+  );
+  assert.equal(assistant.stale, false);
+});
+
+test("regression: book campaign category audience stale via refresh", () => {
+  const ctx = baseContext();
+  const assistant = withGeneratedFrom(createDefaultCaptionAssistantState(), ctx);
+  assert.equal(refreshCaptionAssistantStale(assistant, baseContext({ bookId: "b1" })).stale, true);
+  assert.equal(
+    refreshCaptionAssistantStale(assistant, baseContext({ campaignId: "c1" })).stale,
+    true,
+  );
+  assert.equal(
+    refreshCaptionAssistantStale(assistant, {
+      ...ctx,
+      advanced: { category: "educational", audience: null },
+    }).stale,
+    true,
+  );
+  assert.equal(
+    refreshCaptionAssistantStale(assistant, {
+      ...ctx,
+      advanced: { category: null, audience: "parents" },
+    }).stale,
+    true,
+  );
 });
