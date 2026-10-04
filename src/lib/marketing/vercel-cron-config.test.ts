@@ -5,10 +5,10 @@ import { test } from "node:test";
 
 const MARKETING_PUBLISH_CRON_PATH = "/api/cron/marketing-publish";
 
-/** Pro/Enterprise: per-minute precision. Hobby allows at most once per day (deploy would fail). */
-const MARKETING_PUBLISH_CRON_SCHEDULE = "*/15 * * * *";
+/** Vercel Hobby: at most one cron invocation per day (sub-daily expressions fail deploy). */
+const MARKETING_PUBLISH_CRON_SCHEDULE = "0 16 * * *";
 
-test("vercel.json registers marketing publish cron at 15-minute cadence", () => {
+test("vercel.json registers Hobby-compatible daily marketing publish cron", () => {
   const vercel = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8")) as {
     crons?: Array<{ path?: string; schedule?: string }>;
   };

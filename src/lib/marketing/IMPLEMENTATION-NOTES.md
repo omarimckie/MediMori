@@ -22,8 +22,12 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 - **Alternatives:** Later, a cheap image API behind `ImageProvider`, still gated by asset-priority rules.
 
 ### Scheduling
-- **Chosen for V1:** Store `scheduled_for` on content/publications and poll with Vercel Cron every 15 minutes (`/api/cron/marketing-publish`, `*/15 * * * *` UTC). Requires Vercel Pro or Enterprise (Hobby allows at most one run per day and rejects sub-daily expressions at deploy). Admins can also run the same endpoint from Your Week / Analytics (admin session).
-- **Alternatives:** Buffer’s own scheduler, Inngest, or a queue. A distributed job system is out of scope.
+- **Production plan:** Vercel **Hobby**. Native Vercel Cron cannot run more than **once per day** (sub-daily `vercel.json` expressions fail deploy; timing is only guaranteed within the scheduled hour).
+- **Chosen for V1:** Store `scheduled_for` on content/publications as the authoritative due-time queue. `publishDue` decides what is actually due; the cron is only a dispatcher.
+- **Vercel Cron (fallback):** Once daily at `0 16 * * *` UTC → `POST /api/cron/marketing-publish` with `Authorization: Bearer CRON_SECRET` (or admin session for manual runs). This is **not** sufficient for timely unattended publishing on Hobby (e.g. a 7:00 PM ET slot is not covered until the next day’s run unless something else invokes the endpoint).
+- **Timely unattended publishing on Hobby:** Requires an **external dispatcher** (not implemented in-repo yet) that hits the same endpoint ~every 15 minutes without duplicating publish logic. Upgrading Vercel is optional and not assumed.
+- **Manual fallback:** “Publish due items” on **Your Week** or **Analytics** (admin session) calls the same route and runs `publishDue`.
+- **Alternatives:** Buffer’s scheduler, Inngest, or a queue. A full distributed job system is out of scope.
 
 ### Analytics
 - **Chosen for V1:** `marketing_events`, `marketing_metrics`, and `marketing_clicks` in the existing Neon database. Purchases stay in `purchases` (no email copied into marketing tables).
@@ -73,10 +77,10 @@ These remain in the prototype so the full workflow is inspectable. Do not remove
 - **What would be lost:** Cost logging and a ready-made model boundary.
 
 ### Vercel Cron publisher
-- **Why it looks extra:** Admins can already click “Publish due items” on Analytics.
-- **What it does:** Polls scheduled publications every 15 minutes on Vercel.
-- **Could replace it:** Manual publish only, or a vendor scheduler (Buffer).
-- **What would be lost:** Hands-off posting after weekly approval.
+- **Why it looks extra:** Admins can already click “Publish due items” on Your Week / Analytics.
+- **What it does:** On Hobby, invokes `publishDue` at most once per day via Vercel; timely polling needs an external scheduler or manual action.
+- **Could replace it:** External HTTP cron (e.g. GitHub Actions) calling the same API route, manual publish only, or a vendor scheduler (Buffer).
+- **What would be lost:** Any automated dispatcher (Vercel daily or external) — hands-off posting after approval.
 
 ## Marketing asset public image proxy
 - **Route:** `GET`/`HEAD` `/api/marketing/assets/{assetId}/image` serves approved Blob-backed `marketing/public/*` raster images when at least one referencing `marketing_content` row has status `approved`, `scheduled`, `published`, or `failed`.
