@@ -58,6 +58,11 @@ export type MarketingStore = {
     id: string,
     patch: Partial<MarketingContent>,
   ): Promise<MarketingContent | null>;
+  /** Assigns weekly plan only; does not change campaign, status, or publications. */
+  assignContentWeeklyPlan(
+    contentId: string,
+    weeklyPlanId: string,
+  ): Promise<MarketingContent | null>;
   getContent(id: string): Promise<MarketingContent | null>;
   getContentByToken(token: string): Promise<MarketingContent | null>;
   listContent(filters?: ContentFilters): Promise<MarketingContent[]>;

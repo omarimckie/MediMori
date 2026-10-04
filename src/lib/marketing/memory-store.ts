@@ -188,6 +188,14 @@ export class MemoryMarketingStore implements MarketingStore {
     return clone(row);
   }
 
+  async assignContentWeeklyPlan(contentId: string, weeklyPlanId: string) {
+    const current = this.content.get(contentId);
+    if (!current) return null;
+    const row = { ...current, weeklyPlanId, updatedAt: nowIso() };
+    this.content.set(contentId, row);
+    return clone(row);
+  }
+
   async getContent(id: string) {
     const row = this.content.get(id);
     return row ? clone(row) : null;

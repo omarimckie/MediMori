@@ -1,5 +1,6 @@
 import { requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
+import { buildContentListPreviewById } from "@/lib/marketing/content-list-preview";
 import { buildWeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { parseExcludeStatusQuery } from "@/lib/marketing/content-week-queue";
 import { latestRejectionFeedback } from "@/lib/marketing/content-lifecycle";
@@ -30,6 +31,10 @@ export async function GET(request: Request) {
   const store = getMarketingStore();
   const content = await store.listContent(filters);
   const enrich = url.searchParams.get("enrich");
+  if (enrich === "preview") {
+    const previewByContentId = await buildContentListPreviewById(store, content);
+    return NextResponse.json({ content, previewByContentId });
+  }
   if (enrich === "weekly") {
     const reviewByContentId: Record<string, Awaited<ReturnType<typeof buildWeeklyItemReview>>> =
       {};

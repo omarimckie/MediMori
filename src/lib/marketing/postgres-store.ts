@@ -290,6 +290,18 @@ export class PostgresMarketingStore implements MarketingStore {
     return parseSmartUploadFinalizeRows(mapped, trimmed);
   }
 
+  async assignContentWeeklyPlan(contentId: string, weeklyPlanId: string) {
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE marketing_content SET
+        weekly_plan_id = ${weeklyPlanId}::uuid,
+        updated_at = now()
+      WHERE id = ${contentId}::uuid
+      RETURNING *
+    `;
+    return rows[0] ? mapContent(rows[0] as Record<string, unknown>) : null;
+  }
+
   async updateContent(id: string, patch: Partial<MarketingContent>) {
     const current = await this.getContent(id);
     if (!current) return null;
