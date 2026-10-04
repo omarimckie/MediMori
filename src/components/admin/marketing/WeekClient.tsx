@@ -22,6 +22,10 @@ import {
 } from "@/lib/marketing/content-client-utils";
 import { formatMarketingWeekTimingLabel, nextMondayDefault } from "@/lib/marketing/weekly-plan-dates";
 import { NewWeekModal } from "./NewWeekModal";
+import {
+  NEW_WEEK_BUTTON_LABEL,
+  shouldRenderWeekPlanSelector,
+} from "./week-client-visibility";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 import Link from "next/link";
 
@@ -208,7 +212,7 @@ export function WeekClient() {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <PrimaryButton type="button" onClick={openNewWeekModal}>
-              New Week
+              {NEW_WEEK_BUTTON_LABEL}
             </PrimaryButton>
             <Link
               href="/admin/marketing/campaigns"
@@ -245,8 +249,8 @@ export function WeekClient() {
             </p>
             <h2 className="mt-2 font-display text-3xl">Week of {plan.weekStart}</h2>
           </div>
-          <div className="flex flex-col gap-2 sm:items-end">
-            {settings.plans.length > 1 ? (
+          {shouldRenderWeekPlanSelector(settings.plans.length) ? (
+            <div className="flex flex-col gap-2 sm:items-end">
               <label className="text-xs font-bold uppercase tracking-wide text-white/70">
                 View week
                 <select
@@ -265,15 +269,8 @@ export function WeekClient() {
                   ))}
                 </select>
               </label>
-            ) : null}
-            <SecondaryButton
-              disabled={busy}
-              onClick={openNewWeekModal}
-              className="border-white/30 text-white hover:bg-white/10"
-            >
-              New Week
-            </SecondaryButton>
-          </div>
+            </div>
+          ) : null}
         </div>
         <p className="mt-2 text-white/80">{plan.summary.objective}</p>
         <p className="mt-3 text-sm">
@@ -281,6 +278,14 @@ export function WeekClient() {
           {plan.summary.warningCount} with warnings · audience: {plan.summary.audience}
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={openNewWeekModal}
+            className="inline-flex h-10 items-center rounded-xl border-2 border-brand-gold bg-brand-gold/15 px-4 text-sm font-bold text-brand-gold"
+          >
+            {NEW_WEEK_BUTTON_LABEL}
+          </button>
           <button
             type="button"
             disabled={busy}
