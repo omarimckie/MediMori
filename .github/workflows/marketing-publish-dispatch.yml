@@ -1,0 +1,86 @@
+# External dispatcher for Vercel Hobby: invokes app publishDue via production API.
+# Requires repository configuration (see IMPLEMENTATION-NOTES.md — Scheduling).
+
+name: Marketing publish dispatch
+
+on:
+  schedule:
+    # Approximately every 15 minutes (GitHub may delay scheduled runs).
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: marketing-publish-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/marketing-publish
+        env:
+          MARKETING_PUBLISH_BASE_URL: ${{ vars.MARKETING_PUBLISH_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MARKETING_PUBLISH_BASE_URL}" ]; then
+            echo "::error::Set repository variable MARKETING_PUBLISH_BASE_URL (e.g. https://twilight-feather.com)."
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::Set repository secret CRON_SECRET (must match Vercel production CRON_SECRET)."
+            exit 1
+          fi
+
+          BASE="${MARKETING_PUBLISH_BASE_URL%/}"
+          URL="${BASE}/api/cron/marketing-publish"
+          echo "Dispatch target: ${URL}"
+          echo "Auth: Bearer CRON_SECRET (value not logged)"
+
+          HTTP_CODE="$(
+            curl -sS -o /tmp/marketing-publish-response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              --data '{}' \
+              "${URL}"
+          )"
+
+          echo "HTTP status: ${HTTP_CODE}"
+
+          node <<'NODE'
+          const fs = require("fs");
+          const path = "/tmp/marketing-publish-response.json";
+          let raw = "";
+          try {
+            raw = fs.readFileSync(path, "utf8");
+          } catch {
+            console.log("Response body: (empty)");
+            process.exit(0);
+          }
+          let body;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            console.log("Response body (non-JSON, truncated):", raw.slice(0, 400));
+            process.exit(0);
+          }
+          if (body.error) {
+            console.log("application error:", body.error);
+          }
+          if (typeof body.published === "number") {
+            console.log("published count:", body.published);
+          }
+          if (Array.isArray(body.results)) {
+            console.log("results length:", body.results.length);
+          }
+          NODE
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Dispatcher failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "Dispatcher completed successfully."

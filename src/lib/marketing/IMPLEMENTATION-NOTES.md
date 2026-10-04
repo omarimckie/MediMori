@@ -23,10 +23,13 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 
 ### Scheduling
 - **Production plan:** Vercel **Hobby**. Native Vercel Cron cannot run more than **once per day** (sub-daily `vercel.json` expressions fail deploy; timing is only guaranteed within the scheduled hour).
-- **Chosen for V1:** Store `scheduled_for` on content/publications as the authoritative due-time queue. `publishDue` decides what is actually due; the cron is only a dispatcher.
-- **Vercel Cron (fallback):** Once daily at `0 16 * * *` UTC → `POST /api/cron/marketing-publish` with `Authorization: Bearer CRON_SECRET` (or admin session for manual runs). This is **not** sufficient for timely unattended publishing on Hobby (e.g. a 7:00 PM ET slot is not covered until the next day’s run unless something else invokes the endpoint).
-- **Timely unattended publishing on Hobby:** Requires an **external dispatcher** (not implemented in-repo yet) that hits the same endpoint ~every 15 minutes without duplicating publish logic. Upgrading Vercel is optional and not assumed.
-- **Manual fallback:** “Publish due items” on **Your Week** or **Analytics** (admin session) calls the same route and runs `publishDue`.
+- **Chosen for V1:** Store `scheduled_for` on content/publications as the authoritative due-time queue. `publishDue` decides what is actually due; dispatchers only invoke that function via `POST /api/cron/marketing-publish`.
+- **Vercel Cron (fallback):** Once daily at `0 16 * * *` UTC → same endpoint with `Authorization: Bearer CRON_SECRET`. Retained on Hobby as a backup if GitHub Actions is disabled or misconfigured.
+- **GitHub Actions (intended ~15-minute dispatcher):** Workflow `.github/workflows/marketing-publish-dispatch.yml` runs on `cron: "*/15 * * * *"` and `workflow_dispatch`. It POSTs to `{MARKETING_PUBLISH_BASE_URL}/api/cron/marketing-publish` with `Bearer CRON_SECRET`. Scheduled runs can be **delayed** by GitHub under load. GitHub may **disable scheduled workflows** after prolonged repository inactivity (re-enable in the Actions tab). No publish logic lives in the workflow.
+- **Manual fallback:** “Publish due items” on **Your Week** or **Analytics** (admin session) calls the same route for emergency or pre-dispatcher testing.
+- **GitHub configuration (required after merge):**
+  - Repository **secret** `CRON_SECRET` — must match Vercel production `CRON_SECRET` byte-for-byte.
+  - Repository **variable** `MARKETING_PUBLISH_BASE_URL` — production site origin only, no trailing slash (e.g. `https://twilight-feather.com`), same host as `NEXT_PUBLIC_SITE_URL` on Vercel.
 - **Alternatives:** Buffer’s scheduler, Inngest, or a queue. A full distributed job system is out of scope.
 
 ### Analytics
@@ -77,10 +80,10 @@ These remain in the prototype so the full workflow is inspectable. Do not remove
 - **What would be lost:** Cost logging and a ready-made model boundary.
 
 ### Vercel Cron publisher
-- **Why it looks extra:** Admins can already click “Publish due items” on Your Week / Analytics.
-- **What it does:** On Hobby, invokes `publishDue` at most once per day via Vercel; timely polling needs an external scheduler or manual action.
-- **Could replace it:** External HTTP cron (e.g. GitHub Actions) calling the same API route, manual publish only, or a vendor scheduler (Buffer).
-- **What would be lost:** Any automated dispatcher (Vercel daily or external) — hands-off posting after approval.
+- **Why it looks extra:** Admins can already click “Publish due items” on Your Week / Analytics; GitHub Actions also dispatches the same route.
+- **What it does:** On Hobby, Vercel invokes `publishDue` at most once per day; GitHub Actions provides ~15-minute polling.
+- **Could replace it:** Manual publish only, or a vendor scheduler (Buffer).
+- **What would be lost:** Automated dispatch (GitHub + daily Vercel fallback) — hands-off posting after approval.
 
 ## Marketing asset public image proxy
 - **Route:** `GET`/`HEAD` `/api/marketing/assets/{assetId}/image` serves approved Blob-backed `marketing/public/*` raster images when at least one referencing `marketing_content` row has status `approved`, `scheduled`, `published`, or `failed`.
