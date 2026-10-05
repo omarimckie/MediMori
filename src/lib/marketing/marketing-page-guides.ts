@@ -57,7 +57,7 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
     purpose:
       "A generated summary of recent marketing activity: published counts, internal metric totals, purchases, and heuristic recommendations for the period.",
     actions: [
-      "Regenerate the report when you want an updated snapshot.",
+      "Open this page when you want the latest generated weekly snapshot (reload the page to refresh).",
       "Review top and underperforming items and purchase totals.",
       "Accept, reject, or dismiss report recommendations to record your decision.",
     ],
