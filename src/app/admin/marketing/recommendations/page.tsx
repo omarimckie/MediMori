@@ -3,7 +3,7 @@ import { RecommendationsClient } from "@/components/admin/marketing/Recommendati
 
 export default function RecommendationsPage() {
   return (
-    <MarketingFrame title="Recommendations" pathname="/admin/marketing/recommendations">
+    <MarketingFrame title="Recommendations" pathname="/admin/marketing/recommendations" guideId="recommendations">
       <RecommendationsClient />
     </MarketingFrame>
   );

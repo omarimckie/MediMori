@@ -3,7 +3,7 @@ import { AnalyticsClient } from "@/components/admin/marketing/AnalyticsClient";
 
 export default function AnalyticsPage() {
   return (
-    <MarketingFrame title="Analytics" pathname="/admin/marketing/analytics">
+    <MarketingFrame title="Analytics" pathname="/admin/marketing/analytics" guideId="analytics">
       <AnalyticsClient />
     </MarketingFrame>
   );

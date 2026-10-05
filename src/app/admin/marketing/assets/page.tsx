@@ -3,7 +3,7 @@ import { AssetsClient } from "@/components/admin/marketing/AssetsClient";
 
 export default function AssetsPage() {
   return (
-    <MarketingFrame title="Assets" pathname="/admin/marketing/assets">
+    <MarketingFrame title="Assets" pathname="/admin/marketing/assets" guideId="assets">
       <AssetsClient />
     </MarketingFrame>
   );

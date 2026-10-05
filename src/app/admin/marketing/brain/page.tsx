@@ -3,7 +3,7 @@ import { BrainClient } from "@/components/admin/marketing/BrainClient";
 
 export default function BrainPage() {
   return (
-    <MarketingFrame title="Marketing brain" pathname="/admin/marketing/brain">
+    <MarketingFrame title="Marketing brain" pathname="/admin/marketing/brain" guideId="brain">
       <BrainClient />
     </MarketingFrame>
   );

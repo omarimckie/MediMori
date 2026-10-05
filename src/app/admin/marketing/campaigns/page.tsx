@@ -3,7 +3,7 @@ import { CampaignsClient } from "@/components/admin/marketing/CampaignsClient";
 
 export default function CampaignsPage() {
   return (
-    <MarketingFrame title="Campaigns" pathname="/admin/marketing/campaigns">
+    <MarketingFrame title="Campaigns" pathname="/admin/marketing/campaigns" guideId="campaigns">
       <CampaignsClient />
     </MarketingFrame>
   );

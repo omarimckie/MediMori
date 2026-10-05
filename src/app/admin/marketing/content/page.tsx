@@ -3,7 +3,7 @@ import { ContentClient } from "@/components/admin/marketing/ContentClient";
 
 export default function ContentPage() {
   return (
-    <MarketingFrame title="Content" pathname="/admin/marketing/content">
+    <MarketingFrame title="Content" pathname="/admin/marketing/content" guideId="content">
       <ContentClient />
     </MarketingFrame>
   );

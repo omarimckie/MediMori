@@ -3,7 +3,7 @@ import { SmartUploadClient } from "@/components/admin/marketing/SmartUploadClien
 
 export default function SmartUploadPage() {
   return (
-    <MarketingFrame title="Smart Upload" pathname="/admin/marketing/smart-upload">
+    <MarketingFrame title="Smart Upload" pathname="/admin/marketing/smart-upload" guideId="smart-upload">
       <SmartUploadClient />
     </MarketingFrame>
   );
