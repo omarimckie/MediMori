@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AdminLogoutButton } from "@/components/admin/AdminLogoutButton";
+import { MarketingNotificationBell } from "@/components/admin/marketing/MarketingNotificationBell";
 
 const PRIMARY_NAV = [
   { href: "/admin/marketing", label: "Overview" },
@@ -18,6 +19,7 @@ const MORE_NAV = [
   { href: "/admin/marketing/recommendations", label: "Recommendations" },
   { href: "/admin/marketing/brain", label: "Marketing brain" },
   { href: "/admin/marketing/costs", label: "Costs" },
+  { href: "/admin/marketing/notifications", label: "Notifications" },
 ];
 
 export function MarketingShell({
@@ -40,6 +42,7 @@ export function MarketingShell({
             <h1 className="font-display text-3xl font-bold text-brand-navy">{title}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <MarketingNotificationBell />
             <Link
               href="/admin"
               className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal hover:bg-cream-deep"
