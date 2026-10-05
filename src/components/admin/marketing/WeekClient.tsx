@@ -15,9 +15,13 @@ import {
   WEEK_WORKING_QUEUE_EXCLUDE_STATUSES,
 } from "@/lib/marketing/content-week-queue";
 import {
+  contentBodyExcerpt,
+  contentDisplayTitle,
   EMPTY_WEEK_MESSAGE,
+  formatScheduledPublishLabel,
   formatWeekPlanSelectorLabel,
   resolveWeeklyPlanSelection,
+  shouldShowScheduledPublishOnWeekCard,
   weekPlanTiming,
 } from "@/lib/marketing/content-client-utils";
 import { formatMarketingWeekTimingLabel, nextMondayDefault } from "@/lib/marketing/weekly-plan-dates";
@@ -341,6 +345,7 @@ export function WeekClient() {
       {(() => {
         const modal = reviewScheduleModalState(scheduleItem, recycleItem);
         if (!modal) return null;
+        const modalPlan = settings.plans.find((row) => row.id === modal.item.weeklyPlanId);
         return (
           <ScheduleContentModal
             mode={modal.mode}
@@ -348,6 +353,7 @@ export function WeekClient() {
             platform={modal.item.platform}
             marketingTimezone={marketingTimezone}
             initialScheduledFor={modal.item.scheduledFor}
+            assignedWeekStart={modalPlan?.weekStart ?? null}
             busy={busy}
             onClose={() => {
               setScheduleItem(null);
@@ -416,6 +422,7 @@ export function WeekClient() {
               {rejectedContent.map((item) => {
                 const review = rejectedReviewByContentId[item.id];
                 const feedback = rejectionFeedbackByContentId[item.id];
+                const rejectedDisplayTitle = contentDisplayTitle(item.title, item.body);
                 return (
                   <li
                     key={item.id}
@@ -433,8 +440,12 @@ export function WeekClient() {
                           <StatusPill status="rejected" />
                           <StatusPill status={item.platform} />
                         </div>
-                        <h4 className="mt-2 text-lg font-extrabold">{item.title}</h4>
-                        <p className="mt-2 line-clamp-4 text-sm text-brand-charcoal/80">{item.body}</p>
+                        {rejectedDisplayTitle ? (
+                          <h4 className="mt-2 text-lg font-extrabold">{rejectedDisplayTitle}</h4>
+                        ) : null}
+                        <p className="mt-2 text-sm text-brand-charcoal/80">
+                          {contentBodyExcerpt(item.body)}
+                        </p>
                         {feedback ? (
                           <p className="mt-2 text-sm text-brand-orange-deep">
                             <span className="font-bold">Reason:</span> {feedback}
@@ -472,6 +483,12 @@ export function WeekClient() {
             const hasPublishedPublication = contentPublications.some(
               (row) => row.status === "published",
             );
+            const primaryPublication = publicationByContent.get(item.id);
+            const displayTitle = contentDisplayTitle(item.title, item.body);
+            const showPublishTime = shouldShowScheduledPublishOnWeekCard(
+              item,
+              primaryPublication?.status,
+            );
             return (
             <Card key={item.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -490,16 +507,23 @@ export function WeekClient() {
                           : item.status
                       }
                     />
-                    {publicationByContent.get(item.id) ? (
+                    {primaryPublication ? (
                       <span className="self-center text-xs text-brand-charcoal/55">
-                        Provider: {publicationByContent.get(item.id)!.provider}
+                        Provider: {primaryPublication.provider}
+                      </span>
+                    ) : null}
+                    {showPublishTime && item.scheduledFor ? (
+                      <span className="self-center text-xs font-semibold text-brand-navy">
+                        {formatScheduledPublishLabel(item.scheduledFor, marketingTimezone)}
                       </span>
                     ) : null}
                     <StatusPill status={item.category} />
                     <StatusPill status={item.format} />
                     {item.needsNewAsset ? <StatusPill status="needs asset" /> : null}
                   </div>
-                  <h4 className="mt-2 text-lg font-extrabold">{item.title}</h4>
+                  {displayTitle ? (
+                    <h4 className="mt-2 text-lg font-extrabold">{displayTitle}</h4>
+                  ) : null}
                   <textarea
                     className="mt-3 w-full rounded-2xl border border-brand-brown/20 p-3 text-sm"
                     rows={6}

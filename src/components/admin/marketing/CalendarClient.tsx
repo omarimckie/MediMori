@@ -48,6 +48,7 @@ export function CalendarClient() {
     Pick<MarketingPublication, "contentId" | "platform" | "status" | "publishedAt" | "externalId">[]
   >([]);
   const [unscheduled, setUnscheduled] = useState<MarketingContent[]>([]);
+  const [weeklyPlans, setWeeklyPlans] = useState<Array<{ id: string; weekStart: string }>>([]);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -84,6 +85,12 @@ export function CalendarClient() {
     >[];
     const approved = (contentData.content ?? []) as MarketingContent[];
     setUnscheduled(filterUnscheduledApprovedContent(approved, publications));
+    setWeeklyPlans(
+      ((settingsData.plans ?? []) as Array<{ id: string; weekStart: string }>).map((plan) => ({
+        id: plan.id,
+        weekStart: plan.weekStart,
+      })),
+    );
   }, []);
 
   const reloadAll = useCallback(async () => {
@@ -356,6 +363,13 @@ export function CalendarClient() {
           platform={scheduleTarget.platform}
           marketingTimezone={marketingTimezone}
           initialScheduledFor={scheduleTarget.scheduledFor}
+          assignedWeekStart={
+            weeklyPlans.find(
+              (plan) =>
+                plan.id ===
+                unscheduled.find((row) => row.id === scheduleTarget.id)?.weeklyPlanId,
+            )?.weekStart ?? null
+          }
           busy={busy}
           onClose={() => setScheduleTarget(null)}
           onConfirm={(scheduledFor) => {

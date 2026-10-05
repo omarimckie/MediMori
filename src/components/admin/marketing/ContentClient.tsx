@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   contentBodyExcerpt,
+  contentDisplayTitle,
   formatContentCreatedAt,
   formatContentWeekLabel,
   pickOperationalWeeklyPlanId,
@@ -152,6 +153,7 @@ export function ContentClient() {
         const week = formatContentWeekLabel(item.weeklyPlanId, plans);
         const onCurrentWeek =
           item.weeklyPlanId && currentWeekPlanId && item.weeklyPlanId === currentWeekPlanId;
+        const displayTitle = contentDisplayTitle(item.title, item.body);
 
         return (
           <Card key={item.id}>
@@ -181,8 +183,18 @@ export function ContentClient() {
                   <StatusPill status={item.category} />
                   <StatusPill status={item.audience} />
                 </div>
-                <h3 className="mt-2 text-lg font-extrabold">{item.title || "Untitled"}</h3>
-                <p className="mt-2 text-sm text-brand-charcoal/80">{contentBodyExcerpt(item.body)}</p>
+                {displayTitle ? (
+                  <h3 className="mt-2 text-lg font-extrabold">{displayTitle}</h3>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold text-brand-charcoal whitespace-pre-wrap">
+                    {contentBodyExcerpt(item.body)}
+                  </p>
+                )}
+                {displayTitle ? (
+                  <p className="mt-2 text-sm text-brand-charcoal/80 whitespace-pre-wrap">
+                    {contentBodyExcerpt(item.body)}
+                  </p>
+                ) : null}
                 {item.cta?.trim() ? (
                   <p className="mt-2 text-xs font-semibold text-brand-navy">CTA: {item.cta.trim()}</p>
                 ) : null}

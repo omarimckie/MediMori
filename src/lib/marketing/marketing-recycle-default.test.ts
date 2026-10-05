@@ -59,14 +59,14 @@ test("ScheduleContentModal uses recycle default helper only in recycle mode", ()
   assert.match(source, /isRecycle\s*\?[\s\S]*defaultRecycleScheduleDatetimeLocal/);
 });
 
-test("first-time schedule modal still initializes from initialScheduledFor without recycle helper", () => {
+test("first-time schedule modal uses defaultFirstScheduleDatetimeLocal without recycle helper", () => {
   const source = readFileSync(
     new URL("../../components/admin/marketing/ScheduleContentModal.tsx", import.meta.url),
     "utf8",
   );
   assert.match(
     source,
-    /isRecycle\s*\?\s*defaultRecycleScheduleDatetimeLocal[\s\S]*:\s*isoToMarketingDatetimeLocal\(initialScheduledFor/,
+    /isRecycle\s*\?\s*defaultRecycleScheduleDatetimeLocal[\s\S]*:\s*defaultFirstScheduleDatetimeLocal/,
   );
 });
 

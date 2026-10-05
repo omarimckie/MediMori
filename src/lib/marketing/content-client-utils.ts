@@ -1,3 +1,4 @@
+import { formatMarketingScheduleDisplay } from "./marketing-scheduling";
 import {
   classifyMarketingWeek,
   formatMarketingWeekTimingLabel,
@@ -15,10 +16,63 @@ export type ContentWeekPlanOption = {
   weekStart: string;
 };
 
+function normalizeContentText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+/** First non-empty line of post body (trimmed), for title redundancy checks. */
+export function firstMeaningfulBodyLine(body: string): string {
+  const line = body.trim().split(/\n+/).find((part) => part.trim()) ?? "";
+  return normalizeContentText(line);
+}
+
+/**
+ * True when a stored title adds no information beyond the start of body
+ * (e.g. Smart Upload title = first line of composed caption).
+ */
+export function isContentTitleRedundantWithBody(title: string | null, body: string): boolean {
+  const normalizedTitle = normalizeContentText(title ?? "");
+  if (!normalizedTitle) return true;
+  const firstLine = firstMeaningfulBodyLine(body);
+  if (!firstLine) return false;
+  if (normalizedTitle === firstLine) return true;
+  const bodyTrimmed = body.trim();
+  if (bodyTrimmed.startsWith(normalizedTitle)) {
+    const remainder = bodyTrimmed.slice(normalizedTitle.length);
+    if (!remainder || /^\s/.test(remainder) || remainder.startsWith("\n")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Title to show as a heading, or null when redundant with body. */
+export function contentDisplayTitle(title: string | null, body: string): string | null {
+  if (isContentTitleRedundantWithBody(title, body)) return null;
+  const normalizedTitle = normalizeContentText(title ?? "");
+  return normalizedTitle || null;
+}
+
 export function contentBodyExcerpt(body: string, max = CONTENT_BODY_EXCERPT_MAX): string {
   const trimmed = body.trim();
   if (trimmed.length <= max) return trimmed;
-  return `${trimmed.slice(0, max).trimEnd()}…`;
+  const slice = trimmed.slice(0, max);
+  const lastSpace = slice.lastIndexOf(" ");
+  const cut =
+    lastSpace > Math.floor(max * 0.5) ? slice.slice(0, lastSpace) : slice.trimEnd();
+  return `${cut.trimEnd()}…`;
+}
+
+export function shouldShowScheduledPublishOnWeekCard(
+  item: { status: string; scheduledFor: string | null },
+  publicationStatus: string | undefined,
+): boolean {
+  const isScheduled = item.status === "scheduled" || publicationStatus === "scheduled";
+  return isScheduled && Boolean(item.scheduledFor?.trim());
+}
+
+export function formatScheduledPublishLabel(scheduledFor: string, timeZone: string): string {
+  return `Publishes: ${formatMarketingScheduleDisplay(scheduledFor, timeZone)}`;
 }
 
 export function formatContentWeekLabel(

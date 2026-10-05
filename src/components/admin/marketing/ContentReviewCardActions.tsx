@@ -12,6 +12,7 @@ export type ContentReviewCardItem = {
   body: string;
   title: string | null;
   scheduledFor: string | null;
+  weeklyPlanId: string | null;
 };
 
 type Props = {

@@ -34,6 +34,7 @@ function renderActions(input: {
         body: "Body",
         title: "Post",
         scheduledFor: null,
+        weeklyPlanId: null,
       }}
       busy={false}
       hasPublishedPublication={input.hasPublishedPublication}
@@ -107,6 +108,7 @@ test("reviewScheduleModalState opens recycle scheduling modal", () => {
     body: "x",
     title: "Post",
     scheduledFor: null,
+    weeklyPlanId: null,
   };
   const state = reviewScheduleModalState(null, item);
   assert.deepEqual(state, { mode: "recycle", item });

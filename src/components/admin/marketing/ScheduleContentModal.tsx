@@ -1,8 +1,8 @@
 "use client";
 
 import {
+  defaultFirstScheduleDatetimeLocal,
   defaultRecycleScheduleDatetimeLocal,
-  isoToMarketingDatetimeLocal,
 } from "@/lib/marketing/marketing-scheduling";
 import { PrimaryButton, SecondaryButton } from "./ui";
 
@@ -11,6 +11,8 @@ type Props = {
   platform: string;
   marketingTimezone: string;
   initialScheduledFor: string | null;
+  /** Plan week_start (YYYY-MM-DD) when content is assigned to a weekly plan; used for first-time defaults only. */
+  assignedWeekStart?: string | null;
   busy: boolean;
   onClose: () => void;
   onConfirm: (marketingDatetimeLocal: string) => void;
@@ -22,6 +24,7 @@ export function ScheduleContentModal({
   platform,
   marketingTimezone,
   initialScheduledFor,
+  assignedWeekStart = null,
   busy,
   onClose,
   onConfirm,
@@ -34,8 +37,12 @@ export function ScheduleContentModal({
         new Date(),
         marketingTimezone,
       )
-    : isoToMarketingDatetimeLocal(initialScheduledFor, marketingTimezone) ||
-      isoToMarketingDatetimeLocal(new Date().toISOString(), marketingTimezone);
+    : defaultFirstScheduleDatetimeLocal({
+        initialScheduledFor,
+        assignedWeekStart,
+        now: new Date(),
+        timeZone: marketingTimezone,
+      });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-charcoal/40 p-4">
@@ -58,6 +65,11 @@ export function ScheduleContentModal({
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-brand-charcoal/55">
           Marketing timezone: {marketingTimezone}
         </p>
+        {!isRecycle ? (
+          <p className="mt-1 text-xs text-brand-charcoal/55">
+            Adjust the date and time below before confirming — nothing is scheduled until you confirm.
+          </p>
+        ) : null}
         <form
           className="mt-4 space-y-4"
           onSubmit={(event) => {

@@ -1,4 +1,5 @@
 import { getMarketingTimezone } from "./config";
+import { classifyMarketingWeek, marketingUtcToday } from "./weekly-plan-dates";
 
 type ZonedParts = {
   year: number;
@@ -226,6 +227,56 @@ export function defaultRecycleScheduleDatetimeLocal(
     nextFutureRecycleScheduleIso(previousScheduledIso, now, timeZone),
     timeZone,
   );
+}
+
+function ensureNotPastScheduleDatetimeLocal(
+  candidateLocal: string,
+  now: Date,
+  timeZone: string,
+): string {
+  const nowLocal = isoToMarketingDatetimeLocal(now.toISOString(), timeZone);
+  if (!candidateLocal.trim()) return nowLocal;
+  try {
+    const candidateMs = new Date(marketingDatetimeLocalToIso(candidateLocal, timeZone)).getTime();
+    const nowMs = now.getTime();
+    if (!Number.isNaN(candidateMs) && candidateMs >= nowMs) {
+      return candidateLocal;
+    }
+  } catch {
+    return nowLocal;
+  }
+  return nowLocal;
+}
+
+/**
+ * Default `<input type="datetime-local">` for first-time schedule (non-recycle).
+ * Does not use platformScheduleSlot or other posting-cadence heuristics.
+ */
+export function defaultFirstScheduleDatetimeLocal(input: {
+  initialScheduledFor: string | null | undefined;
+  assignedWeekStart: string | null | undefined;
+  now: Date;
+  timeZone: string;
+}): string {
+  const { initialScheduledFor, assignedWeekStart, now, timeZone } = input;
+  if (initialScheduledFor?.trim()) {
+    const existing = isoToMarketingDatetimeLocal(initialScheduledFor, timeZone);
+    if (existing) return existing;
+  }
+
+  const nowLocal = isoToMarketingDatetimeLocal(now.toISOString(), timeZone);
+  let candidateLocal = nowLocal;
+
+  if (assignedWeekStart?.trim()) {
+    const timing = classifyMarketingWeek(assignedWeekStart, marketingUtcToday(now));
+    if (timing === "upcoming") {
+      const [year, month, day] = assignedWeekStart.split("-").map(Number);
+      const nowParts = zonedParts(now, timeZone);
+      candidateLocal = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(nowParts.hour).padStart(2, "0")}:${String(nowParts.minute).padStart(2, "0")}`;
+    }
+  }
+
+  return ensureNotPastScheduleDatetimeLocal(candidateLocal, now, timeZone);
 }
 
 export function isPublicationDue(
