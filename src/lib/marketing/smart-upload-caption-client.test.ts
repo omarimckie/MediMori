@@ -50,6 +50,7 @@ const imageOriginalOnly = {
 
 test("request: shared mode only", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -62,6 +63,7 @@ test("request: shared mode only", () => {
 
 test("request: blank instructions omitted", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "   ",
     explicitCta: null,
     bookId: null,
@@ -74,6 +76,7 @@ test("request: blank instructions omitted", () => {
 
 test("request: instructions sent trimmed", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "  hello  ",
     explicitCta: null,
     bookId: null,
@@ -86,6 +89,7 @@ test("request: instructions sent trimmed", () => {
 
 test("request: explicitCta when present", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: " Shop now ",
     bookId: null,
@@ -98,6 +102,7 @@ test("request: explicitCta when present", () => {
 
 test("request: no CTA omitted", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -110,6 +115,7 @@ test("request: no CTA omitted", () => {
 
 test("request: bookId and campaignId sent", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: "book-1",
@@ -123,6 +129,7 @@ test("request: bookId and campaignId sent", () => {
 
 test("request: automatic advanced omitted", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -136,6 +143,7 @@ test("request: automatic advanced omitted", () => {
 
 test("request: category and audience overrides sent", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -149,6 +157,7 @@ test("request: category and audience overrides sent", () => {
 
 test("request: original image refs", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -163,6 +172,7 @@ test("request: original image refs", () => {
 
 test("request: derivative refs and linkage", () => {
   const body = buildGenerateCaptionsRequestBody({
+    mode: "shared",
     instructions: "",
     explicitCta: null,
     bookId: null,
@@ -310,7 +320,10 @@ test("submit preflight stale unacknowledged blocks batch", () => {
       previewDerivative: null,
       fixStrategy: "pad",
       fixTargetRatio: "4:5",
+      mode: "shared",
       shared: { body: "A", cta: "", instagramHashtags: [] },
+      facebook: { body: "", cta: "" },
+      instagram: { body: "", cta: "", instagramHashtags: [] },
       generatedFrom: buildCaptionGenerationSnapshot(ctx, null),
       stale: true,
       staleAcknowledged: false,
@@ -329,7 +342,10 @@ test("submit: manual-only and CTA-only completeness", () => {
       previewDerivative: null,
       fixStrategy: "pad",
       fixTargetRatio: "4:5",
+      mode: "shared",
       shared: { body: "", cta: "", instagramHashtags: ["only"] },
+      facebook: { body: "", cta: "" },
+      instagram: { body: "", cta: "", instagramHashtags: [] },
       generatedFrom: null,
       stale: false,
       staleAcknowledged: false,
@@ -346,7 +362,10 @@ test("submit: manual-only and CTA-only completeness", () => {
       previewDerivative: null,
       fixStrategy: "pad",
       fixTargetRatio: "4:5",
+      mode: "shared",
       shared: { body: "", cta: "Go", instagramHashtags: [] },
+      facebook: { body: "", cta: "" },
+      instagram: { body: "", cta: "", instagramHashtags: [] },
       generatedFrom: null,
       stale: false,
       staleAcknowledged: false,
@@ -390,6 +409,43 @@ test("readiness blocks local-multipart and needs_attention", () => {
     }).ready,
     false,
   );
+});
+
+test("request: per_platform mode", () => {
+  const body = buildGenerateCaptionsRequestBody({
+    mode: "per_platform",
+    instructions: "",
+    explicitCta: null,
+    bookId: null,
+    campaignId: null,
+    advanced: { category: null, audience: null },
+    image: imageOriginalOnly,
+  });
+  assert.equal(body.mode, "per_platform");
+});
+
+test("per_platform response maps to independent drafts", () => {
+  const before = createDefaultCaptionAssistantState();
+  before.facebook.body = "old fb";
+  before.instagram.body = "old ig";
+  const ctx = baseContext({ mode: "per_platform" });
+  const snapshot = buildGenerationSnapshotForRequest(ctx, null);
+  const response = parseGenerateCaptionsResponse({
+    mode: "per_platform",
+    instagram: { body: "IG new", cta: null, hashtags: ["A"] },
+    facebook: { body: "FB new", cta: "CTA" },
+    warnings: [],
+    imagePathname: "/x",
+    provider: "mock",
+    mock: true,
+  });
+  const after = applySuccessfulCaptionGeneration(before, response, snapshot);
+  assert.equal(after.mode, "per_platform");
+  assert.equal(after.facebook.body, "FB new");
+  assert.equal(after.facebook.cta, "CTA");
+  assert.equal(after.instagram.body, "IG new");
+  assert.deepEqual(after.instagram.instagramHashtags, ["A"]);
+  assert.equal(after.shared.body, "");
 });
 
 test("image context builder from file", () => {

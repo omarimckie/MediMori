@@ -25,6 +25,7 @@ export type GenerateCaptionsImageContext = {
 };
 
 export type BuildGenerateCaptionsRequestInput = {
+  mode: "shared" | "per_platform";
   instructions: string;
   explicitCta: string | null;
   bookId: string | null;
@@ -40,7 +41,7 @@ export function buildGenerateCaptionsRequestBody(
   const explicitCta = input.explicitCta?.trim() || null;
 
   const body: Record<string, unknown> = {
-    mode: "shared",
+    mode: input.mode,
     originalUploadIntent: input.image.originalUploadIntent,
     originalPathname: input.image.originalPathname,
   };
@@ -86,12 +87,63 @@ export function mapCaptionGenerationHttpError(status: number, serverMessage: str
   return serverMessage.trim() || "Caption generation failed. Try again.";
 }
 
+function parsePlatformDraftFromResponse(
+  raw: Record<string, unknown> | undefined,
+  includeHashtags: boolean,
+): { body: string; cta: string | null; hashtags: string[] } {
+  if (!raw) {
+    throw new Error("Expected platform caption in generation response.");
+  }
+  const hashtags =
+    includeHashtags && Array.isArray(raw.hashtags)
+      ? raw.hashtags.map((tag) => String(tag))
+      : includeHashtags && Array.isArray(raw.instagramHashtags)
+        ? raw.instagramHashtags.map((tag) => String(tag))
+        : [];
+  return {
+    body: String(raw.body ?? ""),
+    cta: raw.cta == null ? null : String(raw.cta),
+    hashtags,
+  };
+}
+
 export function parseGenerateCaptionsResponse(
   payload: Record<string, unknown>,
 ): SmartUploadCaptionGenerationResult {
   const mode = payload.mode === "per_platform" ? "per_platform" : "shared";
+  const warnings = Array.isArray(payload.warnings)
+    ? payload.warnings.map((w) => String(w))
+    : [];
+  const base = {
+    warnings,
+    imagePathname: String(payload.imagePathname ?? ""),
+    provider: String(payload.provider ?? ""),
+    model: payload.model == null ? undefined : String(payload.model),
+    mock: Boolean(payload.mock),
+  };
+
+  if (mode === "per_platform") {
+    const instagramRaw = payload.instagram as Record<string, unknown> | undefined;
+    const facebookRaw = payload.facebook as Record<string, unknown> | undefined;
+    const instagram = parsePlatformDraftFromResponse(instagramRaw, true);
+    const facebook = parsePlatformDraftFromResponse(facebookRaw, false);
+    return {
+      mode: "per_platform",
+      instagram: {
+        body: instagram.body,
+        cta: instagram.cta,
+        hashtags: instagram.hashtags,
+      },
+      facebook: {
+        body: facebook.body,
+        cta: facebook.cta,
+      },
+      ...base,
+    };
+  }
+
   const sharedRaw = payload.shared as Record<string, unknown> | undefined;
-  if (mode !== "shared" || !sharedRaw) {
+  if (!sharedRaw) {
     throw new Error("Expected shared caption generation response.");
   }
   const instagramHashtags = Array.isArray(sharedRaw.instagramHashtags)
@@ -102,17 +154,10 @@ export function parseGenerateCaptionsResponse(
     cta: sharedRaw.cta == null ? null : String(sharedRaw.cta),
     instagramHashtags,
   };
-  const warnings = Array.isArray(payload.warnings)
-    ? payload.warnings.map((w) => String(w))
-    : [];
   return {
     mode: "shared",
     shared,
-    warnings,
-    imagePathname: String(payload.imagePathname ?? ""),
-    provider: String(payload.provider ?? ""),
-    model: payload.model == null ? undefined : String(payload.model),
-    mock: Boolean(payload.mock),
+    ...base,
   };
 }
 
@@ -121,12 +166,8 @@ export function applySuccessfulCaptionGeneration(
   response: SmartUploadCaptionGenerationResult,
   snapshot: CaptionGenerationSnapshot,
 ): CaptionAssistantState {
-  if (!response.shared) {
-    throw new Error("Missing shared caption in generation response.");
-  }
-  return {
-    ...state,
-    genStatus: "generated",
+  const provenanceBlock = {
+    genStatus: "generated" as const,
     genError: null,
     warnings: response.warnings,
     provenance: {
@@ -139,6 +180,35 @@ export function applySuccessfulCaptionGeneration(
     stale: false,
     staleAcknowledged: false,
     staleAcknowledgedFingerprint: null,
+  };
+
+  if (response.mode === "per_platform") {
+    if (!response.instagram || !response.facebook) {
+      throw new Error("Missing per-platform caption in generation response.");
+    }
+    return {
+      ...state,
+      mode: "per_platform",
+      ...provenanceBlock,
+      instagram: {
+        body: response.instagram.body,
+        cta: response.instagram.cta ?? "",
+        instagramHashtags: [...(response.instagram.hashtags ?? [])],
+      },
+      facebook: {
+        body: response.facebook.body,
+        cta: response.facebook.cta ?? "",
+      },
+    };
+  }
+
+  if (!response.shared) {
+    throw new Error("Missing shared caption in generation response.");
+  }
+  return {
+    ...state,
+    mode: "shared",
+    ...provenanceBlock,
     shared: {
       body: response.shared.body,
       cta: response.shared.cta ?? "",

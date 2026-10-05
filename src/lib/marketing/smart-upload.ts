@@ -54,8 +54,15 @@ export type SmartUploadValidationResult =
   | { ok: true; truth: AssetImageTruth; mime: string }
   | { ok: false; issues: SmartUploadValidationIssue[] };
 
+export type SmartUploadPlatformCaptions = {
+  facebook: string;
+  instagram: string;
+};
+
 export type SmartUploadFinalizeInput = {
   caption: string;
+  /** When set, Facebook and Instagram content bodies use these strings instead of `caption`. */
+  platformCaptions?: SmartUploadPlatformCaptions;
   batchId: string;
   finalizeKey: string;
   weeklyPlanId?: string | null;
@@ -245,15 +252,42 @@ type SmartUploadPersistInput = SmartUploadFinalizeInput & {
 
 type SmartUploadPersistContext = {
   caption: string;
+  facebookBody: string;
+  instagramBody: string;
   weeklyPlanId: string | null;
   campaignId: string | null;
   truth: AssetImageTruth;
   sharedMetadata: MarketingContentMetadata;
   baseContent: Omit<
     MarketingContent,
-    "id" | "platform" | "title" | "trackingToken" | "metadata" | "createdAt" | "updatedAt"
+    "id" | "platform" | "title" | "trackingToken" | "metadata" | "createdAt" | "updatedAt" | "body"
   >;
 };
+
+export function resolveSmartUploadFinalizeCaptions(
+  input: Pick<SmartUploadFinalizeInput, "caption" | "platformCaptions">,
+): SmartUploadPlatformCaptions & { primaryForAssetAlt: string } {
+  const platform = input.platformCaptions;
+  if (platform) {
+    const facebook = platform.facebook.trim();
+    const instagram = platform.instagram.trim();
+    if (!facebook || !instagram) {
+      throw new Error("Facebook and Instagram captions are required.");
+    }
+    return {
+      facebook,
+      instagram,
+      primaryForAssetAlt: instagram,
+    };
+  }
+  const caption = input.caption.trim();
+  if (!caption) throw new Error("Caption is required.");
+  return {
+    facebook: caption,
+    instagram: caption,
+    primaryForAssetAlt: caption,
+  };
+}
 
 async function buildSmartUploadPersistContext(
   store: MarketingStore,
@@ -261,13 +295,13 @@ async function buildSmartUploadPersistContext(
   validation: { truth: AssetImageTruth; mime: string },
   assetId: string,
 ): Promise<SmartUploadPersistContext> {
-  const caption = input.caption.trim();
+  const resolved = resolveSmartUploadFinalizeCaptions(input);
   const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
     store,
     input.weeklyPlanId,
     input.campaignId,
   );
-  const flags = scanMarketingText(caption);
+  const flags = scanMarketingText(`${resolved.instagram}\n${resolved.facebook}`);
   const warnings = ["Smart Upload — image validated for Instagram and Facebook feed."];
 
   const sharedMetadata: MarketingContentMetadata = {
@@ -286,7 +320,6 @@ async function buildSmartUploadPersistContext(
     category: input.category ?? "educational",
     audience: input.audience ?? "parents",
     status: "needs_review" as const,
-    body: caption,
     cta: null,
     seoTitle: null,
     seoDescription: null,
@@ -302,7 +335,9 @@ async function buildSmartUploadPersistContext(
   };
 
   return {
-    caption,
+    caption: resolved.primaryForAssetAlt,
+    facebookBody: resolved.facebook,
+    instagramBody: resolved.instagram,
     weeklyPlanId,
     campaignId,
     truth: validation.truth,
@@ -412,7 +447,8 @@ async function completePartialSmartUpload(
       ...ctx.baseContent,
       id: crypto.randomUUID(),
       platform: "facebook",
-      title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
+      body: ctx.facebookBody,
+      title: ctx.facebookBody.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
       trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
       metadata: { ...ctx.sharedMetadata },
     });
@@ -477,7 +513,8 @@ async function persistSmartUploadRecords(
       ...ctx.baseContent,
       id: crypto.randomUUID(),
       platform: "instagram",
-      title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Instagram post",
+      body: ctx.instagramBody,
+      title: ctx.instagramBody.split("\n")[0]?.slice(0, 120) ?? "Instagram post",
       trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
       metadata: { ...ctx.sharedMetadata },
     });
@@ -489,7 +526,8 @@ async function persistSmartUploadRecords(
         ...ctx.baseContent,
         id: crypto.randomUUID(),
         platform: "facebook",
-        title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
+        body: ctx.facebookBody,
+        title: ctx.facebookBody.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
         trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
         metadata: { ...ctx.sharedMetadata },
       });
@@ -639,13 +677,13 @@ async function buildFixedSmartUploadPersistContext(
   originalAssetId: string,
   fix: SmartUploadFixFinalizeBundle,
 ): Promise<SmartUploadPersistContext> {
-  const caption = input.caption.trim();
+  const resolved = resolveSmartUploadFinalizeCaptions(input);
   const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
     store,
     input.weeklyPlanId,
     input.campaignId,
   );
-  const flags = scanMarketingText(caption);
+  const flags = scanMarketingText(`${resolved.instagram}\n${resolved.facebook}`);
   const warnings = [
     "Smart Upload — corrected image validated for Instagram and Facebook feed.",
     `Fix: ${fix.strategy} · ${fix.targetRatio}`,
@@ -669,7 +707,6 @@ async function buildFixedSmartUploadPersistContext(
     category: input.category ?? "educational",
     audience: input.audience ?? "parents",
     status: "needs_review" as const,
-    body: caption,
     cta: null,
     seoTitle: null,
     seoDescription: null,
@@ -685,7 +722,9 @@ async function buildFixedSmartUploadPersistContext(
   };
 
   return {
-    caption,
+    caption: resolved.primaryForAssetAlt,
+    facebookBody: resolved.facebook,
+    instagramBody: resolved.instagram,
     weeklyPlanId,
     campaignId,
     truth: derivativeValidation.truth,
@@ -748,7 +787,8 @@ async function persistFixedSmartUploadRecords(
       ...ctx.baseContent,
       id: crypto.randomUUID(),
       platform: "instagram",
-      title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Instagram post",
+      body: ctx.instagramBody,
+      title: ctx.instagramBody.split("\n")[0]?.slice(0, 120) ?? "Instagram post",
       trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
       metadata: { ...ctx.sharedMetadata },
     });
@@ -760,7 +800,8 @@ async function persistFixedSmartUploadRecords(
         ...ctx.baseContent,
         id: crypto.randomUUID(),
         platform: "facebook",
-        title: ctx.caption.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
+        body: ctx.facebookBody,
+        title: ctx.facebookBody.split("\n")[0]?.slice(0, 120) ?? "Facebook post",
         trackingToken: crypto.randomUUID().replace(/-/g, "").slice(0, 16),
         metadata: { ...ctx.sharedMetadata },
       });
@@ -909,8 +950,7 @@ export async function finalizeSmartUploadFixedFromBuffers(
     derivativePathname,
   );
 
-  const caption = input.caption.trim();
-  if (!caption) throw new Error("Caption is required.");
+  resolveSmartUploadFinalizeCaptions(input);
 
   const originalMime = assertImageUpload(input.originalBuffer).mime;
   const originalTruth = await probeSmartUploadOriginalTruth(input.originalBuffer);
@@ -1029,8 +1069,7 @@ export async function finalizeSmartUploadFromBuffer(
 
   const validation = assertValidationOk(await validateSmartUploadImageBytes(input.imageBuffer));
 
-  const caption = input.caption.trim();
-  if (!caption) throw new Error("Caption is required.");
+  resolveSmartUploadFinalizeCaptions(input);
 
   if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
     throw new Error("Unknown book.");
@@ -1060,8 +1099,7 @@ export async function finalizeSmartUploadFromBlob(
   const existing = await findSmartUploadFinalizeResult(store, input.finalizeKey);
   if (existing) return existing;
 
-  const caption = input.caption.trim();
-  if (!caption) throw new Error("Caption is required.");
+  resolveSmartUploadFinalizeCaptions(input);
 
   if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
     throw new Error("Unknown book.");

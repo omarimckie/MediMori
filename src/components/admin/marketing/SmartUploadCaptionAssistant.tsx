@@ -6,9 +6,13 @@ import { CAPTION_CLIENT_INSTRUCTIONS_MAX_LENGTH } from "@/lib/marketing/smart-up
 import {
   CAPTION_ASSISTANT_AUDIENCES,
   CAPTION_ASSISTANT_CONTENT_CATEGORIES,
+  composeFacebookCaptionPreview,
+  composeInstagramCaptionPreview,
   composeSharedCaptionPreview,
   formatHashtagInput,
   parseHashtagInput,
+  setCaptionAssistantMode,
+  type CaptionAssistantMode,
   type CaptionAssistantState,
 } from "@/lib/marketing/smart-upload-caption-client-state";
 
@@ -34,11 +38,21 @@ export function SmartUploadCaptionAssistant({
   onKeepStaleCaption,
 }: SmartUploadCaptionAssistantProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [perPlatformTab, setPerPlatformTab] = useState<"facebook" | "instagram">("facebook");
   const bodyId = useId();
   const ctaId = useId();
   const hashtagsId = useId();
+  const fbBodyId = useId();
+  const fbCtaId = useId();
+  const igBodyId = useId();
+  const igCtaId = useId();
+  const igHashtagsId = useId();
   const instructionsId = useId();
-  const preview = composeSharedCaptionPreview(state.shared);
+
+  const sharedPreview = composeSharedCaptionPreview(state.shared);
+  const facebookPreview = composeFacebookCaptionPreview(state.facebook);
+  const instagramPreview = composeInstagramCaptionPreview(state.instagram);
+
   const fieldsDisabled = disabled || generating;
   const generateDisabled = fieldsDisabled || !generationReady || generating;
   const hasGeneratedDraft = state.genStatus === "generated" || Boolean(state.generatedFrom);
@@ -55,63 +69,221 @@ export function SmartUploadCaptionAssistant({
     });
   }
 
+  function patchMode(mode: CaptionAssistantMode) {
+    onChange(setCaptionAssistantMode(state, mode));
+  }
+
+  function patchFacebook(partial: Partial<CaptionAssistantState["facebook"]>) {
+    onChange({
+      ...state,
+      facebook: { ...state.facebook, ...partial },
+    });
+  }
+
+  function patchInstagram(partial: Partial<CaptionAssistantState["instagram"]>) {
+    onChange({
+      ...state,
+      instagram: { ...state.instagram, ...partial },
+    });
+  }
+
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-brand-brown/15 bg-white p-3">
-      <p className="text-sm font-bold text-brand-navy">Caption Assistant</p>
-
-      <label className="block text-sm font-bold" htmlFor={bodyId}>
-        Caption
-        <textarea
-          id={bodyId}
-          rows={4}
-          disabled={fieldsDisabled}
-          value={state.shared.body}
-          onChange={(e) => patchShared({ body: e.target.value })}
-          className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
-          placeholder="Write the post caption…"
-        />
-      </label>
-
-      <label className="block text-sm font-bold" htmlFor={ctaId}>
-        CTA (optional)
-        <textarea
-          id={ctaId}
-          rows={2}
-          disabled={fieldsDisabled}
-          value={state.shared.cta}
-          onChange={(e) => patchShared({ cta: e.target.value })}
-          className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
-          placeholder="Call to action, separate from the main caption"
-        />
-      </label>
-
-      <label className="block text-sm font-bold" htmlFor={hashtagsId}>
-        Instagram hashtags
-        <input
-          id={hashtagsId}
-          type="text"
-          disabled={fieldsDisabled}
-          value={formatHashtagInput(state.shared.instagramHashtags)}
-          onChange={(e) =>
-            patchShared({ instagramHashtags: parseHashtagInput(e.target.value) })
-          }
-          className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
-          placeholder="KidsHealth SickleCell (spaces or commas)"
-        />
-      </label>
-
-      <div className="rounded-xl border border-brand-brown/10 bg-cream-deep/40 p-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
-          Composed preview
-        </p>
-        <p className="mt-2 whitespace-pre-wrap text-sm text-brand-charcoal">
-          {preview.trim() ? preview : "Caption, CTA, and hashtags will appear here as you type."}
-        </p>
-        <p className="mt-2 text-xs text-brand-charcoal/55">
-          This preview is what Submit valid will send for this image until per-platform finalize
-          ships in a later phase.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-brand-navy">Caption Assistant</p>
+        <fieldset className="flex flex-wrap gap-2 text-xs" disabled={fieldsDisabled}>
+          <legend className="sr-only">Caption mode</legend>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-brown/20 px-2 py-1 font-bold text-brand-navy has-[:checked]:border-brand-navy has-[:checked]:bg-cream-deep/50">
+            <input
+              type="radio"
+              name={`caption-mode-${bodyId}`}
+              checked={state.mode === "shared"}
+              onChange={() => patchMode("shared")}
+            />
+            Shared
+          </label>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-brown/20 px-2 py-1 font-bold text-brand-navy has-[:checked]:border-brand-navy has-[:checked]:bg-cream-deep/50">
+            <input
+              type="radio"
+              name={`caption-mode-${bodyId}`}
+              checked={state.mode === "per_platform"}
+              onChange={() => patchMode("per_platform")}
+            />
+            Per platform
+          </label>
+        </fieldset>
       </div>
+
+      {state.mode === "shared" ? (
+        <>
+          <label className="block text-sm font-bold" htmlFor={bodyId}>
+            Caption
+            <textarea
+              id={bodyId}
+              rows={4}
+              disabled={fieldsDisabled}
+              value={state.shared.body}
+              onChange={(e) => patchShared({ body: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+              placeholder="Write the post caption…"
+            />
+          </label>
+
+          <label className="block text-sm font-bold" htmlFor={ctaId}>
+            CTA (optional)
+            <textarea
+              id={ctaId}
+              rows={2}
+              disabled={fieldsDisabled}
+              value={state.shared.cta}
+              onChange={(e) => patchShared({ cta: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+              placeholder="Call to action, separate from the main caption"
+            />
+          </label>
+
+          <label className="block text-sm font-bold" htmlFor={hashtagsId}>
+            Instagram hashtags
+            <input
+              id={hashtagsId}
+              type="text"
+              disabled={fieldsDisabled}
+              value={formatHashtagInput(state.shared.instagramHashtags)}
+              onChange={(e) =>
+                patchShared({ instagramHashtags: parseHashtagInput(e.target.value) })
+              }
+              className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+              placeholder="KidsHealth SickleCell (spaces or commas)"
+            />
+          </label>
+
+          <div className="rounded-xl border border-brand-brown/10 bg-cream-deep/40 p-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
+              Composed preview (Facebook &amp; Instagram)
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-brand-charcoal">
+              {sharedPreview.trim()
+                ? sharedPreview
+                : "Caption, CTA, and hashtags will appear here as you type."}
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex gap-2 border-b border-brand-brown/10 pb-2">
+            <button
+              type="button"
+              disabled={fieldsDisabled}
+              onClick={() => setPerPlatformTab("facebook")}
+              className={`rounded-lg px-3 py-1.5 text-sm font-bold ${
+                perPlatformTab === "facebook"
+                  ? "bg-brand-navy text-white"
+                  : "border border-brand-brown/20 text-brand-navy"
+              }`}
+            >
+              Facebook
+            </button>
+            <button
+              type="button"
+              disabled={fieldsDisabled}
+              onClick={() => setPerPlatformTab("instagram")}
+              className={`rounded-lg px-3 py-1.5 text-sm font-bold ${
+                perPlatformTab === "instagram"
+                  ? "bg-brand-navy text-white"
+                  : "border border-brand-brown/20 text-brand-navy"
+              }`}
+            >
+              Instagram
+            </button>
+          </div>
+
+          {perPlatformTab === "facebook" ? (
+            <div className="space-y-3">
+              <label className="block text-sm font-bold" htmlFor={fbBodyId}>
+                Facebook caption
+                <textarea
+                  id={fbBodyId}
+                  rows={4}
+                  disabled={fieldsDisabled}
+                  value={state.facebook.body}
+                  onChange={(e) => patchFacebook({ body: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+                  placeholder="Facebook-specific caption…"
+                />
+              </label>
+              <label className="block text-sm font-bold" htmlFor={fbCtaId}>
+                Facebook CTA (optional)
+                <textarea
+                  id={fbCtaId}
+                  rows={2}
+                  disabled={fieldsDisabled}
+                  value={state.facebook.cta}
+                  onChange={(e) => patchFacebook({ cta: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+                />
+              </label>
+              <div className="rounded-xl border border-brand-brown/10 bg-cream-deep/40 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
+                  Facebook preview
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-brand-charcoal">
+                  {facebookPreview.trim() ? facebookPreview : "Facebook caption and CTA only — no hashtags."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <label className="block text-sm font-bold" htmlFor={igBodyId}>
+                Instagram caption
+                <textarea
+                  id={igBodyId}
+                  rows={4}
+                  disabled={fieldsDisabled}
+                  value={state.instagram.body}
+                  onChange={(e) => patchInstagram({ body: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+                  placeholder="Instagram-specific caption…"
+                />
+              </label>
+              <label className="block text-sm font-bold" htmlFor={igCtaId}>
+                Instagram CTA (optional)
+                <textarea
+                  id={igCtaId}
+                  rows={2}
+                  disabled={fieldsDisabled}
+                  value={state.instagram.cta}
+                  onChange={(e) => patchInstagram({ cta: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+                />
+              </label>
+              <label className="block text-sm font-bold" htmlFor={igHashtagsId}>
+                Instagram hashtags
+                <input
+                  id={igHashtagsId}
+                  type="text"
+                  disabled={fieldsDisabled}
+                  value={formatHashtagInput(state.instagram.instagramHashtags)}
+                  onChange={(e) =>
+                    patchInstagram({ instagramHashtags: parseHashtagInput(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+                  placeholder="TwilightFeather KidsBooks"
+                />
+              </label>
+              <div className="rounded-xl border border-brand-brown/10 bg-cream-deep/40 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
+                  Instagram preview
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-brand-charcoal">
+                  {instagramPreview.trim()
+                    ? instagramPreview
+                    : "Instagram caption, CTA, and hashtags."}
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       <label className="block text-sm font-bold" htmlFor={instructionsId}>
         Instructions (optional)

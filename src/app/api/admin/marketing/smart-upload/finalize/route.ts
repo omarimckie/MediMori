@@ -3,6 +3,7 @@ import { getMarketingStore } from "@/lib/marketing/context";
 import { assertImageUpload, sanitizeUploadFilename } from "@/lib/marketing/file-validation";
 import {
   parseSmartUploadFinalizeBody,
+  resolveParsedSmartUploadFinalizeCaptions,
   smartUploadErrorStatus,
   validationIssuesFromError,
 } from "@/lib/marketing/smart-upload-api";
@@ -42,6 +43,18 @@ export async function POST(request: Request) {
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const caption = String(form.get("caption") ?? "").trim();
+      const facebookCaption = String(form.get("facebookCaption") ?? "").trim() || null;
+      const instagramCaption = String(form.get("instagramCaption") ?? "").trim() || null;
+      if (facebookCaption || instagramCaption) {
+        if (!facebookCaption || !instagramCaption) {
+          return jsonError("facebookCaption and instagramCaption must both be provided.", 400);
+        }
+      }
+      const captionFields = resolveParsedSmartUploadFinalizeCaptions({
+        caption,
+        facebookCaption,
+        instagramCaption,
+      });
       const batchId = String(form.get("batchId") ?? "").trim();
       const finalizeKey = String(form.get("finalizeKey") ?? "").trim();
       if (!batchId || !finalizeKey) {
@@ -54,7 +67,7 @@ export async function POST(request: Request) {
       const buffer = Buffer.from(await imageEntry.arrayBuffer());
       assertImageUpload(buffer);
       const result = await finalizeSmartUploadFromBuffer(store, {
-        caption,
+        ...captionFields,
         batchId,
         finalizeKey,
         weeklyPlanId: String(form.get("weeklyPlanId") ?? "").trim() || null,
@@ -81,8 +94,9 @@ export async function POST(request: Request) {
       return jsonError("uploadIntent, pathname, and publicUrl are required for blob finalize.", 400);
     }
 
+    const captionFields = resolveParsedSmartUploadFinalizeCaptions(parsed);
     const result = await finalizeSmartUploadFromBlob(store, {
-      caption: parsed.caption,
+      ...captionFields,
       batchId: parsed.batchId,
       finalizeKey: parsed.finalizeKey,
       weeklyPlanId: parsed.weeklyPlanId,

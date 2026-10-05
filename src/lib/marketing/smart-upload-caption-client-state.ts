@@ -9,6 +9,19 @@ export type CaptionAssistantDraft = {
   instagramHashtags: string[];
 };
 
+/** Facebook-only draft (no Instagram hashtags). */
+export type CaptionAssistantFacebookDraft = {
+  body: string;
+  cta: string;
+};
+
+/** Instagram draft with optional hashtag list appended on compose. */
+export type CaptionAssistantInstagramDraft = {
+  body: string;
+  cta: string;
+  instagramHashtags: string[];
+};
+
 export type CaptionAssistantAdvanced = {
   category: ContentCategory | null;
   audience: AudienceId | null;
@@ -75,6 +88,8 @@ export type CaptionAssistantState = {
   /** Generation-input fingerprint the user acknowledged via Keep Caption Anyway (if any). */
   staleAcknowledgedFingerprint: CaptionInputFingerprint | null;
   shared: CaptionAssistantDraft;
+  facebook: CaptionAssistantFacebookDraft;
+  instagram: CaptionAssistantInstagramDraft;
 };
 
 export function createDefaultCaptionAssistantState(): CaptionAssistantState {
@@ -91,7 +106,17 @@ export function createDefaultCaptionAssistantState(): CaptionAssistantState {
     staleAcknowledged: false,
     staleAcknowledgedFingerprint: null,
     shared: { body: "", cta: "", instagramHashtags: [] },
+    facebook: { body: "", cta: "" },
+    instagram: { body: "", cta: "", instagramHashtags: [] },
   };
+}
+
+export function createEmptyFacebookDraft(): CaptionAssistantFacebookDraft {
+  return { body: "", cta: "" };
+}
+
+export function createEmptyInstagramDraft(): CaptionAssistantInstagramDraft {
+  return { body: "", cta: "", instagramHashtags: [] };
 }
 
 function normalizeInstructions(value: string): string {
@@ -175,6 +200,40 @@ export function hasReviewedDraftContent(draft: CaptionAssistantDraft): boolean {
   return Boolean(
     draft.body.trim() || draft.cta.trim() || draft.instagramHashtags.length > 0,
   );
+}
+
+export function hasReviewedFacebookDraft(draft: CaptionAssistantFacebookDraft): boolean {
+  return Boolean(draft.body.trim() || draft.cta.trim());
+}
+
+export function hasReviewedInstagramDraft(draft: CaptionAssistantInstagramDraft): boolean {
+  return Boolean(
+    draft.body.trim() || draft.cta.trim() || draft.instagramHashtags.length > 0,
+  );
+}
+
+export function hasReviewedDraftContentForMode(state: CaptionAssistantState): boolean {
+  if (state.mode === "per_platform") {
+    return hasReviewedFacebookDraft(state.facebook) || hasReviewedInstagramDraft(state.instagram);
+  }
+  return hasReviewedDraftContent(state.shared);
+}
+
+/**
+ * Switch caption mode without discarding drafts stored for the other mode.
+ * Clears stale acknowledgment because generation fingerprint mode changed.
+ */
+export function setCaptionAssistantMode(
+  state: CaptionAssistantState,
+  mode: CaptionAssistantMode,
+): CaptionAssistantState {
+  if (state.mode === mode) return state;
+  return {
+    ...state,
+    mode,
+    staleAcknowledged: false,
+    staleAcknowledgedFingerprint: null,
+  };
 }
 
 export function acknowledgeStaleCaption(
@@ -269,7 +328,10 @@ export type SubmitValidCaptionPreflightEntry = {
   previewDerivative: { strategy: string; targetRatio: string } | null;
   fixStrategy: string;
   fixTargetRatio: string;
+  mode: CaptionAssistantMode;
   shared: CaptionAssistantDraft;
+  facebook: CaptionAssistantFacebookDraft;
+  instagram: CaptionAssistantInstagramDraft;
   generatedFrom: CaptionGenerationSnapshot | null;
   stale: boolean;
   staleAcknowledged: boolean;
@@ -306,12 +368,32 @@ export function isSubmitValidCaptionPreflightTarget(
   return true;
 }
 
+export function hasSubmittablePerPlatformCaptions(
+  facebook: CaptionAssistantFacebookDraft,
+  instagram: CaptionAssistantInstagramDraft,
+): boolean {
+  return hasSubmittableSharedCaption({
+    body: facebook.body,
+    cta: facebook.cta,
+    instagramHashtags: [],
+  }) &&
+    hasSubmittableSharedCaption({
+      body: instagram.body,
+      cta: instagram.cta,
+      instagramHashtags: instagram.instagramHashtags,
+    });
+}
+
 export function findSubmitValidCaptionPreflightIssue(
   entries: SubmitValidCaptionPreflightEntry[],
 ): SubmitValidCaptionPreflightIssue | null {
   for (const entry of entries) {
     if (!isSubmitValidCaptionPreflightTarget(entry)) continue;
-    if (!hasSubmittableSharedCaption(entry.shared)) {
+    const captionOk =
+      entry.mode === "per_platform"
+        ? hasSubmittablePerPlatformCaptions(entry.facebook, entry.instagram)
+        : hasSubmittableSharedCaption(entry.shared);
+    if (!captionOk) {
       return { kind: "missing_caption", fileName: entry.fileName };
     }
     if (entry.generatedFrom && entry.stale && !entry.staleAcknowledged) {
@@ -330,7 +412,46 @@ export function findSubmitValidCaptionPreflightFailure(
   return issue.fileName;
 }
 
-/** Composed caption for preview and finalize bridge (single string until Phase 4C). */
+export function composeFacebookCaptionPreview(draft: CaptionAssistantFacebookDraft): string {
+  const parts: string[] = [];
+  const body = draft.body.trim();
+  const cta = draft.cta.trim();
+  if (body) parts.push(body);
+  if (cta) parts.push(cta);
+  return parts.join("\n\n");
+}
+
+export function composeInstagramCaptionPreview(draft: CaptionAssistantInstagramDraft): string {
+  const parts: string[] = [];
+  const body = draft.body.trim();
+  const cta = draft.cta.trim();
+  const hashtagLine = formatHashtagsForPreview(draft.instagramHashtags);
+  if (body) parts.push(body);
+  if (cta) parts.push(cta);
+  if (hashtagLine) parts.push(hashtagLine);
+  return parts.join("\n\n");
+}
+
+export type CaptionFinalizePayload =
+  | { mode: "shared"; caption: string }
+  | { mode: "per_platform"; facebookCaption: string; instagramCaption: string };
+
+/** Composed captions for preview and finalize bridge. */
+export function buildCaptionFinalizePayload(state: CaptionAssistantState): CaptionFinalizePayload {
+  if (state.mode === "per_platform") {
+    return {
+      mode: "per_platform",
+      facebookCaption: composeFacebookCaptionPreview(state.facebook),
+      instagramCaption: composeInstagramCaptionPreview(state.instagram),
+    };
+  }
+  return {
+    mode: "shared",
+    caption: composeSharedCaptionPreview(state.shared),
+  };
+}
+
+/** Composed caption for shared mode preview and finalize. */
 export function composeSharedCaptionPreview(draft: CaptionAssistantDraft): string {
   const parts: string[] = [];
   const body = draft.body.trim();

@@ -18,12 +18,13 @@ import {
 } from "@/lib/marketing/smart-upload-session-batch";
 import {
   acknowledgeStaleCaption,
-  composeSharedCaptionPreview,
+  buildCaptionFinalizePayload,
   createDefaultCaptionAssistantState,
   findSubmitValidCaptionPreflightIssue,
-  hasReviewedDraftContent,
+  hasReviewedDraftContentForMode,
   refreshCaptionAssistantStale,
   type CaptionAssistantState,
+  type CaptionFinalizePayload,
   type CaptionFingerprintContext,
   type SubmitValidCaptionPreflightEntry,
 } from "@/lib/marketing/smart-upload-caption-client-state";
@@ -401,7 +402,10 @@ export function SmartUploadClient() {
         : null,
       fixStrategy: entry.fixStrategy,
       fixTargetRatio: entry.fixTargetRatio,
+      mode: captionAssistant.mode,
       shared: captionAssistant.shared,
+      facebook: captionAssistant.facebook,
+      instagram: captionAssistant.instagram,
       generatedFrom: captionAssistant.generatedFrom,
       stale: captionAssistant.stale,
       staleAcknowledged: captionAssistant.staleAcknowledged,
@@ -454,7 +458,7 @@ export function SmartUploadClient() {
       }
     }
 
-    if (hasReviewedDraftContent(initial.captionAssistant.shared)) {
+    if (hasReviewedDraftContentForMode(initial.captionAssistant)) {
       const confirmed = window.confirm(
         "Replace the current caption draft with a generated draft?",
       );
@@ -519,15 +523,20 @@ export function SmartUploadClient() {
       return;
     }
 
-    const explicitCta = file.captionAssistant.shared.cta.trim() || null;
+    const assistant = file.captionAssistant;
+    const explicitCta =
+      assistant.mode === "shared"
+        ? assistant.shared.cta.trim() || null
+        : assistant.instagram.cta.trim() || assistant.facebook.cta.trim() || null;
     const fpContext = captionFingerprintContext(file, bookId, campaignId);
     const snapshot = buildGenerationSnapshotForRequest(fpContext, explicitCta);
     const requestBody = buildGenerateCaptionsRequestBody({
-      instructions: file.captionAssistant.instructions,
+      mode: assistant.mode,
+      instructions: assistant.instructions,
       explicitCta,
       bookId: bookId.trim() || null,
       campaignId: campaignId.trim() || null,
-      advanced: file.captionAssistant.advanced,
+      advanced: assistant.advanced,
       image: imageContext,
     });
 
@@ -823,7 +832,7 @@ export function SmartUploadClient() {
     });
   }
 
-  async function finalizeOne(entry: SmartUploadFile, captionText: string): Promise<void> {
+  async function finalizeOne(entry: SmartUploadFile, captions: CaptionFinalizePayload): Promise<void> {
     if (!batchId) return;
     const derivative = entry.acceptedPreview;
     if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
@@ -833,7 +842,12 @@ export function SmartUploadClient() {
     if (entry.uploadIntent === "local-multipart") {
       const form = new FormData();
       form.set("image", entry.file);
-      form.set("caption", captionText);
+      if (captions.mode === "per_platform") {
+        form.set("facebookCaption", captions.facebookCaption);
+        form.set("instagramCaption", captions.instagramCaption);
+      } else {
+        form.set("caption", captions.caption);
+      }
       form.set("batchId", batchId);
       form.set("finalizeKey", entry.finalizeKey);
       if (weeklyPlanId) form.set("weeklyPlanId", weeklyPlanId);
@@ -842,7 +856,6 @@ export function SmartUploadClient() {
       response = await fetch(FINALIZE_URL, { method: "POST", body: form });
     } else {
       const body: Record<string, unknown> = {
-        caption: captionText,
         batchId,
         finalizeKey: entry.finalizeKey,
         weeklyPlanId: weeklyPlanId || null,
@@ -850,6 +863,12 @@ export function SmartUploadClient() {
         bookId: bookId || null,
         imageFilename: entry.file.name,
       };
+      if (captions.mode === "per_platform") {
+        body.facebookCaption = captions.facebookCaption;
+        body.instagramCaption = captions.instagramCaption;
+      } else {
+        body.caption = captions.caption;
+      }
       if (derivative) {
         body.uploadIntent = derivative.uploadIntent;
         body.pathname = derivative.pathname;
@@ -933,8 +952,8 @@ export function SmartUploadClient() {
       }
       const afterUpload = getFileById(entry.id);
       if (afterUpload?.status === "ready" && afterUpload.uploadIntent) {
-        const captionText = composeSharedCaptionPreview(afterUpload.captionAssistant.shared);
-        await finalizeOne(afterUpload, captionText);
+        const finalizeCaptions = buildCaptionFinalizePayload(afterUpload.captionAssistant);
+        await finalizeOne(afterUpload, finalizeCaptions);
       }
     }
     setBusy(false);

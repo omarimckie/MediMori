@@ -4,14 +4,19 @@ import {
   acknowledgeStaleCaption,
   buildCaptionGenerationSnapshot,
   buildCaptionInputFingerprint,
+  buildCaptionFinalizePayload,
+  composeFacebookCaptionPreview,
+  composeInstagramCaptionPreview,
   composeSharedCaptionPreview,
   createDefaultCaptionAssistantState,
   findSubmitValidCaptionPreflightFailure,
   findSubmitValidCaptionPreflightIssue,
   hasReviewedDraftContent,
+  hasSubmittablePerPlatformCaptions,
   hasSubmittableSharedCaption,
   isCaptionDraftStale,
   refreshCaptionAssistantStale,
+  setCaptionAssistantMode,
   type CaptionAssistantState,
   type CaptionFingerprintContext,
   type SubmitValidCaptionPreflightEntry,
@@ -263,7 +268,10 @@ function preflightRow(
     previewDerivative: null,
     fixStrategy: "pad",
     fixTargetRatio: "4:5",
+    mode: "shared",
     shared: { body: "", cta: "", instagramHashtags: [] },
+    facebook: { body: "", cta: "" },
+    instagram: { body: "", cta: "", instagramHashtags: [] },
     generatedFrom: null,
     stale: false,
     staleAcknowledged: false,
@@ -514,6 +522,79 @@ test("regression: body CTA hashtag edits do not stale after generation", () => {
     ctx,
   );
   assert.equal(assistant.stale, false);
+});
+
+test("per-platform compose keeps hashtags off Facebook", () => {
+  const fb = composeFacebookCaptionPreview({ body: "FB body", cta: "" });
+  const ig = composeInstagramCaptionPreview({
+    body: "IG body",
+    cta: "",
+    instagramHashtags: ["TwilightFeather"],
+  });
+  assert.equal(fb, "FB body");
+  assert.equal(ig, "IG body\n\n#TwilightFeather");
+  assert.doesNotMatch(fb, /#/);
+});
+
+test("mode switch preserves independent drafts", () => {
+  let state = createDefaultCaptionAssistantState();
+  state.shared.body = "shared text";
+  state.facebook.body = "fb only";
+  state.instagram.body = "ig only";
+  state = setCaptionAssistantMode(state, "per_platform");
+  assert.equal(state.facebook.body, "fb only");
+  assert.equal(state.shared.body, "shared text");
+  state = setCaptionAssistantMode(state, "shared");
+  assert.equal(state.shared.body, "shared text");
+});
+
+test("finalize payload per platform", () => {
+  const state = createDefaultCaptionAssistantState();
+  state.mode = "per_platform";
+  state.facebook = { body: "FB", cta: "Shop FB" };
+  state.instagram = {
+    body: "IG",
+    cta: "",
+    instagramHashtags: ["Tag"],
+  };
+  const payload = buildCaptionFinalizePayload(state);
+  assert.equal(payload.mode, "per_platform");
+  if (payload.mode === "per_platform") {
+    assert.equal(payload.facebookCaption, "FB\n\nShop FB");
+    assert.equal(payload.instagramCaption, "IG\n\n#Tag");
+  }
+});
+
+test("per-platform preflight requires both platforms", () => {
+  const ok = findSubmitValidCaptionPreflightIssue([
+    preflightRow({
+      fileName: "ok.png",
+      mode: "per_platform",
+      facebook: { body: "F", cta: "" },
+      instagram: { body: "I", cta: "", instagramHashtags: [] },
+    }),
+  ]);
+  assert.equal(ok, null);
+
+  const missing = findSubmitValidCaptionPreflightIssue([
+    preflightRow({
+      fileName: "bad.png",
+      mode: "per_platform",
+      facebook: { body: "F", cta: "" },
+      instagram: { body: "", cta: "", instagramHashtags: [] },
+    }),
+  ]);
+  assert.equal(missing?.kind, "missing_caption");
+});
+
+test("hasSubmittablePerPlatformCaptions", () => {
+  assert.equal(
+    hasSubmittablePerPlatformCaptions(
+      { body: "f", cta: "" },
+      { body: "i", cta: "", instagramHashtags: ["x"] },
+    ),
+    true,
+  );
 });
 
 test("regression: book campaign category audience stale via refresh", () => {

@@ -6,7 +6,7 @@ import {
   parseSmartUploadFixStrategy,
   parseSmartUploadFixTargetRatio,
 } from "./smart-upload-fix";
-import type { SmartUploadValidationIssue } from "./smart-upload";
+import type { SmartUploadPlatformCaptions, SmartUploadValidationIssue } from "./smart-upload";
 
 export type SmartUploadStagedBlobRef = {
   uploadIntent: string;
@@ -30,6 +30,8 @@ export function parseSmartUploadStagedBlobRef(
 
 export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
   caption: string;
+  facebookCaption: string | null;
+  instagramCaption: string | null;
   batchId: string;
   finalizeKey: string;
   weeklyPlanId: string | null;
@@ -48,6 +50,8 @@ export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
   };
 } {
   const caption = String(record.caption ?? "").trim();
+  const facebookCaption = String(record.facebookCaption ?? "").trim() || null;
+  const instagramCaption = String(record.instagramCaption ?? "").trim() || null;
   const batchId = String(record.batchId ?? "").trim();
   const finalizeKey = String(record.finalizeKey ?? "").trim();
   if (!batchId) throw new Error("batchId is required.");
@@ -96,8 +100,16 @@ export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
     };
   }
 
+  if (facebookCaption || instagramCaption) {
+    if (!facebookCaption || !instagramCaption) {
+      throw new Error("facebookCaption and instagramCaption must both be provided.");
+    }
+  }
+
   return {
     caption,
+    facebookCaption,
+    instagramCaption,
     batchId,
     finalizeKey,
     weeklyPlanId,
@@ -131,6 +143,23 @@ export function parseSmartUploadPreviewFixBody(record: Record<string, unknown>):
 
 export function parseSmartUploadDiscardPreviewBody(record: Record<string, unknown>): SmartUploadStagedBlobRef {
   return parseSmartUploadStagedBlobRef(record, "");
+}
+
+export function resolveParsedSmartUploadFinalizeCaptions(parsed: {
+  caption: string;
+  facebookCaption: string | null;
+  instagramCaption: string | null;
+}): { caption: string; platformCaptions?: SmartUploadPlatformCaptions } {
+  if (parsed.facebookCaption && parsed.instagramCaption) {
+    return {
+      caption: "",
+      platformCaptions: {
+        facebook: parsed.facebookCaption,
+        instagram: parsed.instagramCaption,
+      },
+    };
+  }
+  return { caption: parsed.caption };
 }
 
 export function smartUploadErrorStatus(message: string): number {

@@ -122,6 +122,28 @@ test("one valid image creates exactly one asset and two content rows", async () 
   assert.equal(result.facebook.assetIds[0], result.assetId);
 });
 
+test("per-platform finalize persists distinct facebook and instagram bodies", async () => {
+  const store = new MemoryMarketingStore();
+  const buffer = await pngBuffer(1080, 1080);
+  const result = await finalizeSmartUploadFromBuffer(store, {
+    caption: "",
+    platformCaptions: {
+      facebook: "Facebook-only caption",
+      instagram: "Instagram-only caption\n\n#TwilightFeather",
+    },
+    batchId: "batch-pp",
+    finalizeKey: crypto.randomUUID(),
+    weeklyPlanId: null,
+    campaignId: null,
+    actor: "owner",
+    imageBuffer: buffer,
+    imageFilename: "smart.png",
+  });
+  assert.equal(result.facebook.body, "Facebook-only caption");
+  assert.equal(result.instagram.body, "Instagram-only caption\n\n#TwilightFeather");
+  assert.doesNotMatch(result.facebook.body, /TwilightFeather/);
+});
+
 test("instagram and facebook rows are needs_review with shared caption", async () => {
   const store = new MemoryMarketingStore();
   const caption = "Caption copied to both platforms.";
