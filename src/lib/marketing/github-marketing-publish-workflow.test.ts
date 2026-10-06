@@ -8,12 +8,15 @@ const WORKFLOW_PATH = join(
   ".github/workflows/marketing-publish-dispatch.yml",
 );
 
-test("marketing publish dispatch workflow is configured for external Hobby dispatcher", () => {
+test("marketing publish dispatch workflow is manual-only emergency dispatcher", () => {
   const source = readFileSync(WORKFLOW_PATH, "utf8");
-  assert.match(source, /cron:\s*"\*\/15 \* \* \* \*"/);
+  assert.doesNotMatch(source, /^\s*schedule:/m);
+  assert.doesNotMatch(source, /cron:\s*"/);
   assert.match(source, /workflow_dispatch:/);
+  assert.match(source, /QStash/i);
   assert.match(source, /\/api\/cron\/marketing-publish/);
   assert.match(source, /secrets\.CRON_SECRET/);
   assert.match(source, /vars\.MARKETING_PUBLISH_BASE_URL/);
+  assert.match(source, /group: marketing-publish-dispatch/);
   assert.doesNotMatch(source, /Bearer [A-Za-z0-9]{8,}/);
 });

@@ -1,12 +1,10 @@
-# External dispatcher for Vercel Hobby: invokes app publishDue via production API.
-# Requires repository configuration (see IMPLEMENTATION-NOTES.md — Scheduling).
+# Manual/emergency dispatcher: invokes app publishDue via production API.
+# Primary recurring production scheduler: QStash (POST every 10 minutes).
+# Last-resort fallback: Vercel daily cron (unchanged). See IMPLEMENTATION-NOTES.md.
 
 name: Marketing publish dispatch
 
 on:
-  schedule:
-    # Approximately every 15 minutes (GitHub may delay scheduled runs).
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 concurrency:
