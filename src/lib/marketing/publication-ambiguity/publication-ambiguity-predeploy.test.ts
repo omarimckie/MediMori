@@ -19,7 +19,9 @@ import {
   getAmbiguousOutcomeNotifyInvocationCountForTests,
   notifyPublicationAmbiguousOutcomeWithDeps,
   resetAmbiguousOutcomeNotifyInvocationCountForTests,
+  type AmbiguousOutcomeNotificationDeps,
 } from "./notify";
+import type { MarketingNotificationPayload } from "../notifications/types";
 import { PublicationScheduleBlockedError } from "./schedule-error";
 import { PUBLICATION_PROVIDER_INFLIGHT_MARKER } from "./provider-inflight";
 import type { MarketingContent, MarketingPublication } from "../types";
@@ -161,8 +163,8 @@ test("B2–B4: outcome notification path with dedupe and notifyReliabilityPayloa
   const pub = basePublication({ status: "failed", ambiguityState: "ambiguous" });
   const claimed = new Set<string>();
   let notifyCalls = 0;
-  let lastPayload: { type: string } | null = null;
-  await notifyPublicationAmbiguousOutcomeWithDeps(pub, "detail", {
+  const capturedPayloads: MarketingNotificationPayload[] = [];
+  const deps: AmbiguousOutcomeNotificationDeps = {
     claimDedupe: async ({ dedupeKey }) => {
       if (claimed.has(dedupeKey)) return false;
       claimed.add(dedupeKey);
@@ -170,14 +172,15 @@ test("B2–B4: outcome notification path with dedupe and notifyReliabilityPayloa
     },
     notify: async (payload) => {
       notifyCalls += 1;
-      lastPayload = payload;
+      capturedPayloads.push(payload);
       return { notificationId: "nid-1", pushDelivered: 0 };
     },
     attachDedupe: async () => {},
     releaseDedupe: async () => {},
-  });
+  };
+  await notifyPublicationAmbiguousOutcomeWithDeps(pub, "detail", deps);
   assert.equal(notifyCalls, 1);
-  assert.equal(lastPayload?.type, "publication_ambiguous");
+  assert.equal(capturedPayloads[0]?.type, "publication_ambiguous");
 
   await notifyPublicationAmbiguousOutcomeWithDeps(pub, "detail", {
     claimDedupe: async ({ dedupeKey }) => {
