@@ -7,6 +7,7 @@ import {
   getMetaGraphVersion,
 } from "./config";
 import { MemoryMarketingStore } from "./memory-store";
+import { INSTAGRAM_MEDIA_PUBLISH_NOT_READY_MAX_ATTEMPTS } from "./instagram-media-publish";
 import {
   INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS,
   classifyMetaHttpError,
@@ -342,6 +343,159 @@ test("Instagram publisher fails on unknown container status without media_publis
   });
   assert.equal(result.ok, false);
   assert.equal(result.errorCode, "meta_container_status_unknown");
+});
+
+const META_MEDIA_NOT_READY_BODY = {
+  error: {
+    message: "The media is not ready for publishing, please wait for a moment",
+    code: 9007,
+  },
+};
+
+function createInstagramGraphFetchWithPublishRetries(options: {
+  containerId: string;
+  statusSequence: string[];
+  publishFailuresBeforeSuccess?: number;
+  publishId?: string;
+  publishErrorResponse?: () => Response;
+}): { fetchImpl: typeof fetch; calls: GraphCall[] } {
+  const calls: GraphCall[] = [];
+  let statusIndex = 0;
+  let publishAttempts = 0;
+  const publishId = options.publishId ?? "ig_media_99";
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    const body =
+      init?.body != null ? new URLSearchParams(String(init.body)) : undefined;
+    calls.push({ method, url, body });
+    if (method === "POST" && url.endsWith("/media")) {
+      return jsonResponse(200, { id: options.containerId });
+    }
+    if (
+      method === "GET" &&
+      url.includes(`/${options.containerId}`) &&
+      url.includes("fields=status_code")
+    ) {
+      const status =
+        options.statusSequence[
+          Math.min(statusIndex, options.statusSequence.length - 1)
+        ] ?? "IN_PROGRESS";
+      if (statusIndex < options.statusSequence.length - 1) {
+        statusIndex += 1;
+      }
+      return jsonResponse(200, { status_code: status });
+    }
+    if (method === "POST" && url.endsWith("/media_publish")) {
+      publishAttempts += 1;
+      if (options.publishErrorResponse) {
+        return options.publishErrorResponse();
+      }
+      const failCount = options.publishFailuresBeforeSuccess ?? 0;
+      if (publishAttempts <= failCount) {
+        return jsonResponse(400, META_MEDIA_NOT_READY_BODY);
+      }
+      return jsonResponse(200, { id: publishId });
+    }
+    return jsonResponse(404, { error: { message: "unknown" } });
+  };
+  return { fetchImpl, calls };
+}
+
+test("Instagram FINISHED then meta_media_not_ready retries same container then succeeds", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetchWithPublishRetries({
+    containerId: "container_retry",
+    statusSequence: ["FINISHED"],
+    publishFailuresBeforeSuccess: 2,
+    publishId: "ig_after_retry",
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.externalId, "ig_after_retry");
+  assert.equal(calls.filter((c) => c.method === "POST" && c.url.endsWith("/media")).length, 1);
+  const publishCalls = calls.filter((c) => c.url.endsWith("/media_publish"));
+  assert.equal(publishCalls.length, 3);
+  for (const call of publishCalls) {
+    assert.equal(call.body?.get("creation_id"), "container_retry");
+  }
+});
+
+test("Instagram meta_media_not_ready exhausts bounded publish retries without new container", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetchWithPublishRetries({
+    containerId: "container_exhaust",
+    statusSequence: ["FINISHED"],
+    publishFailuresBeforeSuccess: INSTAGRAM_MEDIA_PUBLISH_NOT_READY_MAX_ATTEMPTS,
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_media_not_ready");
+  assert.equal(calls.filter((c) => c.method === "POST" && c.url.endsWith("/media")).length, 1);
+  assert.equal(
+    calls.filter((c) => c.url.endsWith("/media_publish")).length,
+    INSTAGRAM_MEDIA_PUBLISH_NOT_READY_MAX_ATTEMPTS,
+  );
+});
+
+test("Instagram media_publish meta_http_error is not retried as media_not_ready", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetchWithPublishRetries({
+    containerId: "container_http",
+    statusSequence: ["FINISHED"],
+    publishErrorResponse: () =>
+      jsonResponse(503, {
+        error: { message: "Service unavailable", code: 2 },
+      }),
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_http_error");
+  assert.equal(calls.filter((c) => c.url.endsWith("/media_publish")).length, 1);
+});
+
+test("Instagram media_publish permissions error is not retried as media_not_ready", async () => {
+  const { fetchImpl, calls } = createInstagramGraphFetchWithPublishRetries({
+    containerId: "container_perm",
+    statusSequence: ["FINISHED"],
+    publishErrorResponse: () =>
+      jsonResponse(400, {
+        error: { message: "Permission denied", code: 10 },
+      }),
+  });
+  const result = await new InstagramPublisher({
+    fetch: fetchImpl,
+    sleep: instantSleep,
+    credentials: IG_CREDENTIALS,
+  }).publish({
+    content: sampleContent(),
+    publication: samplePublication(),
+    imageUrl: "https://twilight-feather.vercel.app/covers/sickle-cell.png",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "meta_permissions");
+  assert.equal(calls.filter((c) => c.url.endsWith("/media_publish")).length, 1);
 });
 
 test("Meta media-not-ready HTTP message maps to meta_media_not_ready", () => {

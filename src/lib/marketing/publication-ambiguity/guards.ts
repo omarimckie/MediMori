@@ -1,3 +1,7 @@
+import {
+  INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+  isInstagramProviderMediaRecoveryRequired,
+} from "../publication-recovery-guard";
 import type { MarketingPublication } from "../types";
 import { PUBLICATION_STALE_PROCESSING_MS } from "./constants";
 import { isPersistedProviderCreationId } from "./provider-inflight";
@@ -32,6 +36,9 @@ export function isPublicationStaleProcessing(
 export function publicationRetryBlockedReason(
   publication: MarketingPublication,
 ): string | null {
+  if (isInstagramProviderMediaRecoveryRequired(publication)) {
+    return INSTAGRAM_PROVIDER_RECOVERY_MESSAGE;
+  }
   if (publication.status === "processing") {
     return "Publication is still processing. Retry is blocked to avoid duplicate posts.";
   }

@@ -1,5 +1,9 @@
 import { retryPublication } from "./approval";
 import { publicationRetryBlockedReason } from "./publication-ambiguity/guards";
+import {
+  INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+  isInstagramProviderMediaRecoveryRequired,
+} from "./publication-recovery-guard";
 import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import type { MarketingStore } from "./store";
 import type { MarketingPublication, Platform } from "./types";
@@ -67,6 +71,24 @@ export async function retryAdminPublication(
         success: false,
         publicationId,
         error: { code: "publication_not_found", message: "Publication not found." },
+      },
+    };
+  }
+
+  if (isInstagramProviderMediaRecoveryRequired(publication)) {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        publicationId,
+        platform: publication.platform,
+        status: publication.status,
+        attempt_count: publication.attemptCount,
+        external_id: publication.externalId,
+        error: {
+          code: "publication_recovery_required",
+          message: INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+        },
       },
     };
   }

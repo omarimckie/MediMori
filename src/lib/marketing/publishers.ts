@@ -6,6 +6,7 @@ import {
   type MetaFacebookCredentials,
   type MetaInstagramCredentials,
 } from "./config";
+import { publishInstagramMediaAfterContainerReady } from "./instagram-media-publish";
 import {
   buildMetaGraphUrl,
   composePublishCaption,
@@ -237,20 +238,15 @@ export class InstagramPublisher implements SocialPublisher {
       };
     }
 
-    const publishUrl = buildMetaGraphUrl(
-      "https://graph.instagram.com",
-      credentials.graphVersion,
-      `/${credentials.userId}/media_publish`,
-    );
-    const published = await postMetaForm<{ id?: string }>(
-      publishUrl,
-      {
-        creation_id: container.data.id,
-        access_token: credentials.accessToken,
-      },
-      secrets,
+    const published = await publishInstagramMediaAfterContainerReady({
+      userId: credentials.userId,
+      graphVersion: credentials.graphVersion,
+      accessToken: credentials.accessToken,
+      containerId: container.data.id,
       fetchImpl,
-    );
+      sleep: this.options.sleep,
+      secrets,
+    });
     if (!published.ok) {
       return {
         ok: false,

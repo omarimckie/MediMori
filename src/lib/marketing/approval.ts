@@ -24,6 +24,10 @@ import {
 } from "./publication-ambiguity/guards";
 import { PublicationScheduleBlockedError } from "./publication-ambiguity/schedule-error";
 import { isPublicationAmbiguityBlocked } from "./publication-ambiguity/types";
+import {
+  INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+  isInstagramProviderMediaRecoveryRequired,
+} from "./publication-recovery-guard";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import type { ContentStatus, MarketingContent, MarketingPublication } from "./types";
@@ -308,6 +312,12 @@ export async function scheduleApproved(
     );
   }
   if (existing) {
+    if (isInstagramProviderMediaRecoveryRequired(existing)) {
+      throw new PublicationScheduleBlockedError(
+        INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+        existing.id,
+      );
+    }
     if (
       existing.status === "processing" ||
       isPublicationAmbiguityBlocked(existing.ambiguityState)

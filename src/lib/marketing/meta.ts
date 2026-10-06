@@ -24,9 +24,9 @@ export type InstagramContainerStatusCode =
 export const INSTAGRAM_CONTAINER_POLL_MAX_WAIT_MS = 40_000;
 /** Maximum GET /{container-id}?fields=status_code requests per publish attempt. */
 export const INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS = 8;
-const INSTAGRAM_CONTAINER_POLL_INITIAL_DELAY_MS = 400;
-const INSTAGRAM_CONTAINER_POLL_MAX_DELAY_MS = 8_000;
-const INSTAGRAM_CONTAINER_POLL_BACKOFF_FACTOR = 2;
+export const INSTAGRAM_CONTAINER_POLL_INITIAL_DELAY_MS = 400;
+export const INSTAGRAM_CONTAINER_POLL_MAX_DELAY_MS = 8_000;
+export const INSTAGRAM_CONTAINER_POLL_BACKOFF_FACTOR = 2;
 
 export type MetaGraphResult<T> =
   | { ok: true; data: T }

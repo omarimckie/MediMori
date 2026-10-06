@@ -6,6 +6,7 @@ import {
   reviewScheduleModalState,
 } from "./ContentReviewCardActions";
 import { ScheduleContentModal } from "./ScheduleContentModal";
+import { INSTAGRAM_PROVIDER_RECOVERY_MESSAGE } from "@/lib/marketing/publication-recovery-guard";
 import { shouldShowRecycleOnReviewCard } from "@/lib/marketing/recycle-eligibility";
 import { executeMarketingContentPostAction } from "@/lib/marketing/content-post-action";
 import {
@@ -23,6 +24,7 @@ function renderActions(input: {
   platform: MarketingContent["platform"];
   format: MarketingContent["format"];
   hasPublishedPublication: boolean;
+  instagramRecoveryNotice?: string | null;
 }) {
   return renderToStaticMarkup(
     <ContentReviewCardActions
@@ -38,6 +40,7 @@ function renderActions(input: {
       }}
       busy={false}
       hasPublishedPublication={input.hasPublishedPublication}
+      instagramRecoveryNotice={input.instagramRecoveryNotice}
       onApprove={noop}
       onSaveEdit={noop}
       onRegenerate={noop}
@@ -47,6 +50,19 @@ function renderActions(input: {
     />,
   );
 }
+
+test("Instagram provider recovery notice disables Schedule and Recycle", () => {
+  const html = renderActions({
+    status: "approved",
+    platform: "instagram",
+    format: "post",
+    hasPublishedPublication: false,
+    instagramRecoveryNotice: INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
+  });
+  assert.match(html, /disabled=""/);
+  assert.match(html, new RegExp(INSTAGRAM_PROVIDER_RECOVERY_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, /role="status"/);
+});
 
 test("published Instagram post shows Recycle on review card", () => {
   const html = renderActions({

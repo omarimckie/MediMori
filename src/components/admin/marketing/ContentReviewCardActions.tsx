@@ -19,6 +19,8 @@ type Props = {
   item: ContentReviewCardItem;
   busy: boolean;
   hasPublishedPublication: boolean;
+  /** When set, Schedule/Recycle are disabled and recovery copy is shown. */
+  instagramRecoveryNotice?: string | null;
   onApprove: () => void;
   onSaveEdit: () => void;
   onRegenerate: () => void;
@@ -40,6 +42,7 @@ export function ContentReviewCardActions({
   item,
   busy,
   hasPublishedPublication,
+  instagramRecoveryNotice,
   onApprove,
   onSaveEdit,
   onRegenerate,
@@ -55,8 +58,10 @@ export function ContentReviewCardActions({
     format,
     hasPublishedPublication,
   });
+  const recoveryBlocked = Boolean(instagramRecoveryNotice?.trim());
   const scheduleDisabled =
     busy ||
+    recoveryBlocked ||
     hasPublishedPublication ||
     (item.status !== "approved" && item.status !== "scheduled");
 
@@ -81,11 +86,16 @@ export function ContentReviewCardActions({
         <SecondaryButton
           type="button"
           data-action="recycle"
-          disabled={busy}
+          disabled={busy || recoveryBlocked}
           onClick={onRecycle}
         >
           Recycle
         </SecondaryButton>
+      ) : null}
+      {recoveryBlocked ? (
+        <p className="text-xs leading-snug text-brand-orange-deep" role="status">
+          {instagramRecoveryNotice}
+        </p>
       ) : null}
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { contentReviewInstagramRecoveryNotice } from "@/lib/marketing/publication-recovery-display";
 import { pickPrimaryPublication } from "@/lib/marketing/publication-selection";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
 import type { MarketingPublication } from "@/lib/marketing/types";
@@ -54,7 +55,14 @@ type ContentItem = {
 
 type PublicationRow = Pick<
   MarketingPublication,
-  "id" | "contentId" | "platform" | "provider" | "status" | "createdAt"
+  | "id"
+  | "contentId"
+  | "platform"
+  | "provider"
+  | "status"
+  | "createdAt"
+  | "externalId"
+  | "providerCreationId"
 >;
 
 type Settings = {
@@ -549,6 +557,9 @@ export function WeekClient() {
                   item={item}
                   busy={busy}
                   hasPublishedPublication={hasPublishedPublication}
+                  instagramRecoveryNotice={contentReviewInstagramRecoveryNotice(
+                    primaryPublication ?? null,
+                  )}
                   onApprove={() =>
                     void act(`/api/admin/marketing/content/${item.id}`, { action: "approve" })
                   }
