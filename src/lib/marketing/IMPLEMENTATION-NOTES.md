@@ -24,9 +24,12 @@ This prototype is a module inside the existing Twilight Feather Next.js app.
 ### Scheduling
 - **Production plan:** Vercel **Hobby**. Native Vercel Cron cannot run more than **once per day** (sub-daily `vercel.json` expressions fail deploy; timing is only guaranteed within the scheduled hour).
 - **Chosen for V1:** Store `scheduled_for` on content/publications as the authoritative due-time queue. `publishDue` decides what is actually due; dispatchers only invoke that function via `POST /api/cron/marketing-publish`.
-- **Vercel Cron (fallback):** Once daily at `0 16 * * *` UTC → same endpoint with `Authorization: Bearer CRON_SECRET`. Retained on Hobby as a backup if GitHub Actions is disabled or misconfigured.
-- **GitHub Actions (intended ~15-minute dispatcher):** Workflow `.github/workflows/marketing-publish-dispatch.yml` runs on `cron: "*/15 * * * *"` and `workflow_dispatch`. It POSTs to `{MARKETING_PUBLISH_BASE_URL}/api/cron/marketing-publish` with `Bearer CRON_SECRET`. Scheduled runs can be **delayed** by GitHub under load. GitHub may **disable scheduled workflows** after prolonged repository inactivity (re-enable in the Actions tab). No publish logic lives in the workflow.
-- **Manual fallback:** “Publish due items” on **Your Week** or **Analytics** (admin session) calls the same route for emergency or pre-dispatcher testing.
+- **Primary production dispatcher (2026):** **Upstash QStash** invokes `POST /api/cron/marketing-publish` about every **10 minutes** (configured in Upstash, not in this repository).
+- **Vercel Cron (last-resort fallback):** Once daily at `0 16 * * *` UTC → same endpoint with `Authorization: Bearer CRON_SECRET`.
+- **GitHub Actions (manual / emergency):** `.github/workflows/marketing-publish-dispatch.yml` is **`workflow_dispatch` only** (no scheduled cron). It POSTs to `{MARKETING_PUBLISH_BASE_URL}/api/cron/marketing-publish` with `Bearer CRON_SECRET`.
+- **Manual fallback:** “Publish due items” on **Your Week** or **Analytics** (admin session) calls the same route.
+- **Dispatcher heartbeat:** Authorized publish cron upserts `marketing_dispatcher_heartbeats` (see `docs/MARKETING-PUBLICATION-RELIABILITY.md`). Heartbeat records application arrival, not QStash health.
+- **Reliability Phase 1:** `POST /api/cron/marketing-reliability` runs overdue/stuck detection and owner notifications only (no publish/retry). Not wired to QStash in Phase 1.
 - **GitHub configuration (required after merge):**
   - Repository **secret** `CRON_SECRET` — must match Vercel production `CRON_SECRET` byte-for-byte.
   - Repository **variable** `MARKETING_PUBLISH_BASE_URL` — production site origin only, no trailing slash (e.g. `https://twilight-feather.com`), same host as `NEXT_PUBLIC_SITE_URL` on Vercel.

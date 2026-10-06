@@ -4,6 +4,7 @@ export type MarketingNotificationType =
   | "test"
   | "morning_brief"
   | "publication_failed"
+  | "publication_overdue"
   | "publication_ambiguous"
   | "partial_publication_failure"
   | "credential_warning"
