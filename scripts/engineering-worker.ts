@@ -7,6 +7,7 @@ import { createFreshExport, diagnoseFreshExport, DockerWorkspace, exportedWorksp
 import { openaiGenerate, runWorker, type Ingress, type IsolatedWorkspace } from "../src/lib/engineering/worker";
 import { parseWorkerInitializationConfig, runScratchInitializationPreflight, diagnoseWorkerInitialization, sanitizedInitializationDiagnostic } from "../src/lib/engineering/worker-initialization";
 import { verifyWorkerDatabaseIdentity } from "../src/lib/engineering/worker-database";
+import { verifyTargetAncestry } from "../src/lib/engineering/lineage";
 import { WorkspaceExportError } from "../src/lib/engineering/workspace-export-diagnostics";
 
 export { diagnoseWorkerInitialization };
@@ -66,6 +67,12 @@ export async function main(run = process.argv[2]) {
   // below closes over it for the later claim and lifecycle calls.
   const sql = neon(connection);
   await verifyWorkerDatabaseIdentity(connection);
+  const lineageRows = await sql`SELECT engineering_worker(${run}::uuid,'lineage','worker-lineage-preflight',0,'{}'::jsonb) AS result`;
+  const lineage = lineageRows[0]?.result as Record<string, unknown> | undefined;
+  if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string") {
+    throw new EngineeringInputError("Approved execution lineage is unavailable.");
+  }
+  await verifyTargetAncestry(sourceRoot, lineage.target_base_sha);
   let exportRoot = "";
   let preflightRevision: string;
   try {

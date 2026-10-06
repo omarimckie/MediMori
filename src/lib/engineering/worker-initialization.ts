@@ -34,7 +34,7 @@ const summaries: Record<InitializationCode, string> = {
   worker_database_identity_mismatch: "The connected database identity does not satisfy the restricted worker policy.",
   worker_database_branch_mismatch: "The worker database connection is not on the approved disposable branch.",
   worker_database_role_mismatch: "The connected database role is not the restricted worker identity.",
-  worker_database_schema_mismatch: "The disposable worker database is missing required call-accounting schema.",
+  worker_database_schema_mismatch: "The disposable worker database is missing required call-accounting or run-lineage schema.",
   invalid_sandbox_image: "The validation image is not configured as a digest-pinned image.",
   invalid_dependency_volume: "The immutable dependency volume name is invalid.",
   invalid_model_policy: "The configured model policy is invalid or outside the approved allow-list.",

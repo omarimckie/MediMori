@@ -25,6 +25,8 @@ function validIdentityRow() {
     ingress_execute: true,
     public_execute: false,
     worker_call_progress_ready: true,
+    worker_lineage_ready: true,
+    lineage_table_access: false,
   };
 }
 
@@ -39,6 +41,7 @@ test("read-only identity query accepts the intended disposable restricted role",
   assert.equal(identity.currentUser, "medimori_engineering_2c_worker");
   assert.equal(identity.sessionUser, identity.currentUser);
   assert.equal(identity.boundedPrivileges, true);
+  assert.equal(identity.lineageReady, true);
 });
 
 test("identity query classifies branch and role mismatches without raw database details", async () => {
@@ -54,7 +57,7 @@ test("identity query classifies branch and role mismatches without raw database 
 });
 
 test("identity query rejects unsafe privileges and ingress grants", async () => {
-  for (const change of [{ role_superuser: true }, { task_mutation: true }, { approval_mutation: true }, { ingress_execute: false }, { public_execute: true }]) {
+  for (const change of [{ role_superuser: true }, { task_mutation: true }, { approval_mutation: true }, { lineage_table_access: true }, { ingress_execute: false }, { public_execute: true }]) {
     await assert.rejects(
       verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
       error => error instanceof WorkerInitializationError && error.code === "worker_database_identity_mismatch",
@@ -62,11 +65,13 @@ test("identity query rejects unsafe privileges and ingress grants", async () => 
   }
 });
 
-test("identity query fails closed before claim when durable call-progress schema is missing", async () => {
-  await assert.rejects(
-    verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), worker_call_progress_ready: false })),
-    error => error instanceof WorkerInitializationError && error.code === "worker_database_schema_mismatch",
-  );
+test("identity query fails closed before claim when call-progress or lineage schema is missing", async () => {
+  for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }]) {
+    await assert.rejects(
+      verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
+      error => error instanceof WorkerInitializationError && error.code === "worker_database_schema_mismatch",
+    );
+  }
   const diagnostic = sanitizedInitializationDiagnostic(new WorkerInitializationError("database_identity", "worker_database_schema_mismatch"));
   assert.equal(diagnostic.beforeClaim, true);
   assert.equal(diagnostic.providerCouldHaveBeenReached, false);

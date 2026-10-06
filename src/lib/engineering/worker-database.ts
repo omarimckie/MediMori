@@ -20,6 +20,8 @@ type IdentityRow = {
   ingress_execute: boolean;
   public_execute: boolean;
   worker_call_progress_ready: boolean;
+  worker_lineage_ready: boolean;
+  lineage_table_access: boolean;
 };
 
 export type WorkerDatabaseIdentity = {
@@ -29,6 +31,7 @@ export type WorkerDatabaseIdentity = {
   sessionUser: string;
   restrictedRole: true;
   callProgressReady: true;
+  lineageReady: true;
   boundedPrivileges: true;
 };
 
@@ -83,6 +86,19 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
           AND c.conname='engineering_worker_call_processing_state'
           AND c.contype='c' AND c.convalidated
       )) AS worker_call_progress_ready,
+      (to_regclass('public.engineering_run_lineage') IS NOT NULL
+        AND to_regclass('public.engineering_plan_lineage') IS NOT NULL
+        AND EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+          WHERE n.nspname='public' AND p.proname='engineering_run_lineage_valid' AND p.prosecdef
+            AND p.proconfig @> ARRAY['search_path=public, pg_temp'])) AS worker_lineage_ready,
+      (COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'SELECT'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'INSERT'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'UPDATE'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'DELETE'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_plan_lineage'),'SELECT'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_plan_lineage'),'INSERT'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_plan_lineage'),'UPDATE'),false)
+        OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_plan_lineage'),'DELETE'),false)) AS lineage_table_access,
       to_regprocedure('public.engineering_worker(uuid,text,text,integer,jsonb)') IS NOT NULL AS ingress_exists`;
   } catch (error) {
     const sqlState = error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^\d{5}$/.test(error.code);
@@ -95,8 +111,8 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
   if (row.actor !== restrictedWorkerDatabaseTarget.role || row.session_actor !== restrictedWorkerDatabaseTarget.role || row.database_name !== restrictedWorkerDatabaseTarget.database) {
     throw new WorkerInitializationError("database_identity", "worker_database_role_mismatch");
   }
-  if (row.worker_call_progress_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
-  if (row.role_superuser || row.role_createdb || row.role_createrole || row.role_replication || row.role_bypassrls || row.task_mutation || row.approval_mutation || !row.role_exists || !row.role_member || !row.ingress_exists || !row.ingress_security_definer || !row.ingress_execute || row.public_execute) {
+  if (row.worker_call_progress_ready !== true || row.worker_lineage_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
+  if (row.role_superuser || row.role_createdb || row.role_createrole || row.role_replication || row.role_bypassrls || row.task_mutation || row.approval_mutation || row.lineage_table_access || !row.role_exists || !row.role_member || !row.ingress_exists || !row.ingress_security_definer || !row.ingress_execute || row.public_execute) {
     throw new WorkerInitializationError("database_identity", "worker_database_identity_mismatch");
   }
   return {
@@ -106,6 +122,7 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
     sessionUser: row.session_actor,
     restrictedRole: true,
     callProgressReady: true,
+    lineageReady: true,
     boundedPrivileges: true,
   };
 }
