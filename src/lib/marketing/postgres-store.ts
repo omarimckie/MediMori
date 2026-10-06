@@ -412,12 +412,15 @@ export class PostgresMarketingStore implements MarketingStore {
     const rows = await sql`
       INSERT INTO marketing_publications (
         id, content_id, campaign_id, platform, provider, status, idempotency_key,
-        external_id, url, attempt_count, last_error, scheduled_for, published_at
+        external_id, url, attempt_count, last_error, scheduled_for, published_at,
+        ambiguity_state, claim_token, processing_started_at, provider_creation_id
       ) VALUES (
         ${input.id}::uuid, ${input.contentId}::uuid, ${input.campaignId}::uuid,
         ${input.platform}, ${input.provider}, ${input.status}, ${input.idempotencyKey},
         ${input.externalId}, ${input.url}, ${input.attemptCount}, ${input.lastError},
-        ${input.scheduledFor}, ${input.publishedAt}
+        ${input.scheduledFor}, ${input.publishedAt},
+        ${input.ambiguityState ?? "none"}, ${input.claimToken}::uuid,
+        ${input.processingStartedAt}, ${input.providerCreationId}
       )
       ON CONFLICT (idempotency_key) DO UPDATE SET updated_at = marketing_publications.updated_at
       RETURNING *
@@ -439,8 +442,92 @@ export class PostgresMarketingStore implements MarketingStore {
         last_error = ${next.lastError},
         scheduled_for = ${next.scheduledFor},
         published_at = ${next.publishedAt},
+        ambiguity_state = ${next.ambiguityState},
+        claim_token = ${next.claimToken}::uuid,
+        processing_started_at = ${next.processingStartedAt},
+        provider_creation_id = ${next.providerCreationId},
         updated_at = now()
       WHERE id = ${id}::uuid
+      RETURNING *
+    `;
+    return rows[0] ? mapPublication(rows[0] as Record<string, unknown>) : null;
+  }
+
+  async finalizePublicationClaim(input: {
+    id: string;
+    claimToken: string;
+    patch: Partial<MarketingPublication>;
+  }) {
+    const current = await this.getPublication(input.id);
+    if (!current) return null;
+    const next = { ...current, ...input.patch, id: input.id };
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE marketing_publications SET
+        status = ${next.status},
+        external_id = ${next.externalId},
+        url = ${next.url},
+        attempt_count = ${next.attemptCount},
+        last_error = ${next.lastError},
+        scheduled_for = ${next.scheduledFor},
+        published_at = ${next.publishedAt},
+        ambiguity_state = ${next.ambiguityState},
+        claim_token = ${next.claimToken}::uuid,
+        processing_started_at = ${next.processingStartedAt},
+        provider_creation_id = ${next.providerCreationId},
+        updated_at = now()
+      WHERE id = ${input.id}::uuid
+        AND claim_token = ${input.claimToken}::uuid
+      RETURNING *
+    `;
+    return rows[0] ? mapPublication(rows[0] as Record<string, unknown>) : null;
+  }
+
+  async persistProviderCreationId(input: {
+    id: string;
+    claimToken: string;
+    providerCreationId: string;
+  }) {
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE marketing_publications
+      SET provider_creation_id = ${input.providerCreationId},
+          updated_at = now()
+      WHERE id = ${input.id}::uuid
+        AND claim_token = ${input.claimToken}::uuid
+        AND (
+          provider_creation_id IS NULL
+          OR provider_creation_id = '__publish_inflight__'
+        )
+      RETURNING id
+    `;
+    return rows.length > 0;
+  }
+
+  async tryBeginProviderPublish(input: { id: string; claimToken: string }) {
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE marketing_publications
+      SET provider_creation_id = '__publish_inflight__',
+          updated_at = now()
+      WHERE id = ${input.id}::uuid
+        AND claim_token = ${input.claimToken}::uuid
+        AND status = 'processing'
+        AND ambiguity_state = 'none'
+        AND provider_creation_id IS NULL
+      RETURNING id
+    `;
+    return rows.length > 0;
+  }
+
+  async markStaleProcessingOwnerRequired(id: string) {
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE marketing_publications
+      SET ambiguity_state = 'owner_required',
+          updated_at = now()
+      WHERE id = ${id}::uuid
+        AND status = 'processing'
       RETURNING *
     `;
     return rows[0] ? mapPublication(rows[0] as Record<string, unknown>) : null;
@@ -469,17 +556,25 @@ export class PostgresMarketingStore implements MarketingStore {
   async claimPublication(id: string, options?: { allowExhaustedRetry?: boolean }) {
     const sql = getSql();
     const allowExhaustedRetry = Boolean(options?.allowExhaustedRetry);
+    const claimToken = crypto.randomUUID();
     const rows = await sql`
       UPDATE marketing_publications
-      SET status = 'processing', updated_at = now()
+      SET
+        status = 'processing',
+        claim_token = ${claimToken}::uuid,
+        processing_started_at = now(),
+        ambiguity_state = 'none',
+        provider_creation_id = NULL,
+        updated_at = now()
       WHERE id = ${id}::uuid
+        AND ambiguity_state = 'none'
+        AND status <> 'processing'
         AND (
           (
             status = 'scheduled'
             AND (scheduled_for IS NULL OR scheduled_for <= now())
           )
           OR (status = 'failed' AND (attempt_count < 3 OR ${allowExhaustedRetry}))
-          OR (status = 'processing' AND updated_at < now() - interval '15 minutes')
         )
       RETURNING *
     `;

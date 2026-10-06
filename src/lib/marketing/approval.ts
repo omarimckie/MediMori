@@ -10,14 +10,24 @@ import { revalidatePublishedFreeResourcePaths } from "./free-resource-cache";
 import { isPublicationDue, resolveScheduleInstant } from "./marketing-scheduling";
 import { getWebsiteFreeResourcePublisher } from "./website-free-resource-publisher";
 import { logMarketing } from "./logger";
+import { isPublicationEligibleForCronAutoRetry } from "./publication-cron-retry";
 import {
-  formatPublicationFailureLastError,
-  isPublicationEligibleForCronAutoRetry,
-  shouldStampCronAutoRetryForPlatform,
-} from "./publication-cron-retry";
+  applyAmbiguousPublicationOutcome,
+  applyConfirmedPublicationFailure,
+  applySuccessfulPublication,
+} from "./publication-ambiguity/apply-outcome";
+import { handleProviderSuccessAfterLostFinalize } from "./publication-ambiguity/lost-claim-success";
+import { classifyProviderPublishResult } from "./publication-ambiguity/classify";
+import {
+  isPublicationBlockedForAutomaticMetaRetry,
+  isPublicationStaleProcessing,
+} from "./publication-ambiguity/guards";
+import { PublicationScheduleBlockedError } from "./publication-ambiguity/schedule-error";
+import { isPublicationAmbiguityBlocked } from "./publication-ambiguity/types";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import type { ContentStatus, MarketingContent, MarketingPublication } from "./types";
+import type { PublishResult } from "./publishers";
 
 const PUBLISHABLE_CONTENT_STATUSES = new Set<ContentStatus>([
   "approved",
@@ -298,6 +308,15 @@ export async function scheduleApproved(
     );
   }
   if (existing) {
+    if (
+      existing.status === "processing" ||
+      isPublicationAmbiguityBlocked(existing.ambiguityState)
+    ) {
+      throw new PublicationScheduleBlockedError(
+        "Cannot reschedule a publication that is processing or has an ambiguous publish outcome.",
+        existing.id,
+      );
+    }
     await store.updateContent(content.id, { status: "scheduled", scheduledFor });
     const updated =
       (await store.updatePublication(existing.id, {
@@ -333,23 +352,60 @@ export async function publishPublication(
 ) {
   const content = await store.getContent(publication.contentId);
   if (!content) throw new Error("Content not found.");
-  if (publication.status === "published" && publication.externalId) {
-    return publication;
+  const fresh = (await store.getPublication(publication.id)) ?? publication;
+  if (fresh.status === "published" && fresh.externalId) {
+    return fresh;
+  }
+  if (fresh.externalId) {
+    return fresh;
+  }
+  if (
+    isPublicationBlockedForAutomaticMetaRetry(fresh) &&
+    fresh.status !== "scheduled" &&
+    fresh.status !== "failed" &&
+    fresh.status !== "processing"
+  ) {
+    return fresh;
   }
   if (!contentMayBePublished(content.status)) {
+    const message = "Content is not approved for publishing.";
+    if (fresh.status === "processing" && fresh.claimToken) {
+      if (publication.claimToken !== fresh.claimToken) {
+        return fresh;
+      }
+      const updated = await applyConfirmedPublicationFailure(store, {
+        publication: fresh,
+        claimToken: fresh.claimToken,
+        attemptCount: fresh.attemptCount + 1,
+        lastError: message,
+        cronAutoRetry: false,
+        platform: content.platform,
+        providerRetryable: false,
+      });
+      if (updated) {
+        await store.updateContent(content.id, { status: "failed" });
+      }
+      return updated ?? fresh;
+    }
     return (
       (await store.updatePublication(publication.id, {
         status: "failed",
-        lastError: "Content is not approved for publishing.",
+        lastError: message,
       })) ?? publication
     );
   }
 
-  let current = publication;
+  let current = fresh;
   if (current.status === "scheduled" && !isPublicationDue(current.scheduledFor)) {
     return current;
   }
+  if (isPublicationAmbiguityBlocked(current.ambiguityState)) {
+    return current;
+  }
   if (current.status === "scheduled" || current.status === "failed") {
+    if (isPublicationBlockedForAutomaticMetaRetry(current)) {
+      return current;
+    }
     const claimed = await store.claimPublication(current.id, {
       allowExhaustedRetry: options?.allowExhaustedRetry,
     });
@@ -357,7 +413,28 @@ export async function publishPublication(
       return (await store.getPublication(current.id)) ?? current;
     }
     current = claimed;
-  } else if (current.status !== "processing") {
+  } else if (current.status === "processing") {
+    if (!current.claimToken || publication.claimToken !== current.claimToken) {
+      if (isPublicationStaleProcessing(current)) {
+        const marked = await store.markStaleProcessingOwnerRequired(current.id);
+        if (marked) {
+          void import("./publication-ambiguity/notify").then(({ notifyPublicationAmbiguousOutcome }) =>
+            notifyPublicationAmbiguousOutcome(marked, "Processing claim expired or was superseded."),
+          );
+        }
+      }
+      return (await store.getPublication(current.id)) ?? current;
+    }
+    current = (await store.getPublication(current.id)) ?? current;
+    if (!current.claimToken || current.claimToken !== publication.claimToken) {
+      return current;
+    }
+  } else {
+    return current;
+  }
+
+  const claimToken = current.claimToken;
+  if (!claimToken) {
     return current;
   }
 
@@ -365,13 +442,31 @@ export async function publishPublication(
   if (!preflight.ok) {
     const attemptCount = current.attemptCount + 1;
     const message = formatPreflightError(preflight);
-    const updated = await store.updatePublication(current.id, {
-      status: "failed",
+    const updated = await applyConfirmedPublicationFailure(store, {
+      publication: current,
+      claimToken,
       attemptCount,
       lastError: message,
+      cronAutoRetry: false,
+      platform: content.platform,
+      providerRetryable: false,
     });
-    await store.updateContent(content.id, { status: "failed" });
+    if (updated) {
+      await store.updateContent(content.id, { status: "failed" });
+    }
     return updated ?? current;
+  }
+
+  const isMetaPlatform = content.platform === "instagram" || content.platform === "facebook";
+  if (isMetaPlatform || content.platform === "pinterest") {
+    const entered = await store.tryBeginProviderPublish({
+      id: current.id,
+      claimToken,
+    });
+    if (!entered) {
+      return (await store.getPublication(current.id)) ?? current;
+    }
+    current = (await store.getPublication(current.id)) ?? current;
   }
 
   const started = Date.now();
@@ -383,23 +478,48 @@ export async function publishPublication(
     publication: current,
     imageUrl,
     simulateFailure: options?.simulateFailure,
+    hooks: content.platform === "instagram"
+      ? {
+          onProviderCreationId: async (creationId: string) =>
+            store.persistProviderCreationId({
+              id: current.id,
+              claimToken,
+              providerCreationId: creationId,
+            }),
+        }
+      : undefined,
   };
-  const result = isFreeResourceContent(content)
+  const result: PublishResult = isFreeResourceContent(content)
     ? await getWebsiteFreeResourcePublisher().publish(publishRequest, store)
     : content.platform === "email"
       ? await email.send(publishRequest)
       : await social.publish(publishRequest);
+  current = (await store.getPublication(current.id)) ?? current;
+  const providerInteractionStarted = Boolean(result.providerInteractionStarted);
 
   const attemptCount = current.attemptCount + 1;
   if (result.ok) {
-    const updated = await store.updatePublication(current.id, {
-      status: "published",
+    const updated = await applySuccessfulPublication(store, {
+      publication: current,
+      claimToken,
+      attemptCount,
       externalId: result.externalId ?? publication.externalId,
       url: result.url ?? publication.url,
-      attemptCount,
-      lastError: null,
       publishedAt: new Date().toISOString(),
     });
+    if (!updated) {
+      const lostClaimOutcome = await handleProviderSuccessAfterLostFinalize(store, {
+        publication: current,
+        claimToken,
+        attemptCount,
+        result,
+        publishedAt: new Date().toISOString(),
+      });
+      if (lostClaimOutcome.status === "published") {
+        await store.updateContent(content.id, { status: "published" });
+      }
+      return lostClaimOutcome;
+    }
     await store.updateContent(content.id, { status: "published" });
     await store.recordEvent({
       id: crypto.randomUUID(),
@@ -438,18 +558,35 @@ export async function publishPublication(
       }
       revalidatePublishedFreeResourcePaths(slug ?? "");
     }
-    return updated ?? current;
+    return updated;
   }
 
+  const outcome = classifyProviderPublishResult(result, { providerInteractionStarted });
   const retryable = Boolean(result.retryable && attemptCount < 3);
-  const updated = await store.updatePublication(current.id, {
-    status: "failed",
-    attemptCount,
-    lastError: formatPublicationFailureLastError(
-      result.error ?? "Publish failed",
-      shouldStampCronAutoRetryForPlatform(content.platform, Boolean(result.retryable)),
-    ),
-  });
+  let updated: MarketingPublication | null;
+  if (outcome === "ambiguous") {
+    updated = await applyAmbiguousPublicationOutcome(store, {
+      publication: current,
+      claimToken,
+      attemptCount,
+      lastError: result.error ?? "Publish failed with ambiguous outcome.",
+      ownerRequired: isPublicationStaleProcessing(current),
+      notifyDetail: result.error,
+    });
+  } else {
+    updated = await applyConfirmedPublicationFailure(store, {
+      publication: current,
+      claimToken,
+      attemptCount,
+      lastError: result.error ?? "Publish failed",
+      cronAutoRetry: Boolean(result.retryable),
+      platform: content.platform,
+      providerRetryable: Boolean(result.retryable),
+    });
+  }
+  if (!updated) {
+    return (await store.getPublication(current.id)) ?? current;
+  }
   await store.updateContent(content.id, { status: "failed" });
   await store.recordEvent({
     id: crypto.randomUUID(),
@@ -457,7 +594,7 @@ export async function publishPublication(
     campaignId: content.campaignId,
     contentId: content.id,
     platform: content.platform,
-    properties: { error: result.error ?? "unknown", retryable },
+    properties: { error: result.error ?? "unknown", retryable, outcome },
   });
   logMarketing({
     operation: "publish",
@@ -468,7 +605,7 @@ export async function publishPublication(
     durationMs: Date.now() - started,
     error: result.error,
   });
-  return updated ?? current;
+  return updated;
 }
 
 export async function retryPublication(
@@ -489,7 +626,9 @@ export async function publishDue(store: MarketingStore, now = new Date()) {
   });
   const failedRetry = (await store.listPublications("failed")).filter(
     (item) =>
-      item.attemptCount < 3 && isPublicationEligibleForCronAutoRetry(item.lastError),
+      item.attemptCount < 3 &&
+      isPublicationEligibleForCronAutoRetry(item.lastError, item) &&
+      !isPublicationBlockedForAutomaticMetaRetry(item),
   );
   const results = [];
   for (const item of [...due, ...failedRetry]) {

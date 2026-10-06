@@ -258,7 +258,15 @@ export class MemoryMarketingStore implements MarketingStore {
   }
 
   async createPublication(input: Omit<MarketingPublication, "createdAt" | "updatedAt">) {
-    const row: MarketingPublication = { ...input, createdAt: nowIso(), updatedAt: nowIso() };
+    const row: MarketingPublication = {
+      ...input,
+      ambiguityState: input.ambiguityState ?? "none",
+      claimToken: input.claimToken ?? null,
+      processingStartedAt: input.processingStartedAt ?? null,
+      providerCreationId: input.providerCreationId ?? null,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
     this.publications.set(row.id, row);
     return clone(row);
   }
@@ -267,6 +275,78 @@ export class MemoryMarketingStore implements MarketingStore {
     const current = this.publications.get(id);
     if (!current) return null;
     const row = { ...current, ...patch, id, updatedAt: nowIso() };
+    this.publications.set(id, row);
+    return clone(row);
+  }
+
+  async finalizePublicationClaim(input: {
+    id: string;
+    claimToken: string;
+    patch: Partial<MarketingPublication>;
+  }) {
+    const current = this.publications.get(input.id);
+    if (!current || current.claimToken !== input.claimToken) {
+      return null;
+    }
+    const row: MarketingPublication = {
+      ...current,
+      ...input.patch,
+      id: input.id,
+      updatedAt: nowIso(),
+    };
+    this.publications.set(input.id, row);
+    return clone(row);
+  }
+
+  async persistProviderCreationId(input: {
+    id: string;
+    claimToken: string;
+    providerCreationId: string;
+  }) {
+    const current = this.publications.get(input.id);
+    if (!current || current.claimToken !== input.claimToken) {
+      return false;
+    }
+    const allowed =
+      !current.providerCreationId || current.providerCreationId === "__publish_inflight__";
+    if (!allowed) {
+      return false;
+    }
+    const row: MarketingPublication = {
+      ...current,
+      providerCreationId: input.providerCreationId,
+      updatedAt: nowIso(),
+    };
+    this.publications.set(input.id, row);
+    return true;
+  }
+
+  async tryBeginProviderPublish(input: { id: string; claimToken: string }) {
+    const current = this.publications.get(input.id);
+    if (!current) return false;
+    if (current.claimToken !== input.claimToken) return false;
+    if (current.status !== "processing") return false;
+    if (current.ambiguityState && current.ambiguityState !== "none") return false;
+    if (current.providerCreationId) return false;
+    const row: MarketingPublication = {
+      ...current,
+      providerCreationId: "__publish_inflight__",
+      updatedAt: nowIso(),
+    };
+    this.publications.set(input.id, row);
+    return true;
+  }
+
+  async markStaleProcessingOwnerRequired(id: string) {
+    const current = this.publications.get(id);
+    if (!current || current.status !== "processing") {
+      return null;
+    }
+    const row: MarketingPublication = {
+      ...current,
+      ambiguityState: "owner_required",
+      updatedAt: nowIso(),
+    };
     this.publications.set(id, row);
     return clone(row);
   }
@@ -290,23 +370,30 @@ export class MemoryMarketingStore implements MarketingStore {
   async claimPublication(id: string, options?: { allowExhaustedRetry?: boolean }) {
     const current = this.publications.get(id);
     if (!current) return null;
-    const staleMs = 15 * 60 * 1000;
-    const updatedAt = new Date(current.updatedAt).getTime();
+    if (current.ambiguityState === "ambiguous" || current.ambiguityState === "owner_required") {
+      return null;
+    }
+    if (current.status === "processing") {
+      return null;
+    }
     const failedClaimable =
       current.status === "failed" &&
       (current.attemptCount < 3 || Boolean(options?.allowExhaustedRetry));
     const scheduledDue =
       current.status === "scheduled" &&
       (!current.scheduledFor || new Date(current.scheduledFor).getTime() <= Date.now());
-    const claimable =
-      scheduledDue ||
-      failedClaimable ||
-      (current.status === "processing" && Date.now() - updatedAt >= staleMs);
+    const claimable = scheduledDue || failedClaimable;
     if (!claimable) return null;
+    const claimToken = crypto.randomUUID();
+    const started = nowIso();
     const row: MarketingPublication = {
       ...current,
       status: "processing",
-      updatedAt: nowIso(),
+      claimToken,
+      processingStartedAt: started,
+      ambiguityState: "none",
+      providerCreationId: null,
+      updatedAt: started,
     };
     this.publications.set(id, row);
     return clone(row);
@@ -553,6 +640,8 @@ export function mapApproval(row: Record<string, unknown>): MarketingApproval {
 }
 
 export function mapPublication(row: Record<string, unknown>): MarketingPublication {
+  const ambiguityRaw =
+    row.ambiguity_state ?? row.ambiguityState ?? "none";
   return {
     id: asString(row.id),
     contentId: asString(row.content_id),
@@ -567,6 +656,14 @@ export function mapPublication(row: Record<string, unknown>): MarketingPublicati
     lastError: asStringOrNull(row.last_error),
     scheduledFor: row.scheduled_for ? toIso(row.scheduled_for) : null,
     publishedAt: row.published_at ? toIso(row.published_at) : null,
+    ambiguityState: asString(ambiguityRaw, "none") as MarketingPublication["ambiguityState"],
+    claimToken: asStringOrNull(row.claim_token ?? row.claimToken),
+    processingStartedAt: row.processing_started_at
+      ? toIso(row.processing_started_at)
+      : row.processingStartedAt
+        ? toIso(row.processingStartedAt)
+        : null,
+    providerCreationId: asStringOrNull(row.provider_creation_id ?? row.providerCreationId),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };

@@ -1,4 +1,5 @@
 import { retryPublication } from "./approval";
+import { publicationRetryBlockedReason } from "./publication-ambiguity/guards";
 import { formatPreflightError, runPublishPreflight } from "./publish-preflight";
 import type { MarketingStore } from "./store";
 import type { MarketingPublication, Platform } from "./types";
@@ -66,6 +67,23 @@ export async function retryAdminPublication(
         success: false,
         publicationId,
         error: { code: "publication_not_found", message: "Publication not found." },
+      },
+    };
+  }
+
+  const retryBlockReason = publicationRetryBlockedReason(publication);
+  if (retryBlockReason) {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        publicationId,
+        platform: publication.platform,
+        status: publication.status,
+        error: {
+          code: "publication_retry_blocked",
+          message: retryBlockReason,
+        },
       },
     };
   }

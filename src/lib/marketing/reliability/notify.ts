@@ -33,7 +33,8 @@ export function buildStuckProcessingNotificationPayload(
     title: `${platform} publish may be stuck`,
     body:
       `Publication has been processing for over 25 minutes (attempts: ${attempts}). ` +
-      `Automatic reclaim may still run separately — investigate before retrying to avoid duplicates.${errorHint}`,
+      `Automatic republish is blocked for safety — owner review is required before any retry ` +
+      `(reconciliation tooling is not available yet).${errorHint}`,
     destination: "/admin/marketing/week",
     relatedContentId: publication.contentId,
     relatedPublicationId: publication.id,

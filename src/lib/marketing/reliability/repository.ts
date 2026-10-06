@@ -27,6 +27,14 @@ function mapPublication(row: Record<string, unknown>): MarketingPublication {
       row.published_at == null
         ? null
         : new Date(String(row.published_at)).toISOString(),
+    ambiguityState: String(row.ambiguity_state ?? "none") as MarketingPublication["ambiguityState"],
+    claimToken: row.claim_token == null ? null : String(row.claim_token),
+    processingStartedAt:
+      row.processing_started_at == null
+        ? null
+        : new Date(String(row.processing_started_at)).toISOString(),
+    providerCreationId:
+      row.provider_creation_id == null ? null : String(row.provider_creation_id),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };

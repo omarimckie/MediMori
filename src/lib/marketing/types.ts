@@ -264,6 +264,8 @@ export type MarketingApproval = {
   createdAt: string;
 };
 
+export type PublicationAmbiguityState = "none" | "ambiguous" | "owner_required";
+
 export type MarketingPublication = {
   id: string;
   contentId: string;
@@ -278,6 +280,11 @@ export type MarketingPublication = {
   lastError: string | null;
   scheduledFor: string | null;
   publishedAt: string | null;
+  /** Normalized to `none` when absent (legacy rows / tests). */
+  ambiguityState?: PublicationAmbiguityState;
+  claimToken?: string | null;
+  processingStartedAt?: string | null;
+  providerCreationId?: string | null;
   createdAt: string;
   updatedAt: string;
 };

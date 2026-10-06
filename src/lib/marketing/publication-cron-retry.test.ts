@@ -8,6 +8,7 @@ import {
   formatPublicationFailureLastError,
   isPublicationEligibleForCronAutoRetry,
   PUBLICATION_CRON_AUTO_RETRY_MARKER,
+  PUBLICATION_CRON_SAFE_RETRY_PROOF,
   shouldStampCronAutoRetryForPlatform,
 } from "./publication-cron-retry";
 
@@ -17,26 +18,28 @@ afterEach(() => {
   process.env.MARKETING_MOCK_MODE = originalMock;
 });
 
-test("isPublicationEligibleForCronAutoRetry keeps legacy transient substring", () => {
+test("isPublicationEligibleForCronAutoRetry rejects legacy transient without structured proof", () => {
   assert.equal(
     isPublicationEligibleForCronAutoRetry(
       "meta_http_error: transient Meta API failure. rate limit",
     ),
-    true,
+    false,
   );
   assert.equal(
-    isPublicationEligibleForCronAutoRetry("Mock publisher simulated a transient failure."),
-    true,
+    isPublicationEligibleForCronAutoRetry(
+      `meta_http_error: failed ${PUBLICATION_CRON_AUTO_RETRY_MARKER}`,
+    ),
+    false,
   );
 });
 
-test("isPublicationEligibleForCronAutoRetry accepts Meta cron marker", () => {
+test("isPublicationEligibleForCronAutoRetry accepts Phase 2A safe retry proof", () => {
   const stamped = formatPublicationFailureLastError("meta_http_error: ECONNRESET", true);
-  assert.ok(stamped.includes(PUBLICATION_CRON_AUTO_RETRY_MARKER));
+  assert.ok(stamped.includes(PUBLICATION_CRON_SAFE_RETRY_PROOF));
   assert.equal(isPublicationEligibleForCronAutoRetry(stamped), true);
 });
 
-test("formatPublicationFailureLastError does not strip marker when error is long", () => {
+test("formatPublicationFailureLastError does not strip proof when error is long", () => {
   const raw =
     "meta_http_error: upstream timeout after 30s (code=504) — see graph batch /foo?bar=1";
   const stamped = formatPublicationFailureLastError(raw, true);
@@ -169,7 +172,7 @@ test("publishDue selects stamped Meta network-style failure", async () => {
   assert.equal(results[0]?.id, publicationId);
 });
 
-test("publishPublication persists cron marker for retryable Meta network failure", async () => {
+test("publishPublication marks Meta transport failure as ambiguous without cron marker", async () => {
   process.env.MARKETING_MOCK_MODE = "false";
   process.env.META_INSTAGRAM_USER_ID = "ig-user";
   process.env.META_INSTAGRAM_ACCESS_TOKEN = "ig-token";
@@ -192,15 +195,35 @@ test("publishPublication persists cron marker for retryable Meta network failure
   try {
     const failed = await publishPublication(store, publication);
     assert.equal(failed.status, "failed");
+    assert.equal(failed.ambiguityState, "ambiguous");
     assert.ok(failed.lastError?.includes("meta_http_error:"));
-    assert.ok(failed.lastError?.includes(PUBLICATION_CRON_AUTO_RETRY_MARKER));
-    assert.equal(isPublicationEligibleForCronAutoRetry(failed.lastError), true);
+    assert.equal(failed.lastError?.includes(PUBLICATION_CRON_AUTO_RETRY_MARKER), false);
+    assert.equal(isPublicationEligibleForCronAutoRetry(failed.lastError, failed), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("publishDue selects legacy transient Meta HTTP failure without marker", async () => {
+test("publishPublication persists cron marker for confirmed retryable mock failure", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const publicationId = "pub-mock-retry-marker";
+  await seedInstagramFailedForCronRetry(store, {
+    suffix: "mock-marker",
+    publicationId,
+    attemptCount: 0,
+    lastError: null,
+    contentStatus: "approved",
+  });
+  const publication = await store.getPublication(publicationId);
+  assert.ok(publication);
+  const failed = await publishPublication(store, publication, { simulateFailure: true });
+  assert.equal(failed.status, "failed");
+  assert.ok(failed.lastError?.includes(PUBLICATION_CRON_SAFE_RETRY_PROOF));
+  assert.equal(isPublicationEligibleForCronAutoRetry(failed.lastError, failed), true);
+});
+
+test("publishDue does not select legacy transient failure without structured proof", async () => {
   process.env.MARKETING_MOCK_MODE = "true";
   const store = new MemoryMarketingStore();
   const publicationId = "pub-meta-transient-legacy";
@@ -212,8 +235,7 @@ test("publishDue selects legacy transient Meta HTTP failure without marker", asy
   });
 
   const results = await publishDue(store);
-  assert.equal(results.length, 1);
-  assert.equal(results[0]?.id, publicationId);
+  assert.equal(results.length, 0);
 });
 
 test("publishDue excludes non-retryable Meta failure without marker", async () => {

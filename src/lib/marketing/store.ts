@@ -89,6 +89,21 @@ export type MarketingStore = {
     id: string,
     options?: ClaimPublicationOptions,
   ): Promise<MarketingPublication | null>;
+  finalizePublicationClaim(input: {
+    id: string;
+    claimToken: string;
+    patch: Partial<MarketingPublication>;
+  }): Promise<MarketingPublication | null>;
+  persistProviderCreationId(input: {
+    id: string;
+    claimToken: string;
+    providerCreationId: string;
+  }): Promise<boolean>;
+  markStaleProcessingOwnerRequired(id: string): Promise<MarketingPublication | null>;
+  tryBeginProviderPublish(input: {
+    id: string;
+    claimToken: string;
+  }): Promise<boolean>;
 
   upsertMetric(input: Omit<MarketingMetric, "createdAt">): Promise<MarketingMetric>;
   listMetrics(campaignId?: string): Promise<MarketingMetric[]>;

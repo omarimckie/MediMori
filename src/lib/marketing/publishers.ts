@@ -17,11 +17,16 @@ import {
 import { PinterestPublisher } from "./pinterest-publisher";
 import type { MarketingContent, MarketingPublication, Platform } from "./types";
 
+export type PublicationPublishHooks = {
+  onProviderCreationId?: (creationId: string) => Promise<boolean>;
+};
+
 export type PublishRequest = {
   content: MarketingContent;
   publication: MarketingPublication;
   imageUrl?: string | null;
   simulateFailure?: boolean;
+  hooks?: PublicationPublishHooks;
 };
 
 export type PublishResult = {
@@ -32,6 +37,8 @@ export type PublishResult = {
   error?: string;
   errorCode?: MetaErrorCode | string;
   retryable?: boolean;
+  /** True once a provider publish API request may have reached Meta. */
+  providerInteractionStarted?: boolean;
 };
 
 export interface SocialPublisher {
@@ -183,6 +190,7 @@ export class InstagramPublisher implements SocialPublisher {
         error: container.error,
         errorCode: container.errorCode,
         retryable: container.retryable,
+        providerInteractionStarted: true,
       };
     }
     if (!container.data.id) {
@@ -193,6 +201,21 @@ export class InstagramPublisher implements SocialPublisher {
         errorCode: "meta_malformed_response",
         retryable: false,
       };
+    }
+
+    if (request.hooks?.onProviderCreationId) {
+      const persisted = await request.hooks.onProviderCreationId(container.data.id);
+      if (!persisted) {
+        return {
+          ok: false,
+          provider: this.id,
+          error:
+            "publication_creation_id_persist_failed: Could not persist Instagram container id for the active claim.",
+          errorCode: "publication_creation_id_persist_failed",
+          retryable: false,
+          providerInteractionStarted: true,
+        };
+      }
     }
 
     const ready = await waitForInstagramContainerReady({
@@ -210,6 +233,7 @@ export class InstagramPublisher implements SocialPublisher {
         error: ready.error,
         errorCode: ready.errorCode,
         retryable: ready.retryable,
+        providerInteractionStarted: true,
       };
     }
 
@@ -234,6 +258,7 @@ export class InstagramPublisher implements SocialPublisher {
         error: published.error,
         errorCode: published.errorCode,
         retryable: published.retryable,
+        providerInteractionStarted: true,
       };
     }
     if (!published.data.id) {
@@ -243,6 +268,7 @@ export class InstagramPublisher implements SocialPublisher {
         error: "meta_malformed_response: Instagram media_publish response did not include id.",
         errorCode: "meta_malformed_response",
         retryable: false,
+        providerInteractionStarted: true,
       };
     }
 
@@ -250,6 +276,7 @@ export class InstagramPublisher implements SocialPublisher {
       ok: true,
       provider: this.id,
       externalId: published.data.id,
+      providerInteractionStarted: true,
     };
   }
 }
@@ -316,6 +343,7 @@ export class FacebookPagePublisher implements SocialPublisher {
           error: photo.error,
           errorCode: photo.errorCode,
           retryable: photo.retryable,
+          providerInteractionStarted: true,
         };
       }
       const externalId = photo.data.post_id || photo.data.id;
@@ -333,6 +361,7 @@ export class FacebookPagePublisher implements SocialPublisher {
         provider: this.id,
         externalId,
         url: `https://www.facebook.com/${externalId}`,
+        providerInteractionStarted: true,
       };
     }
 
@@ -357,6 +386,7 @@ export class FacebookPagePublisher implements SocialPublisher {
         error: feed.error,
         errorCode: feed.errorCode,
         retryable: feed.retryable,
+        providerInteractionStarted: true,
       };
     }
     if (!feed.data.id) {
@@ -366,6 +396,7 @@ export class FacebookPagePublisher implements SocialPublisher {
         error: "meta_malformed_response: Facebook feed response did not include id.",
         errorCode: "meta_malformed_response",
         retryable: false,
+        providerInteractionStarted: true,
       };
     }
     return {
@@ -373,6 +404,7 @@ export class FacebookPagePublisher implements SocialPublisher {
       provider: this.id,
       externalId: feed.data.id,
       url: `https://www.facebook.com/${feed.data.id}`,
+      providerInteractionStarted: true,
     };
   }
 }
