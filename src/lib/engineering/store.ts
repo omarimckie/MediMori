@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getSql } from "@/lib/db";
-import { EngineeringInputError, assertTransition, classifyRisk, parsePlan, type Plan, type Status } from "./policy";
+import { EngineeringInputError, assertTransition, classifyRisk, limits, parsePlan, validationCommands, type Plan, type Status } from "./policy";
 
 export type Task = { id: string; request: string; status: Status; plan: Plan | null; risk: string | null; version: number; created_by: string };
 export type TaskHistory = { task: Task | undefined; runs: Record<string, unknown>[]; approvals: Record<string, unknown>[]; events: Record<string, unknown>[] };
@@ -100,4 +100,57 @@ export async function actOnTask(id: string, version: number, action: string, val
     ) SELECT id,request,status,plan,risk,version,created_by FROM changed` as Task[];
   if (!result[0]) throw new EngineeringConflict("Task changed; reload before acting.");
   return result[0];
+}
+
+/** Persist bounded human-run validation or usage evidence with an optimistic task-version claim. */
+export async function recordRunEvidence(id: string, version: number, input: Record<string, unknown>, actor: string, database = getSql()) {
+  requireEngineeringEnabled();
+  const kind = input.kind;
+  if (kind !== "validation" && kind !== "cost") throw new EngineeringInputError("Invalid evidence kind.");
+  const command = typeof input.command === "string" ? input.command : "";
+  const outcome = input.outcome;
+  const revision = typeof input.revision === "string" ? input.revision : "";
+  const summary = typeof input.summary === "string" ? input.summary : "";
+  if (kind === "validation" && (!(validationCommands as readonly string[]).includes(command) || !["passed", "failed"].includes(String(outcome)) || !/^[a-f0-9]{40}$/.test(revision) || !summary || summary.length > 4000)) throw new EngineeringInputError("Invalid validation evidence.");
+  const tokens = kind === "cost" ? input.tokens : 0;
+  const cost = kind === "cost" ? input.estimatedCostUsd : 0;
+  if (typeof tokens !== "number" || !Number.isSafeInteger(tokens) || tokens < 0 || typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) throw new EngineeringInputError("Invalid usage.");
+  const provider = typeof input.provider === "string" ? input.provider : "";
+  const model = typeof input.model === "string" ? input.model : "";
+  const operation = typeof input.operation === "string" ? input.operation : "";
+  if (kind === "cost" && [provider, model, operation].some(value => !value || value.length > 120)) throw new EngineeringInputError("Cost metadata is required.");
+
+  // Detailed evidence belongs only in validations/costs. Keep free text and provider/model metadata out of the event log.
+  const eventSummary = kind === "validation"
+    ? { kind, version, command, outcome: String(outcome), revision }
+    : { kind, version, tokens, estimatedCostUsd: cost };
+  const result = await database`
+    WITH claimed AS (
+      UPDATE engineering_tasks t SET version=version+1,updated_at=now()
+      WHERE id=${id}::uuid AND version=${version} AND status IN ('implementing','validating','repairing')
+      AND (${kind !== "validation"} OR status='validating')
+      AND EXISTS (SELECT 1 FROM engineering_runs r WHERE r.task_id=t.id AND r.finished_at IS NULL
+        AND NOT r.worker_enabled AND r.started_at > now() - interval '30 minutes'
+        AND r.model_calls+${kind === "cost" ? 1 : 0} <= ${limits.modelCalls}
+        AND r.tokens+${tokens} <= ${limits.tokens} AND r.cost_usd+${cost} <= ${limits.costUsd})
+      AND (${kind !== "validation"} OR NOT EXISTS (
+        SELECT 1 FROM engineering_validations v JOIN engineering_runs r ON r.id=v.run_id
+        WHERE r.task_id=t.id AND r.finished_at IS NULL AND v.cycle=r.repairs AND v.revision<>${revision}
+      ))
+      RETURNING id
+    ), run AS (
+      UPDATE engineering_runs SET model_calls=model_calls+${kind === "cost" ? 1 : 0},tokens=tokens+${tokens},cost_usd=cost_usd+${cost}
+      WHERE task_id IN (SELECT id FROM claimed) AND finished_at IS NULL RETURNING *
+    ), validation AS (
+      INSERT INTO engineering_validations(id,run_id,command,outcome,revision,summary,cycle)
+      SELECT ${randomUUID()}::uuid,id,${command},${String(outcome)},${revision},${summary},repairs FROM run WHERE ${kind === "validation"}
+    ), cost AS (
+      INSERT INTO engineering_costs(id,run_id,provider,model,operation,tokens,estimated_cost_usd)
+      SELECT ${randomUUID()}::uuid,id,${provider},${model},${operation},${tokens},${cost} FROM run WHERE ${kind === "cost"}
+    ), event AS (
+      INSERT INTO engineering_events(id,task_id,actor,action,details)
+      SELECT ${randomUUID()}::uuid,task_id,${actor},${kind},
+        ${JSON.stringify(eventSummary)}::jsonb || jsonb_build_object('runId',id,'cycle',repairs) FROM run
+    ) SELECT * FROM claimed`;
+  if (!result[0]) throw new EngineeringConflict("Evidence rejected: stale version, inactive run, or execution limit.");
 }
