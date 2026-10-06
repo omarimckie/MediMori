@@ -38,10 +38,96 @@ CREATE TABLE IF NOT EXISTS engineering_worker_receipts (
  revision text NOT NULL, cycle integer NOT NULL, source text NOT NULL,
  command text NOT NULL, outcome text NOT NULL, PRIMARY KEY(run_id,receipt_key)
 );
+CREATE TABLE IF NOT EXISTS engineering_attempt_preparations (
+ idempotency_key uuid PRIMARY KEY,
+ task_id uuid NOT NULL REFERENCES engineering_tasks(id),
+ previous_run_id uuid NOT NULL UNIQUE REFERENCES engineering_runs(id),
+ actor text NOT NULL,
+ from_version integer NOT NULL,
+ to_version integer NOT NULL,
+ previous_attempt_number integer NOT NULL,
+ previous_disposition text NOT NULL CHECK (previous_disposition IN ('blocked','cancelled','expired')),
+ previous_plan jsonb NOT NULL,
+ previous_risk text,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
 
--- Group A.1 extends the task status contract for bounded worker lifecycle transitions.
+-- Group A.1 worker lifecycle states are required by the worker contract; the
+-- later merge migration adds only the merge-specific states.
 ALTER TABLE engineering_tasks DROP CONSTRAINT IF EXISTS engineering_tasks_status_check;
-ALTER TABLE engineering_tasks ADD CONSTRAINT engineering_tasks_status_check CHECK (status IN ('intake','analyzing','planned','awaiting_approval','implementing','validating','repairing','reviewing','awaiting_merge','blocked','cancelled','escalated'));
+ALTER TABLE engineering_tasks ADD CONSTRAINT engineering_tasks_status_check CHECK (status IN (
+ 'intake','analyzing','planned','awaiting_approval','implementing','validating',
+ 'repairing','reviewing','awaiting_merge','blocked','cancelled','escalated'
+));
+
+-- Human control-plane only. This operation closes a non-executable attempt and
+-- returns the same durable request to planning; it never approves or creates a run.
+CREATE OR REPLACE FUNCTION engineering_prepare_attempt(p_task uuid,p_version integer,p_key uuid,p_actor text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY INVOKER SET search_path=public,pg_temp AS $$
+DECLARE t engineering_tasks; r engineering_runs; p engineering_attempt_preparations; prior_no integer; closed_as text; prepared jsonb; prior_plan jsonb; prior_risk text;
+BEGIN
+ IF p_task IS NULL OR p_version IS NULL OR p_version<0 OR p_key IS NULL OR p_actor IS NULL OR length(p_actor) NOT BETWEEN 1 AND 120 OR session_user='medimori_engineering_2c_worker' THEN
+  RETURN jsonb_build_object('ok',false,'code','invalid_prepare_request');
+ END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended(p_key::text,0));
+ SELECT * INTO p FROM engineering_attempt_preparations WHERE idempotency_key=p_key;
+ IF FOUND THEN
+  IF p.task_id<>p_task OR p.actor<>p_actor OR p.from_version<>p_version THEN RETURN jsonb_build_object('ok',false,'code','idempotency_conflict'); END IF;
+  SELECT * INTO t FROM engineering_tasks WHERE id=p_task;
+  RETURN jsonb_build_object('ok',true,'replayed',true,'task',to_jsonb(t),'preparation',to_jsonb(p));
+ END IF;
+ SELECT * INTO t FROM engineering_tasks WHERE id=p_task FOR UPDATE;
+ IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'code','task_not_found'); END IF;
+ IF t.version<>p_version THEN RETURN jsonb_build_object('ok',false,'code','stale_version'); END IF;
+ IF t.status NOT IN ('implementing','validating','repairing','reviewing','blocked','cancelled') OR t.plan IS NULL THEN
+  RETURN jsonb_build_object('ok',false,'code','task_not_retryable');
+ END IF;
+ prior_plan:=t.plan; prior_risk:=t.risk;
+ SELECT * INTO r FROM engineering_runs WHERE task_id=p_task ORDER BY started_at DESC,id DESC LIMIT 1 FOR UPDATE;
+ IF NOT FOUND OR NOT r.worker_enabled THEN RETURN jsonb_build_object('ok',false,'code','execution_attempt_missing'); END IF;
+ IF NOT EXISTS(SELECT 1 FROM engineering_approvals a WHERE a.task_id=p_task AND a.plan_version=r.plan_version AND a.gate='plan' AND a.decision='approved' AND a.actor NOT LIKE 'worker:%') THEN
+  RETURN jsonb_build_object('ok',false,'code','prior_approval_missing');
+ END IF;
+ IF EXISTS(SELECT 1 FROM engineering_attempt_preparations WHERE previous_run_id=r.id) THEN
+  RETURN jsonb_build_object('ok',false,'code','attempt_already_prepared');
+ END IF;
+ prior_no:=coalesce(r.attempt_number,(SELECT count(*)::integer FROM engineering_runs WHERE task_id=p_task));
+ IF r.finished_at IS NULL THEN
+  IF r.started_at>now()-interval '30 minutes' OR r.lease_until>now() THEN RETURN jsonb_build_object('ok',false,'code','attempt_still_executable'); END IF;
+  IF r.disposition IS NOT NULL AND r.disposition<>'active' THEN RETURN jsonb_build_object('ok',false,'code','attempt_disposition_conflict'); END IF;
+  IF r.reserved_tokens<>0 OR r.reserved_micros<>0 OR EXISTS(SELECT 1 FROM engineering_worker_calls c WHERE c.run_id=r.id AND c.state IN ('reserved','sent','uncertain')) THEN
+   RETURN jsonb_build_object('ok',false,'code','unresolved_provider_activity');
+  END IF;
+  closed_as:='expired';
+ ELSIF r.disposition IN ('blocked','cancelled','expired') THEN
+  closed_as:=r.disposition;
+ ELSIF r.disposition IS NULL AND t.status IN ('blocked','cancelled') THEN
+  closed_as:=t.status;
+ ELSE
+  RETURN jsonb_build_object('ok',false,'code','attempt_not_closed');
+ END IF;
+ IF closed_as='expired' AND t.status NOT IN ('implementing','validating','repairing','reviewing') THEN RETURN jsonb_build_object('ok',false,'code','task_attempt_state_mismatch'); END IF;
+ IF closed_as IN ('blocked','cancelled') AND t.status NOT IN ('blocked','cancelled') THEN RETURN jsonb_build_object('ok',false,'code','task_attempt_state_mismatch'); END IF;
+ IF r.finished_at IS NULL THEN
+  UPDATE engineering_runs SET finished_at=now(),disposition='expired' WHERE id=r.id AND finished_at IS NULL;
+ ELSE
+  UPDATE engineering_runs SET disposition=closed_as WHERE id=r.id AND disposition IS NULL;
+ END IF;
+ UPDATE engineering_tasks SET status='analyzing',plan=NULL,risk=NULL,version=version+1,updated_at=now() WHERE id=p_task AND version=p_version RETURNING * INTO t;
+ IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'code','stale_version'); END IF;
+ INSERT INTO engineering_attempt_preparations(idempotency_key,task_id,previous_run_id,actor,from_version,to_version,previous_attempt_number,previous_disposition,previous_plan,previous_risk)
+ VALUES(p_key,p_task,r.id,p_actor,p_version,t.version,prior_no,closed_as,coalesce(r.plan_snapshot,prior_plan),prior_risk);
+ INSERT INTO engineering_events(id,task_id,actor,action,details) VALUES(gen_random_uuid(),p_task,p_actor,'prepare_attempt',jsonb_build_object('fromVersion',p_version,'toVersion',t.version,'previousRunId',r.id,'previousAttemptNumber',prior_no,'previousDisposition',closed_as,'idempotencyKey',p_key));
+ SELECT to_jsonb(x) INTO prepared FROM engineering_attempt_preparations x WHERE idempotency_key=p_key;
+ RETURN jsonb_build_object('ok',true,'replayed',false,'task',to_jsonb(t),'preparation',prepared,'nextAttemptNumber',prior_no+1);
+END $$;
+REVOKE ALL ON FUNCTION engineering_prepare_attempt(uuid,integer,uuid,text) FROM PUBLIC;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='medimori_engineering_worker') THEN
+  CREATE ROLE medimori_engineering_worker NOLOGIN;
+ END IF;
+END $$;
+REVOKE ALL ON FUNCTION engineering_prepare_attempt(uuid,integer,uuid,text) FROM medimori_engineering_worker;
 
 -- Single bounded ingress, callable only by a dedicated DB worker role. It cannot
 -- intake, plan, approve, list unrelated tasks, issue SQL, merge or deploy.
@@ -83,6 +169,7 @@ BEGIN
    UPDATE engineering_runs SET finished_at=coalesce(finished_at,now()),lease_until=now() WHERE id=run;
   END IF;
  ELSIF op='claim' THEN
+  IF NOT engineering_run_lineage_valid(run) THEN RAISE EXCEPTION 'lineage_denied'; END IF;
   IF coalesce(data->>'preflightRevision','')!~'^[a-f0-9]{40}$' OR (r.preflight_revision IS NOT NULL AND r.preflight_revision IS DISTINCT FROM data->>'preflightRevision') THEN RAISE EXCEPTION 'preflight_revision_denied'; END IF;
   preflight_new:=r.preflight_revision IS NULL;
   IF EXISTS(SELECT 1 FROM engineering_runs newer WHERE newer.task_id=t.id AND (coalesce(newer.attempt_number,0)>coalesce(r.attempt_number,0) OR (coalesce(newer.attempt_number,0)=coalesce(r.attempt_number,0) AND (newer.started_at>r.started_at OR (newer.started_at=r.started_at AND newer.id>r.id))))) THEN RAISE EXCEPTION 'stale_attempt'; END IF;
@@ -90,6 +177,15 @@ BEGIN
   IF length(owner) NOT BETWEEN 1 AND 120 OR t.status NOT IN ('implementing','validating','repairing','reviewing') OR r.finished_at IS NOT NULL OR r.started_at<=now()-interval '30 minutes' OR (r.lease_until>now() AND r.lease_owner IS DISTINCT FROM session_user||':'||owner) THEN RAISE EXCEPTION 'lease_denied'; END IF;
   IF EXISTS(SELECT 1 FROM engineering_worker_calls WHERE run_id=run AND state IN ('sent','uncertain')) THEN RAISE EXCEPTION 'unresolved_call'; END IF;
   UPDATE engineering_runs SET lease_owner=session_user||':'||owner,lease_epoch=lease_epoch+1,lease_until=now()+interval '90 seconds',preflight_revision=coalesce(preflight_revision,data->>'preflightRevision') WHERE id=run;
+ ELSIF op='lineage' THEN
+  IF data <> '{}'::jsonb OR NOT engineering_run_lineage_valid(run) OR NOT r.worker_enabled OR r.finished_at IS NOT NULL
+    OR r.started_at<=now()-interval '30 minutes' OR r.lease_owner IS NOT NULL OR r.preflight_revision IS NOT NULL
+    OR r.disposition IS DISTINCT FROM 'active' OR t.status NOT IN ('implementing','validating','repairing','reviewing')
+    OR t.version<>r.plan_version+1 OR r.plan_snapshot IS DISTINCT FROM t.plan
+    OR EXISTS(SELECT 1 FROM engineering_runs newer WHERE newer.task_id=t.id AND (coalesce(newer.attempt_number,0)>coalesce(r.attempt_number,0) OR (coalesce(newer.attempt_number,0)=coalesce(r.attempt_number,0) AND (newer.started_at>r.started_at OR (newer.started_at=r.started_at AND newer.id>r.id)))))
+    OR EXISTS(SELECT 1 FROM engineering_worker_calls WHERE run_id=run AND state IN ('sent','uncertain')) THEN RAISE EXCEPTION 'lineage_denied'; END IF;
+  SELECT to_jsonb(l) INTO result FROM engineering_run_lineage l WHERE l.run_id=run;
+  RETURN result;
  ELSE
   IF r.lease_owner IS DISTINCT FROM session_user||':'||owner OR r.lease_epoch<>epoch OR r.lease_until<=now() OR r.finished_at IS NOT NULL OR r.started_at<=now()-interval '30 minutes' OR t.status NOT IN ('implementing','validating','repairing','reviewing') THEN RAISE EXCEPTION 'lease_denied'; END IF;
   IF op='heartbeat' THEN
@@ -218,13 +314,7 @@ BEGIN
  SELECT to_jsonb(x) INTO result FROM engineering_runs x WHERE id=run;
  RETURN result || jsonb_build_object('plan',t.plan,'status',(SELECT status FROM engineering_tasks WHERE id=t.id),'softWarning',(SELECT cost_usd*1000000+reserved_micros>=250000 FROM engineering_runs WHERE id=run),'preflight_bound_now',preflight_new);
 END $$;
-
 REVOKE ALL ON FUNCTION engineering_worker(uuid,text,text,integer,jsonb) FROM PUBLIC;
-DO $$ BEGIN
- IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='medimori_engineering_worker') THEN
-  CREATE ROLE medimori_engineering_worker NOLOGIN;
- END IF;
-END $$;
 GRANT USAGE ON SCHEMA public TO medimori_engineering_worker;
 GRANT EXECUTE ON FUNCTION engineering_worker(uuid,text,text,integer,jsonb) TO medimori_engineering_worker;
-REVOKE ALL ON engineering_tasks,engineering_runs,engineering_approvals,engineering_validations,engineering_costs,engineering_events,engineering_worker_calls,engineering_worker_receipts FROM medimori_engineering_worker;
+REVOKE ALL ON engineering_tasks,engineering_runs,engineering_approvals,engineering_validations,engineering_costs,engineering_events,engineering_worker_calls,engineering_worker_receipts,engineering_attempt_preparations FROM medimori_engineering_worker;

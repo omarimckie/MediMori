@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
-import { actOnTask, createTask, recordRunEvidence, taskHistory } from "./store";
+import { actOnTask as storeActOnTask, createTask, recordRunEvidence, taskHistory } from "./store";
 import { commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits } from "./worker-policy";
 import { context, edits, extractResponsesOutputText, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
@@ -15,6 +15,8 @@ import { ValidationPreparationError } from "./validation-diagnostics";
 
 const plan = { summary: "Small isolated change", files: ["src/demo.ts"], operations: [], validations: ["test","test:engineering","lint","typecheck","build","security:check"] };
 const revision = "a".repeat(40);
+const testTargetSha = "c".repeat(40);
+const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database,async()=>testTargetSha);
 const richSource = "Original documentation paragraph provides deterministic replacement context with enough distinct words for a safe exact literal anchor during worker tests.";
 const anchorFor = (source=richSource) => buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"src/demo.ts":source}}).anchors[0]!;
 function proposalFor(body:Record<string,unknown>, replacementText="updated") {
@@ -30,6 +32,7 @@ async function fixture() {
   const db = new PGlite();
   await db.exec(await readFile(new URL("../../../sql/engineering-schema.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-worker.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url),"utf8"));
   const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => (await db.query(strings.reduce((s,p,i)=>s+(i?`$${i}`:"")+p,""),values)).rows) as unknown as ReturnType<typeof getSql>;
   let task=await createTask("Synthetic 2B fixture","human","a8888888-8888-4888-8888-888888888888",sql);
   task=await actOnTask(task.id,task.version,"transition","analyzing","human",sql);
@@ -55,6 +58,37 @@ test("worker policy denies protected scope, missing validation, tools, unsafe ra
   const anchor=anchorFor();
   assert.throws(()=>edits(plan,JSON.stringify({replacements:[{anchorId:anchor.id,expectedText:anchor.content,replacementText:"new"}]}),[anchor],revision),error=>error instanceof WorkerFailure&&error.diagnostic.shapeCategory==="unexpected_field");
   assert.throws(()=>edits(plan,JSON.stringify({replacements:[{anchorId:anchor.id,replacementText:"x".repeat(8001)}]}),[anchor],revision),error=>error instanceof WorkerFailure&&error.diagnostic.code==="proposal_invalid_content");
+});
+
+test("lineage ingress is read-only and claim rejects missing or mismatched provenance before dispatch",async()=>{
+  for (const tamper of ["missing-run","mismatched-run","missing-plan","mismatched-plan"] as const) {
+    const f=await fixture();
+    try {
+      const before=(await f.db.query("SELECT lease_owner,preflight_revision FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0];
+      const lineage=await f.ingress("lineage","lineage-read",0,{});
+      assert.equal(lineage.run_id,f.run);
+      assert.equal(lineage.target_repository,"omarimckie/MediMori");
+      assert.equal(lineage.target_branch,"main");
+      const afterRead=(await f.db.query("SELECT lease_owner,preflight_revision FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0];
+      assert.deepEqual(afterRead,before);
+      // Simulate pre-existing/corrupt rows to verify worker-side fail-closed
+      // behavior independently of the database immutability triggers.
+      if(tamper==="missing-run"||tamper==="mismatched-run") await f.db.exec("ALTER TABLE engineering_run_lineage DISABLE TRIGGER engineering_run_lineage_immutable");
+      else await f.db.exec("ALTER TABLE engineering_plan_lineage DISABLE TRIGGER engineering_plan_lineage_immutable");
+      if(tamper==="missing-run") await f.db.query("DELETE FROM engineering_run_lineage WHERE run_id=$1::uuid",[f.run]);
+      else if(tamper==="mismatched-run") await f.db.query("UPDATE engineering_run_lineage SET target_base_sha=$2 WHERE run_id=$1::uuid",[f.run,"d".repeat(40)]);
+      else if(tamper==="missing-plan") await f.db.query("DELETE FROM engineering_plan_lineage WHERE task_id=$1::uuid",[f.task.id]);
+      else await f.db.query("UPDATE engineering_plan_lineage SET target_base_sha=$2 WHERE task_id=$1::uuid",[f.task.id,"d".repeat(40)]);
+      let providerCalls=0;
+      const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>({revision,outcome:"passed"})};
+      await assert.rejects(runWorker(f.ingress,workspace,async()=>{providerCalls++;return{id:"never",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:1,output_tokens:1},text:"{}"};}));
+      assert.equal(providerCalls,0);
+      const unchanged=(await f.db.query("SELECT lease_owner,preflight_revision,model_calls FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0] as Record<string,unknown>;
+      assert.equal(unchanged.lease_owner,null);
+      assert.equal(unchanged.preflight_revision,null);
+      assert.equal(Number(unchanged.model_calls),0);
+    } finally { await f.close(); }
+  }
 });
 test("canonical strict proposal schema is bounded, closed, and sent only for implementation",async()=>{
   const anchor=anchorFor();const format=replacementProposalFormat([anchor]);
