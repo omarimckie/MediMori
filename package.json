@@ -33,7 +33,11 @@
     "newsletter:migration-dry-run": "tsx scripts/newsletter-migration-dry-run.ts",
     "newsletter:migration": "tsx scripts/newsletter-migration.ts",
     "test:newsletter-migration": "tsx --test src/lib/newsletter-migration-cutover.test.ts src/lib/newsletter-migration-cutover-route.test.ts",
-    "test:engineering": "tsx --test src/lib/engineering/*.test.ts"
+    "test:engineering": "tsx --test src/lib/engineering/*.test.ts",
+    "test:engineering:http": "node scripts/engineering-http-smoke.mjs",
+    "engineering:preflight": "tsx scripts/engineering-preflight.ts",
+    "engineering:worker": "node scripts/engineering-worker-launch.mjs",
+    "engineering:merge": "node scripts/engineering-merge-executor-launch.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
