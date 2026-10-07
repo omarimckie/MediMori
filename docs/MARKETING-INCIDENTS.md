@@ -78,3 +78,21 @@ Full `npm run typecheck` may include local `_wt-*` worktree copies under the rep
 ## Future event types (reserved, not implemented)
 
 `notification_sent`, `agent_work_submitted`, `agent_investigation_started`, `agent_action_attempted`, `agent_action_succeeded`, `agent_action_failed`, `owner_approval_requested`, `owner_approved`, `owner_rejected`.
+
+## Phase III-A (lifecycle + notification linkage)
+
+Apply notification linkage migration locally when intended (**not** applied to production until an explicit deploy step):
+
+```bash
+npm run marketing:schema:incidents-notification-linkage
+```
+
+Adds nullable `marketing_admin_notifications.related_incident_id` → `marketing_incidents(id)` with a partial index on non-null values.
+
+Admin lifecycle APIs (Marketing Admin auth required) list/get incidents, transition status, and resolve with optimistic `incidentVersion` concurrency. **Resolving an incident does not mutate publication state, ambiguity, or retry safety.**
+
+New incident-associated notifications must set `relatedIncidentId` when durable incident record/re-observation succeeded. Incident persistence is never dependent on notification success.
+
+### Deferred follow-up (not Phase III-A)
+
+Revisit notification taxonomy after Phase III-A: evaluate adding a dedicated `publication_stuck_processing` **notification** type instead of representing stuck processing as `publication_ambiguous` in Web Push/history (incidents remain correctly typed `publication_stuck_processing`).

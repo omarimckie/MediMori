@@ -1,4 +1,4 @@
-import { recordPublicationRecoveryRequiredIncident } from "./publication-incidents/recovery-required";
+import { observePublicationRecoveryRequired } from "./publication-incidents/recovery-required";
 import { retryPublication } from "./approval";
 import { publicationRetryBlockedReason } from "./publication-ambiguity/guards";
 import {
@@ -77,7 +77,7 @@ export async function retryAdminPublication(
   }
 
   if (isInstagramProviderMediaRecoveryRequired(publication)) {
-    await recordPublicationRecoveryRequiredIncident(publication, "admin_retry_publication");
+    await observePublicationRecoveryRequired(publication, "admin_retry_publication");
     return {
       status: 409,
       body: {

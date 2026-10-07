@@ -37,9 +37,13 @@ export async function recordPublicationAmbiguousOutcomeIncident(
       provider: publication.provider,
       evidence: publicationIncidentEvidence(publication),
     },
-    { repository: input?.repository },
+    { repository: input?.repository, reopenIfResolved: true },
   );
 
-  await notifyPublicationAmbiguousOutcome(publication, input?.notifyDetail);
+  await notifyPublicationAmbiguousOutcome(
+    publication,
+    input?.notifyDetail,
+    incident?.id ?? null,
+  );
   return incident;
 }

@@ -38,6 +38,6 @@ export async function recordPublicationStuckProcessingIncident(
         reliability_signal: "stuck_processing",
       }),
     },
-    { repository },
+    { repository, reopenIfResolved: true },
   );
 }

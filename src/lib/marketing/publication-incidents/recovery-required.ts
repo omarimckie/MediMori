@@ -8,6 +8,7 @@ import {
 import type { MarketingPublication } from "../types";
 import { publicationRecoveryRequiredIncidentDedupeKey } from "./dedupe-keys";
 import { publicationIncidentEvidence } from "./evidence";
+import { notifyPublicationRecoveryRequired } from "./recovery-notify";
 
 const RECOVERY_PERMITTED_ACTIONS = [
   "investigate_read_only",
@@ -42,6 +43,26 @@ export async function recordPublicationRecoveryRequiredIncident(
         recovery_guard: "instagram_provider_media",
       }),
     },
-    { repository },
+    { repository, reopenIfResolved: true },
   );
+}
+
+/**
+ * Records/reobserves the recovery-required incident, then notifies when durable incident exists.
+ * Does not change publication state or unblock guarded operations.
+ */
+export async function observePublicationRecoveryRequired(
+  publication: MarketingPublication,
+  sourceOperation: string,
+  repository?: MarketingIncidentRepository,
+): Promise<MarketingIncidentRecord | null> {
+  const incident = await recordPublicationRecoveryRequiredIncident(
+    publication,
+    sourceOperation,
+    repository,
+  );
+  if (incident) {
+    await notifyPublicationRecoveryRequired(publication, incident.id);
+  }
+  return incident;
 }

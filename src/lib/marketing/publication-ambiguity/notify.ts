@@ -74,9 +74,13 @@ export async function notifyPublicationAmbiguousOutcomeWithDeps(
   publication: MarketingPublication,
   detail?: string,
   deps: AmbiguousOutcomeNotificationDeps = defaultAmbiguousOutcomeNotificationDeps,
+  relatedIncidentId?: string | null,
 ): Promise<void> {
   ambiguousOutcomeNotifyInvocationCount += 1;
-  const payload = buildAmbiguousOutcomeNotificationPayload(publication, detail);
+  const payload: MarketingNotificationPayload = {
+    ...buildAmbiguousOutcomeNotificationPayload(publication, detail),
+    ...(relatedIncidentId ? { relatedIncidentId } : {}),
+  };
   const dedupeKey = publicationAmbiguousOutcomeDedupeKey(publication.id);
   try {
     const claimed = await deps.claimDedupe({
@@ -109,6 +113,12 @@ export async function notifyPublicationAmbiguousOutcomeWithDeps(
 export async function notifyPublicationAmbiguousOutcome(
   publication: MarketingPublication,
   detail?: string,
+  relatedIncidentId?: string | null,
 ): Promise<void> {
-  return notifyPublicationAmbiguousOutcomeWithDeps(publication, detail);
+  return notifyPublicationAmbiguousOutcomeWithDeps(
+    publication,
+    detail,
+    defaultAmbiguousOutcomeNotificationDeps,
+    relatedIncidentId,
+  );
 }

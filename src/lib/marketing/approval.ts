@@ -28,7 +28,7 @@ import {
   INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
   isInstagramProviderMediaRecoveryRequired,
 } from "./publication-recovery-guard";
-import { recordPublicationRecoveryRequiredIncident } from "./publication-incidents/recovery-required";
+import { observePublicationRecoveryRequired } from "./publication-incidents/recovery-required";
 import { scanMarketingText } from "./safety";
 import type { MarketingStore } from "./store";
 import type { ContentStatus, MarketingContent, MarketingPublication } from "./types";
@@ -314,7 +314,7 @@ export async function scheduleApproved(
   }
   if (existing) {
     if (isInstagramProviderMediaRecoveryRequired(existing)) {
-      await recordPublicationRecoveryRequiredIncident(existing, "schedule_approved");
+      await observePublicationRecoveryRequired(existing, "schedule_approved");
       throw new PublicationScheduleBlockedError(
         INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
         existing.id,

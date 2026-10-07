@@ -6,6 +6,7 @@ export type MarketingNotificationType =
   | "publication_failed"
   | "publication_overdue"
   | "publication_ambiguous"
+  | "publication_recovery_required"
   | "partial_publication_failure"
   | "credential_warning"
   | "dispatcher_warning";
@@ -25,6 +26,7 @@ export type MarketingNotificationPayload = {
   destination: string;
   relatedContentId?: string | null;
   relatedPublicationId?: string | null;
+  relatedIncidentId?: string | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -52,6 +54,7 @@ export type MarketingAdminNotificationRecord = {
   destination: string;
   relatedContentId: string | null;
   relatedPublicationId: string | null;
+  relatedIncidentId: string | null;
   deliveryStatus: MarketingNotificationDeliveryStatus;
   deliveryAttemptedAt: string | null;
   createdAt: string;

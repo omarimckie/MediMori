@@ -45,4 +45,5 @@ export type ResolveIncidentInput = {
   resolutionType: ResolutionType | string;
   resolutionSummary: string;
   actor?: string;
+  incidentVersion?: number;
 };

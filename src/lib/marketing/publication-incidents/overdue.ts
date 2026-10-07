@@ -32,6 +32,6 @@ export async function recordPublicationOverdueIncident(
         reliability_signal: "overdue",
       }),
     },
-    { repository },
+    { repository, reopenIfResolved: true },
   );
 }

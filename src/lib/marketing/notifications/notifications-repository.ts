@@ -43,6 +43,8 @@ function mapNotification(row: Record<string, unknown>): MarketingAdminNotificati
       row.related_content_id == null ? null : String(row.related_content_id),
     relatedPublicationId:
       row.related_publication_id == null ? null : String(row.related_publication_id),
+    relatedIncidentId:
+      row.related_incident_id == null ? null : String(row.related_incident_id),
     deliveryStatus: String(row.delivery_status) as MarketingNotificationDeliveryStatus,
     deliveryAttemptedAt:
       row.delivery_attempted_at == null
@@ -181,7 +183,7 @@ export async function createAdminNotification(
   const rows = await sql`
     INSERT INTO marketing_admin_notifications (
       type, severity, title, body, destination,
-      related_content_id, related_publication_id, delivery_status
+      related_content_id, related_publication_id, related_incident_id, delivery_status
     ) VALUES (
       ${payload.type},
       ${payload.severity},
@@ -190,6 +192,7 @@ export async function createAdminNotification(
       ${payload.destination},
       ${payload.relatedContentId ?? null},
       ${payload.relatedPublicationId ?? null},
+      ${payload.relatedIncidentId ?? null},
       ${deliveryStatus}
     )
     RETURNING *
@@ -249,6 +252,18 @@ export async function markAdminNotificationRead(id: string): Promise<boolean> {
     RETURNING id
   `;
   return rows.length > 0;
+}
+
+export async function listNotificationsByIncidentId(
+  incidentId: string,
+): Promise<MarketingAdminNotificationRecord[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM marketing_admin_notifications
+    WHERE related_incident_id = ${incidentId}::uuid
+    ORDER BY created_at DESC
+  `;
+  return rows.map((row) => mapNotification(row as Record<string, unknown>));
 }
 
 export async function markAllAdminNotificationsRead(): Promise<number> {

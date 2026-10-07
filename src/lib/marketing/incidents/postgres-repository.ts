@@ -38,7 +38,7 @@ function getIncidentPool(): Pool {
   return incidentPool;
 }
 
-function mapIncidentRow(row: Record<string, unknown>): MarketingIncidentRecord {
+export function mapIncidentRow(row: Record<string, unknown>): MarketingIncidentRecord {
   const permittedRaw = row.permitted_actions;
   const permittedList = Array.isArray(permittedRaw)
     ? permittedRaw.map((v) => String(v))
@@ -200,6 +200,9 @@ function createRepoForPoolClient(client: PoolClient): PostgresMarketingIncidentR
     },
 
     async updateIncident(id, expectedVersion, patch) {
+      const touchResolutionType = patch.resolutionType !== undefined;
+      const touchResolutionSummary = patch.resolutionSummary !== undefined;
+      const touchResolvedAt = patch.resolvedAt !== undefined;
       const result = await client.query(
         `UPDATE marketing_incidents
         SET
@@ -211,9 +214,9 @@ function createRepoForPoolClient(client: PoolClient): PostgresMarketingIncidentR
           END,
           sanitized_error = COALESCE($6, sanitized_error),
           error_class = COALESCE($7, error_class),
-          resolution_type = COALESCE($8, resolution_type),
-          resolution_summary = COALESCE($9, resolution_summary),
-          resolved_at = COALESCE($10::timestamptz, resolved_at),
+          resolution_type = CASE WHEN $13 THEN $8 ELSE resolution_type END,
+          resolution_summary = CASE WHEN $14 THEN $9 ELSE resolution_summary END,
+          resolved_at = CASE WHEN $15 THEN $10::timestamptz ELSE resolved_at END,
           agent_work_last_submitted_at = COALESCE($11::timestamptz, agent_work_last_submitted_at),
           agent_work_last_submit_error = COALESCE($12, agent_work_last_submit_error),
           incident_version = incident_version + 1,
@@ -233,6 +236,9 @@ function createRepoForPoolClient(client: PoolClient): PostgresMarketingIncidentR
           patch.resolvedAt ?? null,
           patch.agentWorkLastSubmittedAt ?? null,
           patch.agentWorkLastSubmitError ?? null,
+          touchResolutionType,
+          touchResolutionSummary,
+          touchResolvedAt,
         ],
       );
       const row = result.rows[0] as Record<string, unknown> | undefined;
@@ -344,6 +350,49 @@ export function createPostgresIncidentRepository(): PostgresMarketingIncidentRep
       return rows.map((row) => mapEventRow(row as Record<string, unknown>));
     },
   };
+}
+
+export type ListIncidentsQuery = {
+  limit?: number;
+  unresolvedOnly?: boolean;
+  publicationId?: string | null;
+};
+
+export async function listIncidentsFromPostgres(
+  input: ListIncidentsQuery = {},
+): Promise<MarketingIncidentRecord[]> {
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const sql = getSql();
+  const publicationId = input.publicationId?.trim() || null;
+
+  const rows = input.unresolvedOnly
+    ? publicationId
+      ? await sql`
+          SELECT * FROM marketing_incidents
+          WHERE status <> 'resolved' AND publication_id = ${publicationId}::uuid
+          ORDER BY last_seen_at DESC
+          LIMIT ${limit}
+        `
+      : await sql`
+          SELECT * FROM marketing_incidents
+          WHERE status <> 'resolved'
+          ORDER BY last_seen_at DESC
+          LIMIT ${limit}
+        `
+    : publicationId
+      ? await sql`
+          SELECT * FROM marketing_incidents
+          WHERE publication_id = ${publicationId}::uuid
+          ORDER BY last_seen_at DESC
+          LIMIT ${limit}
+        `
+      : await sql`
+          SELECT * FROM marketing_incidents
+          ORDER BY last_seen_at DESC
+          LIMIT ${limit}
+        `;
+
+  return rows.map((row) => mapIncidentRow(row as Record<string, unknown>));
 }
 
 export function isPostgresIncidentRepository(

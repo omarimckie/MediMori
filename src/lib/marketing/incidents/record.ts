@@ -105,11 +105,18 @@ export async function transitionIncidentStatus(
   incidentId: string,
   toStatus: MarketingIncidentRecord["status"],
   actor = "system",
+  expectedIncidentVersion?: number,
 ): Promise<MarketingIncidentRecord> {
   return withIncidentTransaction(repo, async (txRepo) => {
     const current = await txRepo.findById(incidentId);
     if (!current) {
       throw new Error("Incident not found.");
+    }
+    if (
+      expectedIncidentVersion != null &&
+      current.incidentVersion !== expectedIncidentVersion
+    ) {
+      throw new IncidentVersionConflictError(current.id);
     }
     try {
       assertLegalIncidentTransition(current.status, toStatus);
@@ -144,6 +151,12 @@ export async function resolveIncident(
     const current = await txRepo.findById(incidentId);
     if (!current) {
       throw new Error("Incident not found.");
+    }
+    if (
+      input.incidentVersion != null &&
+      current.incidentVersion !== input.incidentVersion
+    ) {
+      throw new IncidentVersionConflictError(current.id);
     }
     assertLegalIncidentTransition(current.status, "resolved");
     const resolutionType = parseResolutionType(String(input.resolutionType));

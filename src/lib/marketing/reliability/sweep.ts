@@ -47,7 +47,11 @@ async function notifyIfClaimed(
   dedupeKey: string,
   payload: MarketingNotificationPayload,
   deps: ReliabilityAlertDeps,
+  relatedIncidentId?: string | null,
 ): Promise<"created" | "skipped"> {
+  const payloadWithIncident: MarketingNotificationPayload = relatedIncidentId
+    ? { ...payload, relatedIncidentId }
+    : payload;
   const claimed = await deps.claimDedupe({
     dedupeKey,
     publicationId,
@@ -57,7 +61,7 @@ async function notifyIfClaimed(
   }
 
   try {
-    const { notificationId } = await deps.notify(payload);
+    const { notificationId } = await deps.notify(payloadWithIncident);
     await deps.attachDedupe({ dedupeKey, notificationId });
     return "created";
   } catch (error) {
@@ -77,26 +81,28 @@ export async function runReliabilityAlertPipeline(
   let notificationsSkippedDuplicate = 0;
 
   for (const publication of input.overdue) {
-    await recordPublicationOverdueIncident(publication);
+    const incident = await recordPublicationOverdueIncident(publication);
     const dedupeKey = publicationOverdueDedupeKey(publication.id);
     const outcome = await notifyIfClaimed(
       publication.id,
       dedupeKey,
       buildOverdueNotificationPayload(publication),
       deps,
+      incident?.id ?? null,
     );
     if (outcome === "created") notificationsCreated += 1;
     else notificationsSkippedDuplicate += 1;
   }
 
   for (const publication of input.stuck) {
-    await recordPublicationStuckProcessingIncident(publication);
+    const incident = await recordPublicationStuckProcessingIncident(publication);
     const dedupeKey = publicationAmbiguousProcessingDedupeKey(publication.id);
     const outcome = await notifyIfClaimed(
       publication.id,
       dedupeKey,
       buildStuckProcessingNotificationPayload(publication),
       deps,
+      incident?.id ?? null,
     );
     if (outcome === "created") notificationsCreated += 1;
     else notificationsSkippedDuplicate += 1;
