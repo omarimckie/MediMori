@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
+import { createMemoryIncidentRepository } from "./incidents/memory-repository";
+import { setMarketingIncidentRepositoryForTests } from "./incidents/runtime-repository";
 import { publishPublication, scheduleApproved } from "./approval";
 import { ensureCatalogAssets } from "./assets";
 import { MemoryMarketingStore } from "./memory-store";
@@ -19,7 +21,12 @@ import type { MarketingContent, MarketingPublication } from "./types";
 
 const originalMock = process.env.MARKETING_MOCK_MODE;
 
+beforeEach(() => {
+  setMarketingIncidentRepositoryForTests(createMemoryIncidentRepository());
+});
+
 afterEach(() => {
+  setMarketingIncidentRepositoryForTests(null);
   process.env.MARKETING_MOCK_MODE = originalMock;
 });
 

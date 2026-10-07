@@ -1,6 +1,7 @@
 import type {
   MarketingIncidentRecord,
   MarketingIncidentSeverity,
+  MarketingIncidentStatus,
   MarketingIncidentType,
   PermittedAction,
   ResolutionType,
@@ -9,6 +10,7 @@ import type {
 
 export type RecordIncidentInput = {
   incidentType: MarketingIncidentType | string;
+  status?: MarketingIncidentStatus | string;
   severity: MarketingIncidentSeverity | string;
   sourceOperation: string;
   dedupeKey: string;

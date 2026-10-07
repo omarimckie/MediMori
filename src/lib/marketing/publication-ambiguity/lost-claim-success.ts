@@ -4,7 +4,7 @@ import type { MarketingStore } from "../store";
 import type { MarketingPublication } from "../types";
 import type { PublishResult } from "../publishers";
 import { applySuccessfulPublication } from "./apply-outcome";
-import { notifyPublicationAmbiguousOutcome } from "./notify";
+import { recordPublicationAmbiguousOutcomeIncident } from "../publication-incidents/ambiguous";
 
 /**
  * Generic updatePublication(id) success recovery is forbidden: a stale worker must
@@ -60,7 +60,9 @@ export async function handleProviderSuccessAfterLostFinalize(
   });
 
   if (ambiguous) {
-    void notifyPublicationAmbiguousOutcome(ambiguous, evidenceNote.trim() || undefined);
+    await recordPublicationAmbiguousOutcomeIncident(ambiguous, {
+      notifyDetail: evidenceNote.trim() || undefined,
+    });
     return ambiguous;
   }
 

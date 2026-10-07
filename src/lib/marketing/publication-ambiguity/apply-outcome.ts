@@ -6,7 +6,7 @@ import {
 } from "../publication-cron-retry";
 import type { PublishOutcomeClass } from "./classify";
 import { ambiguityStateForOutcome } from "./classify";
-import { notifyPublicationAmbiguousOutcome } from "./notify";
+import { recordPublicationAmbiguousOutcomeIncident } from "../publication-incidents/ambiguous";
 import {
   isPersistedProviderCreationId,
   isProviderInflightMarker,
@@ -81,7 +81,9 @@ export async function applyAmbiguousPublicationOutcome(
     },
   });
   if (updated && updated.ambiguityState !== "none") {
-    void notifyPublicationAmbiguousOutcome(updated, input.notifyDetail);
+    await recordPublicationAmbiguousOutcomeIncident(updated, {
+      notifyDetail: input.notifyDetail,
+    });
   }
   return updated;
 }

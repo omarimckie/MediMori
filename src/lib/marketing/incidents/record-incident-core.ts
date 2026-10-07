@@ -18,6 +18,7 @@ import type {
 } from "./record-types";
 import {
   parseIncidentSeverity,
+  parseIncidentStatus,
   parseIncidentType,
   parsePermittedActions,
   parseRetrySafety,
@@ -25,6 +26,7 @@ import {
 
 export type PreparedRecordIncident = {
   incidentType: ReturnType<typeof parseIncidentType>;
+  status: ReturnType<typeof parseIncidentStatus>;
   severity: ReturnType<typeof parseIncidentSeverity>;
   retrySafety: ReturnType<typeof parseRetrySafety>;
   permittedActions: ReturnType<typeof parsePermittedActions>;
@@ -55,6 +57,9 @@ export function prepareRecordIncidentInput(
 
   return {
     incidentType: parseIncidentType(String(input.incidentType)),
+    status: input.status != null
+      ? parseIncidentStatus(String(input.status))
+      : parseIncidentStatus("open"),
     severity: parseIncidentSeverity(String(input.severity)),
     retrySafety: parseRetrySafety(String(input.retrySafety)),
     permittedActions: parsePermittedActions(input.permittedActions),
@@ -114,7 +119,7 @@ export async function executeRecordIncident(
             schemaVersion: MARKETING_INCIDENT_SCHEMA_VERSION,
             incidentVersion: 1,
             incidentType: prepared.incidentType,
-            status: "open",
+            status: prepared.status,
             severity: prepared.severity,
             sourceSystem: MARKETING_INCIDENT_SOURCE_SYSTEM,
             sourceOperation: prepared.sourceOperation,

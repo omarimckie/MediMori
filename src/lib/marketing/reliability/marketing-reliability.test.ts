@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
+import { createMemoryIncidentRepository } from "../incidents/memory-repository";
+import { setMarketingIncidentRepositoryForTests } from "../incidents/runtime-repository";
 import { MemoryMarketingStore } from "../memory-store";
 import type { MarketingPublication } from "../types";
 import {
@@ -20,6 +22,14 @@ import {
   publicationOverdueDedupeKey,
 } from "./dedupe-keys";
 import { runReliabilityAlertPipeline } from "./sweep";
+
+beforeEach(() => {
+  setMarketingIncidentRepositoryForTests(createMemoryIncidentRepository());
+});
+
+afterEach(() => {
+  setMarketingIncidentRepositoryForTests(null);
+});
 
 function samplePublication(
   patch: Partial<MarketingPublication> & { id: string },

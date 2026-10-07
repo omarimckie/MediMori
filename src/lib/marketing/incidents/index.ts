@@ -9,3 +9,8 @@ export * from "./record";
 export * from "./record-types";
 export * from "./errors";
 export { withIncidentDedupeLock, resetIncidentDedupeLocksForTests } from "./dedupe-lock";
+export { recordMarketingIncidentSafely } from "./record-safely";
+export {
+  getMarketingIncidentRepository,
+  setMarketingIncidentRepositoryForTests,
+} from "./runtime-repository";

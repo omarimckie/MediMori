@@ -367,7 +367,7 @@ export async function postgresRecordIncidentInTransaction(
       schemaVersion: MARKETING_INCIDENT_SCHEMA_VERSION,
       incidentVersion: 1,
       incidentType: prepared.incidentType,
-      status: "open",
+      status: prepared.status,
       severity: prepared.severity,
       sourceSystem: MARKETING_INCIDENT_SOURCE_SYSTEM,
       sourceOperation: prepared.sourceOperation,

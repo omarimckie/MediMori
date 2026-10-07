@@ -17,6 +17,8 @@ import {
   buildStuckProcessingNotificationPayload,
   notifyReliabilityPayload,
 } from "./notify";
+import { recordPublicationOverdueIncident } from "../publication-incidents/overdue";
+import { recordPublicationStuckProcessingIncident } from "../publication-incidents/stuck-processing";
 
 export type ReliabilitySweepResult = {
   overdueDetected: number;
@@ -75,6 +77,7 @@ export async function runReliabilityAlertPipeline(
   let notificationsSkippedDuplicate = 0;
 
   for (const publication of input.overdue) {
+    await recordPublicationOverdueIncident(publication);
     const dedupeKey = publicationOverdueDedupeKey(publication.id);
     const outcome = await notifyIfClaimed(
       publication.id,
@@ -87,6 +90,7 @@ export async function runReliabilityAlertPipeline(
   }
 
   for (const publication of input.stuck) {
+    await recordPublicationStuckProcessingIncident(publication);
     const dedupeKey = publicationAmbiguousProcessingDedupeKey(publication.id);
     const outcome = await notifyIfClaimed(
       publication.id,
