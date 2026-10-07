@@ -26,6 +26,7 @@ import {
   isSmartUploadFinalizeKeyConflict,
   type SmartUploadFinalizeLookup,
 } from "./smart-upload-idempotency";
+import { observeSmartUploadFinalizeFailure } from "./smart-upload-incidents/observe";
 import {
   isSmartUploadAspectRatioOnlyFailure,
   SMART_UPLOAD_DERIVATIVE_TAG,
@@ -1067,29 +1068,41 @@ export async function finalizeSmartUploadFromBuffer(
   const existing = await findSmartUploadFinalizeResult(store, input.finalizeKey);
   if (existing) return existing;
 
-  const validation = assertValidationOk(await validateSmartUploadImageBytes(input.imageBuffer));
+  try {
+    const validation = assertValidationOk(await validateSmartUploadImageBytes(input.imageBuffer));
 
-  resolveSmartUploadFinalizeCaptions(input);
+    resolveSmartUploadFinalizeCaptions(input);
 
-  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
-    throw new Error("Unknown book.");
+    if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
+      throw new Error("Unknown book.");
+    }
+
+    const { kind, mime } = assertImageUpload(input.imageBuffer);
+    const extension = extensionForKind(kind);
+    const uploaded = await uploadPublicMarketingFile(input.imageBuffer, mime, extension);
+
+    return await persistSmartUploadRecords(
+      store,
+      {
+        ...input,
+        imageBuffer: input.imageBuffer,
+        imageFilename: input.imageFilename,
+        assetUrl: uploaded.url,
+        rollbackBlobPathname: uploaded.pathname,
+      },
+      validation,
+    );
+  } catch (error) {
+    await observeSmartUploadFinalizeFailure(
+      {
+        finalizeKey: input.finalizeKey,
+        batchId: input.batchId,
+        sourceOperation: "smart_upload_finalize_buffer",
+      },
+      error,
+    );
+    throw error;
   }
-
-  const { kind, mime } = assertImageUpload(input.imageBuffer);
-  const extension = extensionForKind(kind);
-  const uploaded = await uploadPublicMarketingFile(input.imageBuffer, mime, extension);
-
-  return persistSmartUploadRecords(
-    store,
-    {
-      ...input,
-      imageBuffer: input.imageBuffer,
-      imageFilename: input.imageFilename,
-      assetUrl: uploaded.url,
-      rollbackBlobPathname: uploaded.pathname,
-    },
-    validation,
-  );
 }
 
 export async function finalizeSmartUploadFromBlob(
@@ -1099,38 +1112,50 @@ export async function finalizeSmartUploadFromBlob(
   const existing = await findSmartUploadFinalizeResult(store, input.finalizeKey);
   if (existing) return existing;
 
-  resolveSmartUploadFinalizeCaptions(input);
+  try {
+    resolveSmartUploadFinalizeCaptions(input);
 
-  if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
-    throw new Error("Unknown book.");
+    if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
+      throw new Error("Unknown book.");
+    }
+
+    if (input.fix) {
+      return await finalizeSmartUploadFixedFromStagedBlobs(store, input);
+    }
+
+    const validation = assertValidationOk(
+      await validateSmartUploadStagedBlob({
+        uploadIntent: input.uploadIntent,
+        pathname: input.pathname,
+        publicUrl: input.publicUrl,
+        actor: input.actor,
+      }),
+    );
+
+    const buffer = await readMarketingBlobBuffer(input.pathname, "public");
+
+    return await persistSmartUploadRecords(
+      store,
+      {
+        ...input,
+        imageBuffer: buffer,
+        imageFilename: input.imageFilename ?? "upload.jpg",
+        assetUrl: input.publicUrl.trim(),
+        rollbackBlobPathname: null,
+      },
+      validation,
+    );
+  } catch (error) {
+    await observeSmartUploadFinalizeFailure(
+      {
+        finalizeKey: input.finalizeKey,
+        batchId: input.batchId,
+        sourceOperation: "smart_upload_finalize_blob",
+      },
+      error,
+    );
+    throw error;
   }
-
-  if (input.fix) {
-    return finalizeSmartUploadFixedFromStagedBlobs(store, input);
-  }
-
-  const validation = assertValidationOk(
-    await validateSmartUploadStagedBlob({
-      uploadIntent: input.uploadIntent,
-      pathname: input.pathname,
-      publicUrl: input.publicUrl,
-      actor: input.actor,
-    }),
-  );
-
-  const buffer = await readMarketingBlobBuffer(input.pathname, "public");
-
-  return persistSmartUploadRecords(
-    store,
-    {
-      ...input,
-      imageBuffer: buffer,
-      imageFilename: input.imageFilename ?? "upload.jpg",
-      assetUrl: input.publicUrl.trim(),
-      rollbackBlobPathname: null,
-    },
-    validation,
-  );
 }
 
 export function allocateSmartUploadPathname(filename: string): string {

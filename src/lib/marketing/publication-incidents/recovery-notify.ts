@@ -24,19 +24,36 @@ export function buildPublicationRecoveryRequiredNotificationPayload(
   };
 }
 
+export type PublicationRecoveryNotifyDeps = {
+  sendBroadcast: (
+    input: MarketingNotificationPayload & { deliverPush?: boolean },
+  ) => Promise<{ notification: { id: string } }>;
+};
+
+const defaultRecoveryNotifyDeps: PublicationRecoveryNotifyDeps = {
+  sendBroadcast: async (input) => {
+    const result = await sendMarketingAdminBroadcastNotification({
+      ...input,
+      deliverPush: input.deliverPush ?? true,
+    });
+    return { notification: result.notification };
+  },
+};
+
 /**
  * Observability only: failures are logged and never unblock the recovery guard.
  */
-export async function notifyPublicationRecoveryRequired(
+export async function notifyPublicationRecoveryRequiredWithDeps(
   publication: MarketingPublication,
   relatedIncidentId: string,
+  deps: PublicationRecoveryNotifyDeps = defaultRecoveryNotifyDeps,
 ): Promise<void> {
   try {
     const payload = buildPublicationRecoveryRequiredNotificationPayload(
       publication,
       relatedIncidentId,
     );
-    await sendMarketingAdminBroadcastNotification({
+    await deps.sendBroadcast({
       ...payload,
       deliverPush: true,
     });
@@ -48,4 +65,11 @@ export async function notifyPublicationRecoveryRequired(
       error: error instanceof Error ? error.message : "notify failed",
     });
   }
+}
+
+export async function notifyPublicationRecoveryRequired(
+  publication: MarketingPublication,
+  relatedIncidentId: string,
+): Promise<void> {
+  return notifyPublicationRecoveryRequiredWithDeps(publication, relatedIncidentId);
 }

@@ -55,6 +55,7 @@ import type {
 import { logMarketing } from "./logger";
 
 import { SmartUploadCaptionProviderError } from "./smart-upload-caption-errors";
+import { observeSmartUploadCaptionFailure } from "./smart-upload-incidents/observe";
 
 import {
   assertCaptionFieldsMedicalPolicy,
@@ -395,6 +396,15 @@ export async function generateSmartUploadCaptions(
       error: error instanceof Error ? error.message : "generation_failed",
 
     });
+
+    await observeSmartUploadCaptionFailure(
+      {
+        finalizeKey: input.finalizeKey,
+        mode: input.mode,
+        sourceOperation: "smart_upload_generate_captions",
+      },
+      error,
+    );
 
     if (error instanceof SmartUploadCaptionProviderError) throw error;
 

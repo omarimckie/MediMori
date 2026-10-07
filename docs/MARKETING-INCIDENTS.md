@@ -18,7 +18,7 @@ Marketing Autopilot owns the **canonical source incident**. A separate agent sys
 | **User input / validation** | Expected mistakes (e.g. unsupported image dimensions, missing caption fields) are **not** operational incidents unless escalated to `smart_upload_operational_failed` for unexpected server-side faults only. |
 | **Vocabulary** | Reuse notification-aligned names where possible (`publication_ambiguous`, `publication_overdue`, etc.). |
 
-Reserved roadmap types (not wired in Phase I): `publication_stuck_processing`, `publication_recovery_required`, `smart_upload_caption_failed`, `smart_upload_finalize_failed`, `smart_upload_operational_failed`.
+Reserved roadmap types (not wired in Phase I): `publication_stuck_processing`, `smart_upload_operational_failed`. Phase III-B1 wires `publication_failed` (actionable/terminal only), prospective `publication_recovery_required` on new publish failures, and server-side `smart_upload_caption_failed` / `smart_upload_finalize_failed`.
 
 ## Concurrency (Postgres)
 
@@ -108,3 +108,38 @@ New incident-associated notifications must set `relatedIncidentId` when durable 
 ### Deferred follow-up (not Phase III-A)
 
 Revisit notification taxonomy after Phase III-A: evaluate adding a dedicated `publication_stuck_processing` **notification** type instead of representing stuck processing as `publication_ambiguous` in Web Push/history (incidents remain correctly typed `publication_stuck_processing`).
+
+## Phase III-B1 (durable actionable failure capture)
+
+Prospective capture only — **no** historical backfill, sweeps, or startup scans for generic failed publications.
+
+### `publication_failed`
+
+- Created only when a confirmed ordinary publication failure is **actionable**: automatic cron recovery is unavailable or exhausted (`attemptCount < 3` + `[cron_safe_retry:v1]` mirrors `publishDue`).
+- Stable dedupe: `incident:publication_failed:v1:{publicationId}`.
+- **Precedence:** Instagram recovery-required guard → `publication_recovery_required` (not `publication_failed`). Ambiguity / `owner_required` → `publication_ambiguous` only. Credential-class errors (`meta_credentials_missing`, `meta_auth_expired`, `meta_permissions`) → no per-publication `publication_failed` (III-B3).
+- Wiring: after authoritative failure in `applyConfirmedPublicationFailure`, `observePublicationFailureOutcomes` records incidents; publication state is persisted first.
+- **Notifications (temporary, pre-AgentWorkBridge):** Admin notification + Web Push on **created/reopened** actionable failures; safe cron retries stay silent; occurrence re-observation does not spam.
+- Incident persistence/notification failure is fail-open and does not change publication retry/ambiguity/recovery state.
+
+### `publication_recovery_required`
+
+- On **new** qualifying publish failures (persisted provider creation, no `external_id`), observed immediately in the same hook — not only on Admin Retry.
+- Notifications fire on **created/reopened** only (occurrence re-observation does not spam), matching `publication_failed` policy.
+- Observability only: no retry, reconcile, or Meta calls from incident code.
+
+### Smart Upload (server)
+
+- `smart_upload_caption_failed` / `smart_upload_finalize_failed` for genuine operational failures (HTTP 5xx-class server faults), deduped by `finalizeKey`.
+- User validation errors (4xx / validation issues) are excluded.
+- Browser-only / client telemetry deferred (Decision 3.A). **No** phone push for Smart Upload incidents in B1.
+
+### Future phases (not B1)
+
+- **III-B2:** conservative `partial_publication_failure` detection.
+- **III-B3:** credential lifecycle + credential-level incidents.
+- **III-B4:** independent dispatcher monitor.
+
+### Future human escalation (documented, not implemented)
+
+Once `AgentWorkBridge` exists: agent investigates within `permitted_actions`; phone escalation when approval is required, the agent is blocked, remediation fails, or timely action needs a human. Until then, terminal `publication_failed` notifies the owner directly.

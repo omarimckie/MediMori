@@ -7,6 +7,7 @@ import {
 import type { PublishOutcomeClass } from "./classify";
 import { ambiguityStateForOutcome } from "./classify";
 import { recordPublicationAmbiguousOutcomeIncident } from "../publication-incidents/ambiguous";
+import { observePublicationFailureOutcomes } from "../publication-incidents/observe-failure-outcomes";
 import {
   isPersistedProviderCreationId,
   isProviderInflightMarker,
@@ -34,13 +35,19 @@ export async function applyConfirmedPublicationFailure(
     platform: string;
     providerRetryable: boolean;
   },
+  options?: {
+    observeFailureOutcomes?: Omit<
+      Parameters<typeof observePublicationFailureOutcomes>[1],
+      "sourceOperation"
+    >;
+  },
 ): Promise<MarketingPublication | null> {
   const lastError = formatPublicationFailureLastError(
     input.lastError,
     input.cronAutoRetry &&
       shouldStampCronAutoRetryForPlatform(input.platform, input.providerRetryable),
   );
-  return store.finalizePublicationClaim({
+  const updated = await store.finalizePublicationClaim({
     id: input.publication.id,
     claimToken: input.claimToken,
     patch: {
@@ -53,6 +60,13 @@ export async function applyConfirmedPublicationFailure(
       providerCreationId: providerCreationIdAfterFailure(input.publication),
     },
   });
+  if (updated) {
+    await observePublicationFailureOutcomes(updated, {
+      sourceOperation: "publish_confirmed_failure",
+      ...options?.observeFailureOutcomes,
+    });
+  }
+  return updated;
 }
 
 export async function applyAmbiguousPublicationOutcome(

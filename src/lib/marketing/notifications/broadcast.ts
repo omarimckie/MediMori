@@ -20,12 +20,28 @@ export type SendMarketingAdminBroadcastResult = {
   pushDelivered: number;
 };
 
+let sendMarketingAdminBroadcastForTests:
+  | ((input: SendMarketingAdminBroadcastInput) => Promise<SendMarketingAdminBroadcastResult>)
+  | null = null;
+
+/** Test-only override; production callers use the real broadcast path when unset. */
+export function setSendMarketingAdminBroadcastForTests(
+  handler:
+    | ((input: SendMarketingAdminBroadcastInput) => Promise<SendMarketingAdminBroadcastResult>)
+    | null,
+): void {
+  sendMarketingAdminBroadcastForTests = handler;
+}
+
 /**
  * One history row; Web Push to every enabled Marketing Admin subscription (all admins/devices).
  */
 export async function sendMarketingAdminBroadcastNotification(
   input: SendMarketingAdminBroadcastInput,
 ): Promise<SendMarketingAdminBroadcastResult> {
+  if (sendMarketingAdminBroadcastForTests) {
+    return sendMarketingAdminBroadcastForTests(input);
+  }
   const destination = normalizeMarketingNotificationDestination(input.destination);
   const payload: MarketingNotificationPayload = {
     ...input,
