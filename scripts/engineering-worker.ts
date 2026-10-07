@@ -3,12 +3,12 @@ import { resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { EngineeringInputError } from "../src/lib/engineering/policy";
 import { executablePlan } from "../src/lib/engineering/worker-policy";
-import { createFreshExport, diagnoseFreshExport, DockerWorkspace, exportedWorkspaceRevision } from "../src/lib/engineering/workspace";
+import { diagnoseFreshExport, DockerWorkspace } from "../src/lib/engineering/workspace";
+import { createApprovedExecutionExport } from "../src/lib/engineering/source-binding";
 import { openaiGenerate, runWorker, type Ingress, type IsolatedWorkspace } from "../src/lib/engineering/worker";
 import { parseWorkerInitializationConfig, runScratchInitializationPreflight, diagnoseWorkerInitialization, sanitizedInitializationDiagnostic } from "../src/lib/engineering/worker-initialization";
 import { verifyWorkerDatabaseIdentity } from "../src/lib/engineering/worker-database";
 import { verifyTargetAncestry } from "../src/lib/engineering/lineage";
-import { WorkspaceExportError } from "../src/lib/engineering/workspace-export-diagnostics";
 
 export { diagnoseWorkerInitialization };
 
@@ -69,28 +69,16 @@ export async function main(run = process.argv[2]) {
   await verifyWorkerDatabaseIdentity(connection);
   const lineageRows = await sql`SELECT engineering_worker(${run}::uuid,'lineage','worker-lineage-preflight',0,'{}'::jsonb) AS result`;
   const lineage = lineageRows[0]?.result as Record<string, unknown> | undefined;
-  if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string") {
+  if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string" || lineage.source_binding_version !== 1 || typeof lineage.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(lineage.implementation_source_revision)) {
     throw new EngineeringInputError("Approved execution lineage is unavailable.");
   }
   await verifyTargetAncestry(sourceRoot, lineage.target_base_sha);
-  let exportRoot = "";
-  let preflightRevision: string;
-  try {
-    exportRoot = await createFreshExport(sourceRoot, exportParent);
-    preflightRevision = await exportedWorkspaceRevision(exportRoot);
-  } catch (error) {
-    if (exportRoot) {
-      try { await rm(exportRoot, { recursive: true, force: true }); }
-      catch {
-        throw new WorkspaceExportError("export_cleanup_failed", {
-          operation: "cleanup",
-          cleanupFailed: true,
-          ...(error instanceof WorkspaceExportError ? { priorCode: error.code } : {}),
-        });
-      }
-    }
-    throw error;
-  }
+  const { exportRoot, revision: preflightRevision } = await createApprovedExecutionExport(
+    sourceRoot,
+    exportParent,
+    lineage.implementation_source_revision,
+    async actualRevision => { await sql`SELECT engineering_record_source_mismatch(${run}::uuid,${actualRevision})`; },
+  );
   let workspace: DockerWorkspace|undefined;
   const ingress: Ingress = async (op, owner, epoch, data = {}) => {
     try {

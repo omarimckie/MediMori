@@ -78,6 +78,30 @@ export function EngineeringClient() {
     }
     setPreparingTaskId("");
   }
+  async function prepareInitial(task: Task) {
+    const slot = `${task.id}:${task.version}:initial`;
+    const attemptKey = prepareKeys.current.get(slot) ?? crypto.randomUUID();
+    prepareKeys.current.set(slot, attemptKey);
+    setPreparationNotice(""); setPreparingTaskId(task.id);
+    const success = await act({ id: task.id, version: task.version, action: "prepare_initial_attempt", attemptKey });
+    if (success) {
+      prepareKeys.current.delete(slot);
+      setPreparationNotice("Attempt #1 is bound to its plan, target, and implementation source. Review the complete subject before approving execution.");
+    }
+    setPreparingTaskId("");
+  }
+  async function prepareRetrySubject(task: Task, attemptNumber: number) {
+    const slot = `${task.id}:${task.version}:subject`;
+    const attemptKey = prepareKeys.current.get(slot) ?? crypto.randomUUID();
+    prepareKeys.current.set(slot, attemptKey);
+    setPreparationNotice(""); setPreparingTaskId(task.id);
+    const success = await act({ id: task.id, version: task.version, action: "prepare_retry_subject", attemptKey });
+    if (success) {
+      prepareKeys.current.delete(slot);
+      setPreparationNotice(`Attempt #${attemptNumber} is bound to its fresh plan, target, and implementation source. Review the complete subject before approving execution.`);
+    }
+    setPreparingTaskId("");
+  }
   async function decideMerge(task: Task, decision: "approved" | "rejected") {
     if (!task.mergeReview || (decision === "approved" && !mergeBaseSha) || actionInFlight.current) return;
     const slot = task.id + ":" + task.version + ":" + decision;
@@ -203,16 +227,19 @@ export function EngineeringClient() {
         <fieldset><legend>Operations requiring separate human approval</legend>{protectedOperations.map(operation => <label key={operation} className="mr-3 inline-block"><input type="checkbox" name="operation" value={operation} /> {operation.replaceAll("_", " ")}</label>)}</fieldset>
         <button disabled={busy}>Save plan</button>
       </form>}
-      {task.status === "planned" && <button disabled={busy} onClick={() => void act({ id: task.id, version: task.version, action: "transition", value: "awaiting_approval" })}>Request plan approval</button>}
+      {task.status === "planned" && task.latestPreparation && (!task.preparedAttempt || task.preparedAttempt.planVersion !== task.version) && <div className="space-y-1"><p>Bind Attempt #{task.latestPreparation.previousAttemptNumber + 1} to this fresh plan, current immutable target, and current implementation source. This does not create a run or authorize execution.</p><button disabled={busy} onClick={() => void prepareRetrySubject(task, task.latestPreparation!.previousAttemptNumber + 1)}>{busy && preparingTaskId === task.id ? "Binding retry subject…" : `Prepare complete Attempt #${task.latestPreparation.previousAttemptNumber + 1} approval subject`}</button></div>}
+      {task.status === "planned" && !task.latestPreparation && !task.preparedAttempt && <div className="space-y-1"><p>Prepare Attempt #1 to bind the current plan, immutable target, and implementation source before the approval decision. This does not create a run or authorize execution.</p><button disabled={busy} onClick={() => void prepareInitial(task)}>{busy && preparingTaskId === task.id ? "Binding plan, target, and source…" : "Prepare target-bound Attempt #1"}</button></div>}
       {task.status === "awaiting_approval" && <section className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
         <h3 className="font-semibold">Human plan approval required</h3>
-        <p>Request <code>{task.id}</code> · plan/task version {task.version} · {task.risk} risk · files {task.plan?.files.join(", ")}</p>
-        <p>Target repository: {planTarget?.repository ?? "loading"} · branch: {planTarget?.branch ?? "loading"} · immutable base SHA: <code>{planTarget?.baseSha ?? "unavailable"}</code></p>
+        <p>Request <code>{task.id}</code> · task version {task.version} · {task.risk} risk · files {task.plan?.files.join(", ")}</p>
+        {!task.preparedAttempt && <p role="alert">No complete plan, target, and implementation-source binding exists. Approval is blocked until the attempt is prepared.</p>}
+        {task.preparedAttempt && <><p>Prepared Attempt #{task.preparedAttempt.attemptNumber} · identity <code>{task.preparedAttempt.attemptId}</code> · bound plan version {task.preparedAttempt.planVersion} · {task.preparedAttempt.risk} risk</p><p>Target revision — {task.preparedAttempt.targetRepository} · {task.preparedAttempt.targetBranch} · base SHA <code>{task.preparedAttempt.targetBaseSha}</code></p><p>Implementation source revision — <code>{task.preparedAttempt.implementationSourceRevision}</code></p><p>Current target SHA: <code>{planTarget?.baseSha ?? "loading"}</code></p></>}
+        {task.preparedAttempt && planTarget && planTarget.baseSha !== task.preparedAttempt.targetBaseSha && <p role="alert">The target has changed since preparation. This approval is blocked; prepare a fresh target-bound plan.</p>}
         {targetError && <p role="alert">Approval is blocked: {targetError}</p>}
-        {!targetError && !planTarget && <p role="status">Loading the exact target revision before approval can be enabled.</p>}
-        <div className="flex gap-4"><button type="button" disabled={busy || !planTarget} onClick={() => planTarget && void act({ id: task.id, version: task.version, action: "approve", targetBaseSha: planTarget.baseSha })}>Approve this plan and target</button>
+        {!targetError && !planTarget && <p role="status">Loading the current target to confirm the prepared binding remains fresh.</p>}
+        <div className="flex gap-4"><button type="button" disabled={busy || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version} onClick={() => task.preparedAttempt && void act({ id: task.id, version: task.version, action: "approve", targetBaseSha: task.preparedAttempt.targetBaseSha })}>Approve this prepared plan, target, and source</button>
           <button type="button" disabled={busy} onClick={() => void act({ id: task.id, version: task.version, action: "reject" })}>Reject this plan</button></div>
-        <p>Approval binds the displayed target through the control plane. It does not start the worker.</p>
+        <p>Approval authorizes only this already-prepared plan, target revision, and implementation source revision. The worker must verify a fresh sanitized export matches the approved source before claim.</p>
       </section>}
       <button type="button" className="underline" disabled={historyLoading === task.id} onClick={() => void showHistory(task.id)}>{historyLoading === task.id ? "Loading audit history…" : historyByTask[task.id] ? "Hide task audit history" : "Show task audit history"}</button>
       {historyByTask[task.id] && <TaskHistoryView data={historyByTask[task.id]!} />}
