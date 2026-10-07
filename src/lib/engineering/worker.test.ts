@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdtemp, mkdir, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
-import { actOnTask as storeActOnTask, createTask, recordRunEvidence, taskHistory } from "./store";
+import { actOnTask as storeActOnTask, createTask, prepareInitialAttempt, recordRunEvidence, taskHistory } from "./store";
 import { commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits } from "./worker-policy";
 import { context, edits, extractResponsesOutputText, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
@@ -16,7 +17,9 @@ import { ValidationPreparationError } from "./validation-diagnostics";
 const plan = { summary: "Small isolated change", files: ["src/demo.ts"], operations: [], validations: ["test","test:engineering","lint","typecheck","build","security:check"] };
 const revision = "a".repeat(40);
 const testTargetSha = "c".repeat(40);
-const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database,async()=>testTargetSha);
+const testSourceRevision = async () => revision;
+const readTestPreimages = async (_sha: string, paths: readonly string[]) => Object.fromEntries(paths.map(path => [path,"d".repeat(64)]));
+const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database,async()=>testTargetSha,readTestPreimages,testSourceRevision);
 const richSource = "Original documentation paragraph provides deterministic replacement context with enough distinct words for a safe exact literal anchor during worker tests.";
 const anchorFor = (source=richSource) => buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"src/demo.ts":source}}).anchors[0]!;
 function proposalFor(body:Record<string,unknown>, replacementText="updated") {
@@ -30,19 +33,47 @@ async function fixture() {
   process.env.ENGINEERING_CONTROL_PLANE_ENABLED="true";
   process.env.ENGINEERING_WORKER_ENABLED="true";
   const db = new PGlite();
+  await db.exec("CREATE ROLE medimori_engineering_2c_worker");
   await db.exec(await readFile(new URL("../../../sql/engineering-schema.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-worker.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url),"utf8"));
   const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => (await db.query(strings.reduce((s,p,i)=>s+(i?`$${i}`:"")+p,""),values)).rows) as unknown as ReturnType<typeof getSql>;
   let task=await createTask("Synthetic 2B fixture","human","a8888888-8888-4888-8888-888888888888",sql);
   task=await actOnTask(task.id,task.version,"transition","analyzing","human",sql);
   task=await actOnTask(task.id,task.version,"plan",plan,"human",sql);
-  task=await actOnTask(task.id,task.version,"transition","awaiting_approval","human",sql);
+  await prepareInitialAttempt(task.id,task.version,randomUUID(),"human",sql,async()=>testTargetSha,readTestPreimages,testSourceRevision);
+  task=(await taskHistory(task.id,sql)).task!;
   task=await actOnTask(task.id,task.version,"approve",null,"human",sql);
   const run=String((await taskHistory(task.id,sql)).runs[0].id);
   const ingress: Ingress=async(op,owner,epoch,data={})=>(await db.query<{result: Record<string,unknown>}>("SELECT engineering_worker($1::uuid,$2,$3,$4,$5::jsonb) result",[run,op,owner,epoch,JSON.stringify(op==="claim"?{preflightRevision:revision,...data}:data)])).rows[0].result;
   return {db,sql,task,run,ingress,close:async()=>{await db.close();delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED;delete process.env.ENGINEERING_WORKER_ENABLED;}};
 }
+test("fresh export mismatch is safely diagnosed before claim with no lease, reservation, or call", async()=>{
+  const f=await fixture();
+  try {
+    await f.db.exec(`CREATE FUNCTION public.test_source_mismatch_state(p_run uuid) RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+      SELECT jsonb_build_object('finishedAt',r.finished_at,'disposition',r.disposition,'leaseOwner',r.lease_owner,'preflightRevision',r.preflight_revision,
+        'modelCalls',r.model_calls,'tokens',r.tokens,'costUsd',r.cost_usd,'reservedTokens',r.reserved_tokens,'reservedMicros',r.reserved_micros,
+        'callCount',(SELECT count(*) FROM engineering_worker_calls c WHERE c.run_id=r.id),'event',
+        (SELECT details FROM engineering_events e WHERE e.task_id=t.id AND e.action='source_revision_mismatch' ORDER BY e.created_at DESC LIMIT 1))
+      FROM engineering_runs r JOIN engineering_tasks t ON t.id=r.task_id WHERE r.id=p_run
+    $$`);
+    await f.db.exec("SET SESSION AUTHORIZATION medimori_engineering_2c_worker");
+    const result=await f.db.query<{ok:boolean}>("SELECT engineering_record_source_mismatch($1::uuid,$2) AS ok",[f.run,"b".repeat(40)]);
+    assert.equal(result.rows[0].ok,true);
+    const state=(await f.db.query("SELECT public.test_source_mismatch_state($1::uuid) AS state",[f.run])).rows[0] as {state:Record<string,unknown>};
+    const run=state.state;
+    assert.ok(run.finishedAt);assert.equal(run.disposition,"blocked");assert.equal(run.leaseOwner,null);assert.equal(run.preflightRevision,null);
+    assert.equal(Number(run.modelCalls),0);assert.equal(Number(run.tokens),0);assert.equal(Number(run.costUsd),0);assert.equal(Number(run.reservedTokens),0);assert.equal(Number(run.reservedMicros),0);
+    assert.equal(Number(run.callCount),0);
+    const event=run.event as Record<string,unknown>;
+    assert.equal(event.beforeClaim,true);
+    assert.match(String(event.expectedSourceRevision),/^[a-f0-9]{40}$/);
+    assert.match(String(event.actualSourceRevision),/^[a-f0-9]{40}$/);
+  } finally { await f.close(); }
+});
 test("worker policy denies protected scope, missing validation, tools, unsafe rates and oversized context",()=>{
   assert.equal(workerLimits.outputTokens,8192);
   assert.ok(workerLimits.contextTokens+workerLimits.outputTokens<60000);

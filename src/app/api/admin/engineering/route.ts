@@ -1,7 +1,7 @@
 import { getAuthenticatedAdminUsername } from "@/lib/admin-auth";
 import { EngineeringInputError, limits, modelPolicy, protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { workerLimits } from "@/lib/engineering/worker-policy";
-import { actOnTask, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
+import { actOnTask, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
 import { getSql } from "@/lib/db";
 import { readApprovedTargetBaseSha, readWorkerTargetBaseSha } from "@/lib/engineering/merge-target";
 
@@ -12,15 +12,16 @@ function safeEventDetails(action: unknown, details: unknown) {
   if (!details || typeof details !== "object" || Array.isArray(details)) return {};
   const value = details as Record<string, unknown>;
   const safe: Record<string, unknown> = {};
-  const stringFields = ["kind", "from", "to", "runId", "command", "outcome", "revision", "phase", "failureCode", "code", "previousRunId", "previousDisposition", "approvalId", "executionId", "baseSha", "commitSha", "targetBranch"];
+  const stringFields = ["kind", "from", "to", "runId", "attemptId", "command", "outcome", "revision", "implementationSourceRevision", "expectedSourceRevision", "actualSourceRevision", "phase", "failureCode", "code", "previousRunId", "previousDisposition", "approvalId", "executionId", "baseSha", "commitSha", "targetBranch", "targetRepository", "targetBaseSha"];
   for (const key of stringFields) {
     const item = value[key];
     if (typeof item === "string" && item.length <= 240 && /^[\w./:-]*$/.test(item)) safe[key] = item;
   }
-  for (const key of ["version", "cycle", "tokens", "previousAttemptNumber"]) {
+  for (const key of ["version", "planVersion", "cycle", "tokens", "previousAttemptNumber", "preimageCount"]) {
     const item = value[key];
     if (typeof item === "number" && Number.isSafeInteger(item) && item >= 0) safe[key] = item;
   }
+  if (typeof value.beforeClaim === "boolean") safe.beforeClaim = value.beforeClaim;
   if (typeof value.estimatedCostUsd === "number" && Number.isFinite(value.estimatedCostUsd) && value.estimatedCostUsd >= 0) safe.estimatedCostUsd = value.estimatedCostUsd;
   if (typeof value.previousDisposition === "string" && value.previousDisposition.length <= 32) safe.previousDisposition = value.previousDisposition;
   const evidence = value.proposalEvidence;
@@ -71,11 +72,25 @@ function safeTask(task: Record<string, unknown>) {
     };
   }) : [];
   const latestPreparation = task.latestPreparation && typeof task.latestPreparation === "object" ? task.latestPreparation as Record<string, unknown> : null;
+  const preparedAttempt = task.preparedAttempt && typeof task.preparedAttempt === "object" ? task.preparedAttempt as Record<string, unknown> : null;
   const review = task.mergeReview && typeof task.mergeReview === "object" ? task.mergeReview as Record<string, unknown> : null;
   return {
     id: task.id, request: task.request, status: task.status, plan, risk: task.risk, version: task.version, created_by: task.created_by,
     created_at: task.created_at, updated_at: task.updated_at, attempts,
     latestPreparation: latestPreparation ? { previousAttemptNumber: latestPreparation.previousAttemptNumber, toVersion: latestPreparation.toVersion } : null,
+    preparedAttempt: preparedAttempt
+      && typeof preparedAttempt.attemptId === "string" && uuid.test(preparedAttempt.attemptId)
+      && Number.isSafeInteger(preparedAttempt.attemptNumber) && Number(preparedAttempt.attemptNumber) > 0
+      && Number.isSafeInteger(preparedAttempt.planVersion) && Number(preparedAttempt.planVersion) >= 0
+      && preparedAttempt.targetRepository === "omarimckie/MediMori" && preparedAttempt.targetBranch === "main"
+      && typeof preparedAttempt.targetBaseSha === "string" && /^[a-f0-9]{40}$/.test(preparedAttempt.targetBaseSha)
+      && typeof preparedAttempt.implementationSourceRevision === "string" && /^[a-f0-9]{40}$/.test(preparedAttempt.implementationSourceRevision) ? {
+        attemptId: preparedAttempt.attemptId, attemptNumber: preparedAttempt.attemptNumber, planVersion: preparedAttempt.planVersion,
+        risk: typeof preparedAttempt.risk === "string" ? preparedAttempt.risk : "unknown",
+        targetRepository: preparedAttempt.targetRepository, targetBranch: preparedAttempt.targetBranch,
+        targetBaseSha: preparedAttempt.targetBaseSha, implementationSourceRevision: preparedAttempt.implementationSourceRevision,
+        createdAt: typeof preparedAttempt.createdAt === "string" ? preparedAttempt.createdAt.slice(0, 40) : undefined,
+      } : null,
     mergeReview: review ? {
       runId: review.runId, attemptNumber: review.attemptNumber, planVersion: review.planVersion, resultingRevision: review.resultingRevision,
       files: Array.isArray(review.files) ? review.files.slice(0, 20).map(raw => {
@@ -205,6 +220,18 @@ export async function POST(request: Request) {
         throw new EngineeringInputError("Task ID, current version and a valid fresh-attempt key are required.");
       }
       return Response.json(await prepareFreshAttempt(body.id, Number(body.version), body.attemptKey, actor), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (body.action === "prepare_initial_attempt") {
+      if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 || typeof body.attemptKey !== "string" || body.attemptKey.length > 36 || !taskSubmissionKeyPattern.test(body.attemptKey)) {
+        throw new EngineeringInputError("Task ID, current version and a valid initial-attempt key are required.");
+      }
+      return Response.json(await prepareInitialAttempt(body.id, Number(body.version), body.attemptKey, actor), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (body.action === "prepare_retry_subject") {
+      if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 || typeof body.attemptKey !== "string" || body.attemptKey.length > 36 || !taskSubmissionKeyPattern.test(body.attemptKey)) {
+        throw new EngineeringInputError("Task ID, current version and a valid retry-subject key are required.");
+      }
+      return Response.json(await prepareRetryAttemptSubject(body.id, Number(body.version), body.attemptKey, actor), { headers: { "Cache-Control": "no-store" } });
     }
     if (body.action === "merge_decision") {
       if (process.env.ENGINEERING_MERGE_ENABLED !== "true") return Response.json({ error: "Merge approval is not configured." }, { status: 503, headers: { "Cache-Control": "no-store" } });

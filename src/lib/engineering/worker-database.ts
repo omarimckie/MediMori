@@ -21,6 +21,9 @@ type IdentityRow = {
   public_execute: boolean;
   worker_call_progress_ready: boolean;
   worker_lineage_ready: boolean;
+  source_binding_ready: boolean;
+  source_mismatch_execute: boolean;
+  source_mismatch_public_execute: boolean;
   lineage_table_access: boolean;
 };
 
@@ -32,6 +35,7 @@ export type WorkerDatabaseIdentity = {
   restrictedRole: true;
   callProgressReady: true;
   lineageReady: true;
+  sourceBindingReady: true;
   boundedPrivileges: true;
 };
 
@@ -91,6 +95,17 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
         AND EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
           WHERE n.nspname='public' AND p.proname='engineering_run_lineage_valid' AND p.prosecdef
             AND p.proconfig @> ARRAY['search_path=public, pg_temp'])) AS worker_lineage_ready,
+      (EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=to_regclass('public.engineering_run_lineage') AND a.attname='implementation_source_revision' AND a.attnum>0 AND NOT a.attisdropped)
+        AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=to_regclass('public.engineering_run_lineage') AND a.attname='source_binding_version' AND a.attnum>0 AND NOT a.attisdropped)
+        AND to_regclass('public.engineering_prepared_attempts') IS NOT NULL
+        AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=to_regclass('public.engineering_prepared_attempts') AND a.attname='implementation_source_revision' AND a.attnum>0 AND NOT a.attisdropped)
+        AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=to_regclass('public.engineering_prepared_attempts') AND a.attname='request_snapshot' AND a.attnum>0 AND NOT a.attisdropped)
+        AND EXISTS(SELECT 1 FROM pg_constraint c WHERE c.conrelid=to_regclass('public.engineering_run_lineage') AND c.conname='engineering_run_lineage_source_binding' AND c.contype='c' AND c.convalidated)
+        AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=to_regclass('public.engineering_runs') AND g.tgname='engineering_run_source_binding_guard' AND NOT g.tgisinternal)
+        AND to_regprocedure('public.engineering_record_source_mismatch(uuid,text)') IS NOT NULL
+        AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.engineering_record_source_mismatch(uuid,text)'::regprocedure AND p.prosecdef AND p.proconfig @> ARRAY['search_path=public, pg_temp'])) AS source_binding_ready,
+      COALESCE(has_function_privilege(current_user,to_regprocedure('public.engineering_record_source_mismatch(uuid,text)'),'EXECUTE'),false) AS source_mismatch_execute,
+      EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE p.oid=to_regprocedure('public.engineering_record_source_mismatch(uuid,text)') AND a.grantee=0 AND a.privilege_type='EXECUTE') AS source_mismatch_public_execute,
       (COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'SELECT'),false)
         OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'INSERT'),false)
         OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'UPDATE'),false)
@@ -111,8 +126,8 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
   if (row.actor !== restrictedWorkerDatabaseTarget.role || row.session_actor !== restrictedWorkerDatabaseTarget.role || row.database_name !== restrictedWorkerDatabaseTarget.database) {
     throw new WorkerInitializationError("database_identity", "worker_database_role_mismatch");
   }
-  if (row.worker_call_progress_ready !== true || row.worker_lineage_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
-  if (row.role_superuser || row.role_createdb || row.role_createrole || row.role_replication || row.role_bypassrls || row.task_mutation || row.approval_mutation || row.lineage_table_access || !row.role_exists || !row.role_member || !row.ingress_exists || !row.ingress_security_definer || !row.ingress_execute || row.public_execute) {
+  if (row.worker_call_progress_ready !== true || row.worker_lineage_ready !== true || row.source_binding_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
+  if (row.role_superuser || row.role_createdb || row.role_createrole || row.role_replication || row.role_bypassrls || row.task_mutation || row.approval_mutation || row.lineage_table_access || !row.role_exists || !row.role_member || !row.ingress_exists || !row.ingress_security_definer || !row.ingress_execute || row.public_execute || !row.source_mismatch_execute || row.source_mismatch_public_execute) {
     throw new WorkerInitializationError("database_identity", "worker_database_identity_mismatch");
   }
   return {
@@ -123,6 +138,7 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
     restrictedRole: true,
     callProgressReady: true,
     lineageReady: true,
+    sourceBindingReady: true,
     boundedPrivileges: true,
   };
 }

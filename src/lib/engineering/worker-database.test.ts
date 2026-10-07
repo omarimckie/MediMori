@@ -26,6 +26,9 @@ function validIdentityRow() {
     public_execute: false,
     worker_call_progress_ready: true,
     worker_lineage_ready: true,
+    source_binding_ready: true,
+    source_mismatch_execute: true,
+    source_mismatch_public_execute: false,
     lineage_table_access: false,
   };
 }
@@ -57,7 +60,7 @@ test("identity query classifies branch and role mismatches without raw database 
 });
 
 test("identity query rejects unsafe privileges and ingress grants", async () => {
-  for (const change of [{ role_superuser: true }, { task_mutation: true }, { approval_mutation: true }, { lineage_table_access: true }, { ingress_execute: false }, { public_execute: true }]) {
+for (const change of [{ role_superuser: true }, { task_mutation: true }, { approval_mutation: true }, { lineage_table_access: true }, { ingress_execute: false }, { public_execute: true }, { source_mismatch_execute: false }, { source_mismatch_public_execute: true }]) {
     await assert.rejects(
       verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
       error => error instanceof WorkerInitializationError && error.code === "worker_database_identity_mismatch",
@@ -66,7 +69,7 @@ test("identity query rejects unsafe privileges and ingress grants", async () => 
 });
 
 test("identity query fails closed before claim when call-progress or lineage schema is missing", async () => {
-  for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }]) {
+for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }, { source_binding_ready: false }]) {
     await assert.rejects(
       verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
       error => error instanceof WorkerInitializationError && error.code === "worker_database_schema_mismatch",
