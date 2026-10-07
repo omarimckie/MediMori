@@ -35,6 +35,8 @@ A heartbeat proves the **application** accepted an authorized publish-dispatcher
 
 **QStash is not configured to call this endpoint in Phase 1** — wire it when ready.
 
+Phase III-A4 additionally runs the same reliability sweep (detection + incident auto-reconciliation) **after** `publishDue` on bearer `CRON_SECRET` calls to `POST /api/cron/marketing-publish` only. Admin-session “Publish due” does not trigger reliability. Reliability failures are logged and do not change publish HTTP success semantics. Stuck-processing notifications remain type `publication_ambiguous` (taxonomy change still deferred).
+
 ## Schema
 
 Apply locally / to an environment (not production unless you intend to):

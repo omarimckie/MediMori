@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   formatEvidenceEntries,
   formatPermittedActionLabel,
+  formatResolutionTypeLabel,
   formatIncidentTypeLabel,
   formatRetrySafetyLabel,
   lifecycleActionsForStatus,
@@ -13,6 +14,10 @@ import {
 } from "./incident-admin-presenters";
 
 describe("Incident admin presenters", () => {
+  it("formats auto_recovered resolution label for display", () => {
+    assert.equal(formatResolutionTypeLabel("auto_recovered"), "Auto recovered");
+  });
+
   it("formats incident type labels", () => {
     assert.equal(formatIncidentTypeLabel("publication_ambiguous"), "Ambiguous publish outcome");
   });

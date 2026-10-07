@@ -6,9 +6,13 @@ import { recordMarketingPublishDispatcherHeartbeat } from "./marketing-cron";
 
 test("authorized publish cron path is wired to record heartbeat after publishDue", () => {
   const route = readFileSync("src/app/api/cron/marketing-publish/route.ts", "utf8");
-  assert.match(route, /publishDue/);
+  const handler = readFileSync(
+    "src/lib/marketing/reliability/marketing-publish-cron.ts",
+    "utf8",
+  );
+  assert.match(route, /handleMarketingPublishCron/);
   assert.match(route, /recordMarketingPublishDispatcherHeartbeat/);
-  assert.match(route, /publishedCount: results\.length/);
+  assert.match(handler, /publishedCount: results\.length/);
   assert.doesNotMatch(route, /sendMarketingNotification/);
 });
 

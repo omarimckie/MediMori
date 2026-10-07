@@ -4,22 +4,21 @@ import {
   recordMarketingPublishDispatcherHeartbeat,
 } from "@/lib/marketing/marketing-cron";
 import { publishDue } from "@/lib/marketing/approval";
+import { runReliabilityAfterMarketingPublish } from "@/lib/marketing/reliability/post-publish-reliability";
+import { handleMarketingPublishCron } from "@/lib/marketing/reliability/marketing-publish-cron";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const auth = await authorizeMarketingCron(request);
-  if (!auth.ok) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-  const results = await publishDue(getMarketingStore());
-  await recordMarketingPublishDispatcherHeartbeat({
-    request,
-    auth,
-    publishedCount: results.length,
+  const outcome = await handleMarketingPublishCron(request, {
+    authorize: authorizeMarketingCron,
+    getStore: getMarketingStore,
+    publishDue,
+    recordHeartbeat: recordMarketingPublishDispatcherHeartbeat,
+    runReliabilityAfterMarketingPublish,
   });
-  return NextResponse.json({ published: results.length, results });
+  return NextResponse.json(outcome.body, { status: outcome.status });
 }
 
 export async function GET(request: Request) {

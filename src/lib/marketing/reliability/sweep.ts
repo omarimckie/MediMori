@@ -17,8 +17,13 @@ import {
   buildStuckProcessingNotificationPayload,
   notifyReliabilityPayload,
 } from "./notify";
+import { logMarketing } from "../logger";
 import { recordPublicationOverdueIncident } from "../publication-incidents/overdue";
 import { recordPublicationStuckProcessingIncident } from "../publication-incidents/stuck-processing";
+import {
+  reconcileAutoResolvableIncidents,
+  type IncidentReconcileStats,
+} from "./incident-reconcile";
 
 export type ReliabilitySweepResult = {
   overdueDetected: number;
@@ -26,6 +31,7 @@ export type ReliabilitySweepResult = {
   notificationsCreated: number;
   notificationsSkippedDuplicate: number;
   dedupesCleaned: number;
+  reconcile: IncidentReconcileStats;
 };
 
 export type ReliabilityAlertDeps = {
@@ -81,43 +87,79 @@ export async function runReliabilityAlertPipeline(
   let notificationsSkippedDuplicate = 0;
 
   for (const publication of input.overdue) {
-    const incident = await recordPublicationOverdueIncident(publication);
-    const dedupeKey = publicationOverdueDedupeKey(publication.id);
-    const outcome = await notifyIfClaimed(
-      publication.id,
-      dedupeKey,
-      buildOverdueNotificationPayload(publication),
-      deps,
-      incident?.id ?? null,
-    );
-    if (outcome === "created") notificationsCreated += 1;
-    else notificationsSkippedDuplicate += 1;
+    try {
+      const incident = await recordPublicationOverdueIncident(publication);
+      const dedupeKey = publicationOverdueDedupeKey(publication.id);
+      const outcome = await notifyIfClaimed(
+        publication.id,
+        dedupeKey,
+        buildOverdueNotificationPayload(publication),
+        deps,
+        incident?.id ?? null,
+      );
+      if (outcome === "created") notificationsCreated += 1;
+      else notificationsSkippedDuplicate += 1;
+    } catch (error) {
+      logMarketing({
+        operation: "reliability_overdue_alert",
+        success: false,
+        error: error instanceof Error ? error.message : "overdue_alert_failed",
+      });
+    }
   }
 
   for (const publication of input.stuck) {
-    const incident = await recordPublicationStuckProcessingIncident(publication);
-    const dedupeKey = publicationAmbiguousProcessingDedupeKey(publication.id);
-    const outcome = await notifyIfClaimed(
-      publication.id,
-      dedupeKey,
-      buildStuckProcessingNotificationPayload(publication),
-      deps,
-      incident?.id ?? null,
-    );
-    if (outcome === "created") notificationsCreated += 1;
-    else notificationsSkippedDuplicate += 1;
+    try {
+      const incident = await recordPublicationStuckProcessingIncident(publication);
+      const dedupeKey = publicationAmbiguousProcessingDedupeKey(publication.id);
+      const outcome = await notifyIfClaimed(
+        publication.id,
+        dedupeKey,
+        buildStuckProcessingNotificationPayload(publication),
+        deps,
+        incident?.id ?? null,
+      );
+      if (outcome === "created") notificationsCreated += 1;
+      else notificationsSkippedDuplicate += 1;
+    } catch (error) {
+      logMarketing({
+        operation: "reliability_stuck_alert",
+        success: false,
+        error: error instanceof Error ? error.message : "stuck_alert_failed",
+      });
+    }
   }
 
   return { notificationsCreated, notificationsSkippedDuplicate };
 }
 
-export async function runMarketingReliabilitySweep(): Promise<ReliabilitySweepResult> {
-  const dedupesCleaned = await cleanupResolvedReliabilityDedupes();
-  const overdue = await listOverdueScheduledPublications();
-  const stuck = await listStuckProcessingPublications();
+export type MarketingReliabilitySweepOptions = {
+  detect?: { overdue: MarketingPublication[]; stuck: MarketingPublication[] };
+  alertDeps?: ReliabilityAlertDeps;
+  cleanupDedupes?: () => Promise<number>;
+  reconcile?: () => Promise<IncidentReconcileStats>;
+};
+
+export async function runMarketingReliabilitySweep(
+  options?: MarketingReliabilitySweepOptions,
+): Promise<ReliabilitySweepResult> {
+  const dedupesCleaned = options?.cleanupDedupes
+    ? await options.cleanupDedupes()
+    : await cleanupResolvedReliabilityDedupes();
+  const overdue =
+    options?.detect?.overdue ?? (await listOverdueScheduledPublications());
+  const stuck =
+    options?.detect?.stuck ?? (await listStuckProcessingPublications());
 
   const { notificationsCreated, notificationsSkippedDuplicate } =
-    await runReliabilityAlertPipeline({ overdue, stuck });
+    await runReliabilityAlertPipeline(
+      { overdue, stuck },
+      options?.alertDeps ?? defaultReliabilityAlertDeps,
+    );
+
+  const reconcile = options?.reconcile
+    ? await options.reconcile()
+    : await reconcileAutoResolvableIncidents();
 
   return {
     overdueDetected: overdue.length,
@@ -125,5 +167,6 @@ export async function runMarketingReliabilitySweep(): Promise<ReliabilitySweepRe
     notificationsCreated,
     notificationsSkippedDuplicate,
     dedupesCleaned,
+    reconcile,
   };
 }

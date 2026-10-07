@@ -93,6 +93,18 @@ Admin lifecycle APIs (Marketing Admin auth required) list/get incidents, transit
 
 New incident-associated notifications must set `relatedIncidentId` when durable incident record/re-observation succeeded. Incident persistence is never dependent on notification success.
 
+### Phase III-A4 (auto-resolution bookkeeping)
+
+- **Eligible types only:** `publication_overdue`, `publication_stuck_processing`.
+- **Never auto-resolved:** `publication_ambiguous`, `publication_recovery_required`.
+- **Affirmative evidence only:** reconciliation loads the publication row and applies policy (not “absent from detection SQL”).
+- **Stuck policy:** while `status === processing`, stuck incidents stay open even if `updated_at` is fresh.
+- **Blockers:** unresolved manual incidents on the same `publication_id`, plus row-level ambiguity/recovery signals (ambiguity state, inflight sentinel, provider creation without external id / Instagram recovery predicate).
+- **Missing publication row:** skip + log (no auto-resolve).
+- **Resolution:** `auto_recovered` via `resolveIncident`; **no** new admin notification or Web Push.
+- **Recurrence:** existing `reopenIfResolved` preserves incident id and `agent_work_correlation_id`.
+- **Clock:** isolated reliability work runs after `publishDue` on **cron_secret** `POST /api/cron/marketing-publish` only (no new scheduler). Publishing success is not downgraded if reliability fails.
+
 ### Deferred follow-up (not Phase III-A)
 
 Revisit notification taxonomy after Phase III-A: evaluate adding a dedicated `publication_stuck_processing` **notification** type instead of representing stuck processing as `publication_ambiguous` in Web Push/history (incidents remain correctly typed `publication_stuck_processing`).

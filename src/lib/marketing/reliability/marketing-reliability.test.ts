@@ -21,7 +21,7 @@ import {
   publicationAmbiguousProcessingDedupeKey,
   publicationOverdueDedupeKey,
 } from "./dedupe-keys";
-import { runReliabilityAlertPipeline } from "./sweep";
+import { runMarketingReliabilitySweep, runReliabilityAlertPipeline } from "./sweep";
 
 beforeEach(() => {
   setMarketingIncidentRepositoryForTests(createMemoryIncidentRepository());
@@ -186,6 +186,93 @@ test("repeated stuck processing sweep does not duplicate ambiguous notifications
   assert.equal(notifyCount, 1);
 });
 
+test("notification failure for one overdue item does not block the next", async () => {
+  const now = new Date("2026-10-06T01:00:00.000Z");
+  const overdue = filterOverduePublications(
+    [
+      samplePublication({
+        id: "fail-notify",
+        scheduledFor: new Date(now.getTime() - PUBLICATION_OVERDUE_THRESHOLD_MS).toISOString(),
+      }),
+      samplePublication({
+        id: "ok-notify",
+        scheduledFor: new Date(now.getTime() - PUBLICATION_OVERDUE_THRESHOLD_MS).toISOString(),
+      }),
+    ],
+    now,
+  );
+  let notifyCount = 0;
+  await runReliabilityAlertPipeline(
+    { overdue, stuck: [] },
+    {
+      claimDedupe: async () => true,
+      notify: async (payload) => {
+        notifyCount += 1;
+        if (payload.relatedPublicationId === "fail-notify") {
+          throw new Error("simulated notify failure");
+        }
+        return { notificationId: crypto.randomUUID() };
+      },
+      attachDedupe: async () => {},
+      releaseDedupe: async () => {},
+    },
+  );
+  assert.equal(notifyCount, 2);
+});
+
+test("notification failure still runs reconciliation afterward", async () => {
+  const now = new Date("2026-10-06T01:00:00.000Z");
+  const overdue = filterOverduePublications(
+    [
+      samplePublication({
+        id: "fail-notify",
+        scheduledFor: new Date(now.getTime() - PUBLICATION_OVERDUE_THRESHOLD_MS).toISOString(),
+      }),
+      samplePublication({
+        id: "ok-notify",
+        scheduledFor: new Date(now.getTime() - PUBLICATION_OVERDUE_THRESHOLD_MS).toISOString(),
+      }),
+    ],
+    now,
+  );
+  let releaseCount = 0;
+  let reconcileRan = false;
+  const result = await runMarketingReliabilitySweep({
+    detect: { overdue, stuck: [] },
+    cleanupDedupes: async () => 0,
+    alertDeps: {
+      claimDedupe: async () => true,
+      notify: async (payload) => {
+        if (payload.relatedPublicationId === "fail-notify") {
+          throw new Error("simulated notify failure");
+        }
+        return { notificationId: crypto.randomUUID() };
+      },
+      attachDedupe: async () => {},
+      releaseDedupe: async () => {
+        releaseCount += 1;
+      },
+    },
+    reconcile: async () => {
+      reconcileRan = true;
+      return {
+        examined: 0,
+        autoResolved: 0,
+        overdueAutoResolved: 0,
+        stuckAutoResolved: 0,
+        skippedUnsafe: 0,
+        skippedMissingPublication: 0,
+        skippedConflict: 0,
+        skippedPolicy: 0,
+        failed: 0,
+      };
+    },
+  });
+  assert.equal(releaseCount, 1);
+  assert.equal(reconcileRan, true);
+  assert.ok(result.reconcile);
+});
+
 test("reliability alert pipeline does not mutate publication store state", async () => {
   const store = new MemoryMarketingStore();
   const publication = await store.createPublication({
@@ -284,6 +371,7 @@ test("dedupe keys are stable per publication", () => {
 test("reliability modules do not invoke publish or Meta publishers", () => {
   const files = [
     "src/lib/marketing/reliability/sweep.ts",
+    "src/lib/marketing/reliability/incident-reconcile.ts",
     "src/app/api/cron/marketing-reliability/route.ts",
     "src/lib/marketing/reliability/repository.ts",
   ];

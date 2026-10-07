@@ -395,6 +395,51 @@ export async function listIncidentsFromPostgres(
   return rows.map((row) => mapIncidentRow(row as Record<string, unknown>));
 }
 
+const AUTO_RESOLVE_CANDIDATE_TYPES = [
+  "publication_overdue",
+  "publication_stuck_processing",
+] as const;
+
+const MANUAL_INCIDENT_BLOCKER_TYPES = [
+  "publication_ambiguous",
+  "publication_recovery_required",
+] as const;
+
+export async function listAutoResolveCandidateIncidents(
+  limit = 100,
+): Promise<MarketingIncidentRecord[]> {
+  const bounded = Math.min(Math.max(limit, 1), 200);
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM marketing_incidents
+    WHERE status <> 'resolved'
+      AND incident_type = ANY(${AUTO_RESOLVE_CANDIDATE_TYPES}::text[])
+      AND publication_id IS NOT NULL
+    ORDER BY last_seen_at ASC
+    LIMIT ${bounded}
+  `;
+  return rows.map((row) => mapIncidentRow(row as Record<string, unknown>));
+}
+
+export async function publicationIdsWithUnresolvedManualIncidents(
+  publicationIds: string[],
+): Promise<Set<string>> {
+  if (publicationIds.length === 0) {
+    return new Set();
+  }
+  const sql = getSql();
+  const rows = await sql`
+    SELECT DISTINCT publication_id::text AS publication_id
+    FROM marketing_incidents
+    WHERE status <> 'resolved'
+      AND incident_type = ANY(${MANUAL_INCIDENT_BLOCKER_TYPES}::text[])
+      AND publication_id = ANY(${publicationIds}::uuid[])
+  `;
+  return new Set(
+    rows.map((row) => String((row as { publication_id: string }).publication_id)),
+  );
+}
+
 export function isPostgresIncidentRepository(
   repo: MarketingIncidentRepository,
 ): repo is PostgresMarketingIncidentRepository {

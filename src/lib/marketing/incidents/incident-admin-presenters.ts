@@ -99,6 +99,9 @@ export const MANUAL_RESOLUTION_OPTIONS: { value: ResolutionType; label: string }
 ];
 
 export function formatResolutionTypeLabel(type: ResolutionType | string): string {
+  if (type === "auto_recovered") {
+    return "Auto recovered";
+  }
   const match = MANUAL_RESOLUTION_OPTIONS.find((o) => o.value === type);
   if (match) return match.label;
   return String(type).replaceAll("_", " ");
