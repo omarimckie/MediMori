@@ -10,7 +10,8 @@ export type MarketingPageGuideId =
   | "analytics"
   | "recommendations"
   | "brain"
-  | "costs";
+  | "costs"
+  | "incidents";
 
 export type MarketingPageGuideEntry = {
   id: MarketingPageGuideId;
@@ -181,6 +182,23 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
     notes: [
       "Underlying brain data is actively consumed by generation, planning, and safety checks in code.",
       "This UI is primarily read-only—you cannot edit the full strategy from this page alone.",
+    ],
+  },
+  incidents: {
+    id: "incidents",
+    title: "Incidents",
+    purpose:
+      "Operational record of publication and reliability problems that may need owner investigation—not publication authorization.",
+    actions: [
+      "Review unresolved incidents and open a record for summary, safety context, evidence, and history.",
+      "Move incidents through operational statuses (investigating, needs action, blocked) while you work.",
+      "Resolve with a short summary when handling is complete; resolving closes the incident only.",
+    ],
+    notes: [
+      "Resolve does not fix a publication, clear ambiguity, enable retry, or call Meta.",
+      "Retry safety and permitted actions are informational snapshots from when the incident was recorded.",
+      "If the same condition is genuinely observed again after resolve, the system may reopen the same incident automatically.",
+      "Consider direct push → incident deep-linking for incident-linked notifications after III-A3.",
     ],
   },
   costs: {

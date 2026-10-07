@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 import {
@@ -19,6 +20,7 @@ type NotificationRow = {
   deliveryStatus: string;
   createdAt: string;
   readAt: string | null;
+  relatedIncidentId: string | null;
 };
 
 type MorningBriefPreferences = {
@@ -285,6 +287,22 @@ export function NotificationsClient() {
               <p className="mt-2 text-xs text-brand-charcoal/50">
                 {new Date(item.createdAt).toLocaleString()} · {item.deliveryStatus} · {item.type}
               </p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Link
+                  href={item.destination}
+                  className="text-xs font-bold text-brand-green-deep"
+                >
+                  Open
+                </Link>
+                {item.relatedIncidentId ? (
+                  <Link
+                    href={`/admin/marketing/incidents/${item.relatedIncidentId}`}
+                    className="text-xs font-bold text-brand-navy"
+                  >
+                    View incident
+                  </Link>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

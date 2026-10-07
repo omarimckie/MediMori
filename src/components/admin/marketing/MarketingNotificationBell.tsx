@@ -11,6 +11,7 @@ type NotificationRow = {
   destination: string;
   createdAt: string;
   readAt: string | null;
+  relatedIncidentId: string | null;
 };
 
 export function MarketingNotificationBell() {
@@ -93,6 +94,15 @@ export function MarketingNotificationBell() {
                     >
                       Open
                     </Link>
+                    {item.relatedIncidentId ? (
+                      <Link
+                        href={`/admin/marketing/incidents/${item.relatedIncidentId}`}
+                        className="text-xs font-bold text-brand-navy"
+                        onClick={() => void markRead(item.id)}
+                      >
+                        View incident
+                      </Link>
+                    ) : null}
                     {!item.readAt ? (
                       <button
                         type="button"

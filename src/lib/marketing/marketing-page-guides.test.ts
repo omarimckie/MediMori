@@ -22,6 +22,7 @@ test("every nav guide id has a complete entry", () => {
     "recommendations",
     "brain",
     "costs",
+    "incidents",
   ] as const;
   for (const id of required) {
     const entry = getMarketingPageGuide(id);

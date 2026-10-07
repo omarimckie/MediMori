@@ -11,6 +11,11 @@ export function StatusPill({ status }: { status: string }) {
     planned: "bg-brand-lavender/40 text-brand-navy",
     completed: "bg-brand-navy text-white",
     open: "bg-brand-gold/30 text-brand-navy",
+    investigating: "bg-brand-sky/30 text-brand-navy",
+    action_required: "bg-brand-orange/25 text-brand-navy",
+    blocked: "bg-brand-orange-deep/80 text-white",
+    resolved: "bg-brand-navy/80 text-white",
+    manual: "bg-brand-lavender/50 text-brand-navy",
   };
   return (
     <span
