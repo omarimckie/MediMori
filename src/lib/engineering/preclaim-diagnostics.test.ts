@@ -28,11 +28,17 @@ test("pre-claim diagnostics classify target, source, export, identity, lineage, 
 });
 
 test("serialized pre-claim diagnostics reconstruct only bounded allow-listed metadata", () => {
-  const diagnostic = classifyPreclaimFailure(new Error("postgres://private-user:private-password@secret-host sk-private-key C:\\private\\source"), "target_verification");
+  // This exact placeholder is the exporter's existing synthetic database-URL
+  // exception. Runtime composition keeps the diagnostic fixture meaningful
+  // without adding credential-shaped source text to this file.
+  const syntheticDatabaseUrl = "postgresql://USER:PASSWORD@HOST/DB?sslmode=require";
+  const diagnostic = classifyPreclaimFailure(new Error(`${syntheticDatabaseUrl} sk-private-key C:\\private\\source`), "target_verification");
   const withUntrustedFields = { ...diagnostic, summary: "private-password", raw: "sk-private-key", path: "C:\\private\\source" };
   const safe = preclaimDiagnosticToJson(withUntrustedFields);
   assert.equal(safe.summary, preclaimDiagnosticSummaries()[safe.code]);
   assert.equal(JSON.stringify(safe).includes("private-password"), false);
+  assert.equal(JSON.stringify(safe).includes(syntheticDatabaseUrl), false);
+  assert.equal(JSON.stringify(safe).includes("PASSWORD"), false);
   assert.equal(JSON.stringify(safe).includes("sk-private-key"), false);
   assert.equal(JSON.stringify(safe).includes("private\\source"), false);
   assert.deepEqual(preclaimDiagnosticStages.includes(safe.stage), true);
