@@ -190,6 +190,105 @@ async function seedScheduledFacebookPublication(store: MemoryMarketingStore) {
   return { publicationId, contentId };
 }
 
+async function seedFailedPinterestPublication(store: MemoryMarketingStore) {
+  const campaignId = "camp-pin-retry-test";
+  const contentId = "content-pin-failed";
+  const publicationId = "pub-pin-failed";
+  const assetId = "asset-pin-vertical";
+
+  await store.createCampaign({
+    id: campaignId,
+    name: "Pinterest retry test",
+    objective: "Test",
+    status: "active",
+    primaryAudience: "parents",
+    secondaryAudience: null,
+    coreMessage: "Test",
+    contentThemes: [],
+    channelDistribution: {},
+    recommendedFrequency: {},
+    cta: null,
+    requiredAssets: [],
+    measurementGoals: [],
+    bookIds: ["book-one"],
+    startOn: null,
+    endOn: null,
+    createdBy: null,
+    isDemo: true,
+  });
+
+  await store.createAsset({
+    id: assetId,
+    name: "Vertical pin image",
+    type: "character",
+    source: "catalog",
+    bookId: "book-one",
+    characterId: "amara",
+    campaignId: null,
+    approved: true,
+    usageRestrictions: "Test",
+    aspectRatio: "1000:1500",
+    imageWidth: 1000,
+    imageHeight: 1500,
+    mimeType: "image/png",
+    tags: ["pinterest"],
+    url: "https://example.com/amara-pin.png",
+    altText: "Amara with books",
+    isDemo: true,
+  });
+
+  const content: MarketingContent = {
+    id: contentId,
+    campaignId,
+    weeklyPlanId: null,
+    platform: "pinterest",
+    format: "pin",
+    category: "educational",
+    audience: "parents",
+    status: "failed",
+    title: "Sickle cell pin title",
+    body: "Pin description for families.",
+    cta: "Read together",
+    seoTitle: null,
+    seoDescription: null,
+    scheduledFor: new Date().toISOString(),
+    timezone: "America/New_York",
+    assetIds: [assetId],
+    needsNewAsset: false,
+    warnings: [],
+    safetyFlags: [],
+    trackingToken: "pin-tracking-token",
+    originalBody: null,
+    bookId: "book-one",
+    metadata: {},
+    isDemo: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await store.createContent(content);
+
+  const publication: MarketingPublication = {
+    id: publicationId,
+    contentId,
+    campaignId,
+    platform: "pinterest",
+    provider: "pinterest",
+    status: "failed",
+    idempotencyKey: "idem-pin-failed",
+    externalId: null,
+    url: null,
+    attemptCount: 3,
+    lastError: "pinterest_auth_expired: prior trial restriction",
+    scheduledFor: new Date().toISOString(),
+    publishedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await store.createPublication(publication);
+
+  return { publicationId, contentId };
+}
+
 test("unauthenticated request is rejected", async () => {
   const store = new MemoryMarketingStore();
   const response = await handleAdminPublicationRetryRequest({
@@ -443,4 +542,99 @@ test("published externalId prevents duplicate admin retry", async () => {
   const result = await retryFailedInstagramPublication(store, publicationId);
   assert.equal(result.status, 400);
   assert.equal(result.body.error?.code, "invalid_publication_status");
+});
+
+test("admin exhausted Pinterest retry overrides claim and increments attempts", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedPinterestPublication(store);
+
+  assert.equal(await store.claimPublication(publicationId), null);
+  assert.ok(await store.claimPublication(publicationId, { allowExhaustedRetry: true }));
+
+  await store.updatePublication(publicationId, { status: "failed" });
+
+  const result = await retryAdminPublication(store, publicationId);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.success, true);
+  assert.equal(result.body.platform, "pinterest");
+  assert.equal(result.body.attempt_count, 4);
+  assert.ok(result.body.external_id);
+  assertNoSecrets(result.body);
+});
+
+test("publishDue does not auto-retry exhausted Pinterest publications", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedPinterestPublication(store);
+
+  const results = await publishDue(store);
+  assert.equal(results.length, 0);
+  const pub = await store.getPublication(publicationId);
+  assert.equal(pub?.attemptCount, 3);
+  assert.equal(pub?.externalId, null);
+});
+
+test("exhausted Facebook admin retry does not use allowExhaustedRetry", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedScheduledFacebookPublication(store);
+  await store.updatePublication(publicationId, {
+    attemptCount: 3,
+    status: "failed",
+    lastError: "meta_http_error: exhausted",
+  });
+
+  const result = await retryAdminPublication(store, publicationId);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.success, false);
+  const pub = await store.getPublication(publicationId);
+  assert.equal(pub?.attemptCount, 3);
+  assert.equal(pub?.externalId, null);
+});
+
+test("admin exhausted Pinterest retry targets only the selected publication", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId } = await seedFailedPinterestPublication(store);
+  const otherPub: MarketingPublication = {
+    id: "pub-pin-other-failed",
+    contentId: "content-pin-failed",
+    campaignId: "camp-pin-retry-test",
+    platform: "pinterest",
+    provider: "pinterest",
+    status: "failed",
+    idempotencyKey: "idem-pin-other",
+    externalId: null,
+    url: null,
+    attemptCount: 3,
+    lastError: "pinterest_http_error: other",
+    scheduledFor: new Date().toISOString(),
+    publishedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await store.createPublication(otherPub);
+
+  const result = await retryAdminPublication(store, publicationId);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.publicationId, publicationId);
+  assert.equal(result.body.success, true);
+
+  const untouched = await store.getPublication(otherPub.id);
+  assert.equal(untouched?.attemptCount, 3);
+  assert.equal(untouched?.externalId, null);
+});
+
+test("admin exhausted Pinterest preflight failure preserves attempt count", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const { publicationId, contentId } = await seedFailedPinterestPublication(store);
+  await store.updateContent(contentId, { assetIds: [] });
+
+  const result = await retryAdminPublication(store, publicationId);
+  assert.equal(result.status, 422);
+  assert.equal(result.body.preflight?.code, "image_missing");
+  const pub = await store.getPublication(publicationId);
+  assert.equal(pub?.attemptCount, 3);
 });

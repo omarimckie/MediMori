@@ -32,6 +32,11 @@ export type PublicationRetryResult = {
 
 const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook", "pinterest"]);
 
+/** Explicit admin retry may claim failed publications after automatic attempt exhaustion. */
+function adminAllowsExhaustedRetry(platform: Platform): boolean {
+  return platform === "instagram" || platform === "pinterest";
+}
+
 function adminRetryEligibleStatus(platform: Platform, status: MarketingPublication["status"]): boolean {
   if (platform === "instagram") {
     return status === "failed";
@@ -187,7 +192,7 @@ export async function retryAdminPublication(
   }
 
   const result = await retryPublication(store, publicationId, {
-    allowExhaustedRetry: publication.platform === "instagram",
+    allowExhaustedRetry: adminAllowsExhaustedRetry(publication.platform),
   });
 
   const published = result.status === "published";
