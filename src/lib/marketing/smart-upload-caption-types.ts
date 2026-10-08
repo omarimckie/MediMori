@@ -12,11 +12,17 @@ export type SmartUploadCaptionPlatformDraft = {
   hashtags?: string[];
 };
 
+export type SmartUploadPinterestCaptionDraft = {
+  title: string;
+  description: string;
+};
+
 export type SmartUploadCaptionGenerationResult = {
   mode: SmartUploadCaptionMode;
   shared?: SmartUploadCaptionSharedDraft;
   instagram?: SmartUploadCaptionPlatformDraft;
   facebook?: SmartUploadCaptionPlatformDraft;
+  pinterest: SmartUploadPinterestCaptionDraft;
   warnings: string[];
   imagePathname: string;
   provider: string;
@@ -40,4 +46,6 @@ export type SmartUploadCaptionModelPayload = {
   instagramCta?: string | null;
   facebookBody?: string;
   facebookCta?: string | null;
+  pinterestTitle: string;
+  pinterestDescription: string;
 };

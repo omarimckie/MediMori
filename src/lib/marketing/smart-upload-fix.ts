@@ -12,10 +12,15 @@ import {
   INSTAGRAM_FEED_ASPECT_RATIO_MAX,
   INSTAGRAM_FEED_ASPECT_RATIO_MIN,
 } from "./platform-suitability";
-import type { SmartUploadValidationIssue } from "./smart-upload";
+import type { SmartUploadValidationIssue } from "./smart-upload-destinations";
+import {
+  metaImagePassesValidation,
+  pinterestImagePassesValidation,
+  type SmartUploadDestinations,
+} from "./smart-upload-destinations";
 
 export type SmartUploadFixStrategy = "pad" | "crop";
-export type SmartUploadFixTargetRatio = "4:5" | "1:1";
+export type SmartUploadFixTargetRatio = "4:5" | "1:1" | "2:3";
 
 export const SMART_UPLOAD_FIX_PAD_BACKGROUND = "#ffffff";
 
@@ -35,7 +40,9 @@ export const smartUploadOriginalTag = (originalAssetId: string) =>
   `smart_upload:original:${originalAssetId}`;
 
 export function targetRatioValue(target: SmartUploadFixTargetRatio): number {
-  return target === "4:5" ? 4 / 5 : 1;
+  if (target === "4:5") return 4 / 5;
+  if (target === "2:3") return 2 / 3;
+  return 1;
 }
 
 export function isSmartUploadAspectRatioOnlyFailure(
@@ -103,6 +110,7 @@ export async function transformSmartUploadImage(input: {
   buffer: Buffer;
   strategy: SmartUploadFixStrategy;
   targetRatio: SmartUploadFixTargetRatio;
+  destinations?: SmartUploadDestinations;
 }): Promise<{ buffer: Buffer; mime: string; truth: AssetImageTruth }> {
   const { kind } = assertImageUpload(input.buffer);
   const { width, height } = await probeImageDimensions(input.buffer);
@@ -153,23 +161,36 @@ export async function transformSmartUploadImage(input: {
   }
   const dimensions = await probeImageDimensions(output);
   const truth = truthFromDimensions(dimensions.width, dimensions.height, dimensions.mimeType);
-  assertDualPlatformSuitability(truth);
+  const destinations = input.destinations ?? { facebook: true, instagram: true, pinterest: false };
+  assertTransformedImageForDestinations(truth, destinations, input.targetRatio);
   return { buffer: output, mime: outMime, truth };
 }
 
-function assertDualPlatformSuitability(truth: AssetImageTruth): void {
-  if (!isAssetSuitableForPlatform(truth, "instagram", "post")) {
-    throw new Error("Transformed image is not suitable for Instagram feed.");
+export function assertTransformedImageForDestinations(
+  truth: AssetImageTruth,
+  destinations: SmartUploadDestinations,
+  targetRatio: SmartUploadFixTargetRatio,
+): void {
+  if (targetRatio === "2:3") {
+    if (!pinterestImagePassesValidation(truth, { ...destinations, pinterest: true })) {
+      throw new Error("Transformed image is not suitable for Pinterest pin.");
+    }
+    return;
   }
-  if (!isAssetSuitableForPlatform(truth, "facebook", "post")) {
-    throw new Error("Transformed image is not suitable for Facebook feed.");
+  if (!metaImagePassesValidation(truth, destinations)) {
+    throw new Error("Transformed image is not suitable for selected Meta feed destinations.");
   }
   const ratio = truth.aspectRatio;
   if (ratio < INSTAGRAM_FEED_ASPECT_RATIO_MIN || ratio > INSTAGRAM_FEED_ASPECT_RATIO_MAX) {
     throw new Error(
-      `Transformed aspect ratio ${ratio.toFixed(3)} is outside the shared Smart Upload range.`,
+      `Transformed aspect ratio ${ratio.toFixed(3)} is outside the Meta Smart Upload range.`,
     );
   }
+}
+
+/** @deprecated Use assertTransformedImageForDestinations */
+function assertDualPlatformSuitability(truth: AssetImageTruth): void {
+  assertTransformedImageForDestinations(truth, { facebook: true, instagram: true, pinterest: false }, "4:5");
 }
 
 export function parseSmartUploadFixStrategy(value: string): SmartUploadFixStrategy {
@@ -182,6 +203,7 @@ export function parseSmartUploadFixStrategy(value: string): SmartUploadFixStrate
 export function parseSmartUploadFixTargetRatio(value: string): SmartUploadFixTargetRatio {
   const normalized = value.trim();
   if (normalized === "4:5" || normalized === "4/5") return "4:5";
+  if (normalized === "2:3" || normalized === "2/3") return "2:3";
   if (normalized === "1:1" || normalized === "square" || normalized === "1/1") return "1:1";
-  throw new Error("targetRatio must be 4:5 or 1:1.");
+  throw new Error("targetRatio must be 4:5, 2:3, or 1:1.");
 }

@@ -114,12 +114,19 @@ export function parseGenerateCaptionsResponse(
   const warnings = Array.isArray(payload.warnings)
     ? payload.warnings.map((w) => String(w))
     : [];
+  const pinterestRaw = payload.pinterest as Record<string, unknown> | undefined;
+  const pinterest = {
+    title: String(pinterestRaw?.title ?? ""),
+    description: String(pinterestRaw?.description ?? ""),
+  };
+
   const base = {
     warnings,
     imagePathname: String(payload.imagePathname ?? ""),
     provider: String(payload.provider ?? ""),
     model: payload.model == null ? undefined : String(payload.model),
     mock: Boolean(payload.mock),
+    pinterest,
   };
 
   if (mode === "per_platform") {
@@ -199,6 +206,10 @@ export function applySuccessfulCaptionGeneration(
         body: response.facebook.body,
         cta: response.facebook.cta ?? "",
       },
+      pinterest: {
+        title: response.pinterest.title,
+        description: response.pinterest.description,
+      },
     };
   }
 
@@ -213,6 +224,10 @@ export function applySuccessfulCaptionGeneration(
       body: response.shared.body,
       cta: response.shared.cta ?? "",
       instagramHashtags: [...response.shared.instagramHashtags],
+    },
+    pinterest: {
+      title: response.pinterest.title,
+      description: response.pinterest.description,
     },
   };
 }

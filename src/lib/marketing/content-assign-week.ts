@@ -68,7 +68,13 @@ export async function assignContentToWeeklyPlan(
 export type SmartUploadPairResolution =
   | { kind: "not_smart_upload" }
   | { kind: "no_finalize_key" }
-  | { kind: "complete"; finalizeKey: string; instagramId: string; facebookId: string }
+  | {
+      kind: "complete";
+      finalizeKey: string;
+      instagramId: string | null;
+      facebookId: string | null;
+      pinterestId: string | null;
+    }
   | { kind: "partial_or_inconsistent"; finalizeKey: string; message: string };
 
 export async function resolveSmartUploadPairForContent(
@@ -88,8 +94,9 @@ export async function resolveSmartUploadPairForContent(
     return {
       kind: "complete",
       finalizeKey,
-      instagramId: lookup.instagram.id,
-      facebookId: lookup.facebook.id,
+      instagramId: lookup.instagram?.id ?? null,
+      facebookId: lookup.facebook?.id ?? null,
+      pinterestId: lookup.pinterest?.id ?? null,
     };
   }
 

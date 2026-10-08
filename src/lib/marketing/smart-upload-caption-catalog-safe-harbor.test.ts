@@ -100,7 +100,15 @@ afterEach(() => {
   else process.env.ADMIN_SESSION_SECRET = originalSecret;
 });
 
-function testProvider(payload: SmartUploadCaptionModelPayload): AIProvider {
+function testProvider(
+  payload: Omit<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription"> &
+    Partial<Pick<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription">>,
+): AIProvider {
+  const normalized: SmartUploadCaptionModelPayload = {
+    ...payload,
+    pinterestTitle: payload.pinterestTitle ?? "Story pin",
+    pinterestDescription: payload.pinterestDescription ?? "Discover our children's book.",
+  };
   return {
     id: "test",
     async generateText() {
@@ -110,7 +118,7 @@ function testProvider(payload: SmartUploadCaptionModelPayload): AIProvider {
       return fallback;
     },
     async generateMultimodalStructuredOutput<T>() {
-      return payload as T;
+      return normalized as T;
     },
     async classify() {
       return "";

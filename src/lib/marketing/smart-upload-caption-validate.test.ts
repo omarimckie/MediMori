@@ -10,6 +10,11 @@ import {
 
 const SICKLE_STORY = APPROVED_CLAIMS.find((c) => c.id === "sickle-cell-story")!.body;
 
+const PIN_FIELDS = {
+  pinterestTitle: "Story pin",
+  pinterestDescription: "A warm invitation to read together.",
+};
+
 test("parseAndValidateModelPayload shared mode happy path", () => {
   const parsed = parseAndValidateModelPayload(
     {
@@ -18,6 +23,7 @@ test("parseAndValidateModelPayload shared mode happy path", () => {
       sharedBody: "Hello",
       sharedCta: null,
       instagramHashtags: ["Parenting"],
+      ...PIN_FIELDS,
     },
     "shared",
   );
@@ -29,7 +35,13 @@ test("wrong mode rejected", () => {
   assert.throws(
     () =>
       parseAndValidateModelPayload(
-        { mode: "per_platform", usedMedicalClaims: [], sharedBody: "x", instagramHashtags: [] },
+        {
+          mode: "per_platform",
+          usedMedicalClaims: [],
+          sharedBody: "x",
+          instagramHashtags: [],
+          ...PIN_FIELDS,
+        },
         "shared",
       ),
     SmartUploadCaptionProviderError,
@@ -45,6 +57,7 @@ test("malformed hashtags type rejected", () => {
           usedMedicalClaims: [],
           sharedBody: "Hello",
           instagramHashtags: "not-an-array",
+          ...PIN_FIELDS,
         },
         "shared",
       ),
@@ -61,6 +74,7 @@ test("mixed hashtag array rejects non-string entry", () => {
           usedMedicalClaims: [],
           sharedBody: "Hello",
           instagramHashtags: ["ok", 123],
+          ...PIN_FIELDS,
         },
         "shared",
       ),
@@ -77,6 +91,7 @@ test("huge body rejected", () => {
           usedMedicalClaims: [],
           sharedBody: "x".repeat(SMART_UPLOAD_CAPTION_MAX_BODY_CHARS + 1),
           instagramHashtags: [],
+          ...PIN_FIELDS,
         },
         "shared",
       ),
@@ -94,6 +109,7 @@ test("malformed CTA type rejected", () => {
           sharedBody: "Hello",
           sharedCta: { bad: true },
           instagramHashtags: [],
+          ...PIN_FIELDS,
         },
         "shared",
       ),
@@ -126,6 +142,7 @@ test("excessive hashtag array rejected", () => {
           usedMedicalClaims: [],
           sharedBody: "Hello",
           instagramHashtags: tags,
+          ...PIN_FIELDS,
         },
         "shared",
       ),

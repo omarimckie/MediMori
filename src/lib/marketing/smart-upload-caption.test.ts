@@ -47,7 +47,15 @@ const originalSecret = process.env.ADMIN_SESSION_SECRET;
 
 
 
-function testProvider(payload: SmartUploadCaptionModelPayload): AIProvider {
+function testProvider(
+  payload: Omit<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription"> &
+    Partial<Pick<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription">>,
+): AIProvider {
+  const normalized: SmartUploadCaptionModelPayload = {
+    ...payload,
+    pinterestTitle: payload.pinterestTitle ?? "Story pin",
+    pinterestDescription: payload.pinterestDescription ?? "Discover our children's book.",
+  };
 
   return {
 
@@ -67,7 +75,7 @@ function testProvider(payload: SmartUploadCaptionModelPayload): AIProvider {
 
     async generateMultimodalStructuredOutput<T>() {
 
-      return payload as T;
+      return normalized as T;
 
     },
 
@@ -794,6 +802,10 @@ test("invalid model payload rejected as provider error", async () => {
     usedMedicalClaims: [],
 
     instagramBody: "only ig",
+
+    pinterestTitle: "Pin",
+
+    pinterestDescription: "Description",
 
   } as SmartUploadCaptionModelPayload);
 

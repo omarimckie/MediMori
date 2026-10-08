@@ -4,8 +4,11 @@ import type {
   UsedMedicalClaimModelEntry,
 } from "./smart-upload-caption-types";
 import { SmartUploadCaptionProviderError } from "./smart-upload-caption-errors";
+import { truncatePinterestDescription, truncatePinterestTitle } from "./pinterest";
 
 export const SMART_UPLOAD_CAPTION_MAX_BODY_CHARS = 2200;
+export const SMART_UPLOAD_CAPTION_MAX_PINTEREST_TITLE_CHARS = 100;
+export const SMART_UPLOAD_CAPTION_MAX_PINTEREST_DESCRIPTION_CHARS = 800;
 export const SMART_UPLOAD_CAPTION_MAX_CTA_CHARS = 500;
 export const SMART_UPLOAD_CAPTION_MAX_HASHTAG_ITEMS = 32;
 export const SMART_UPLOAD_CAPTION_MAX_USED_MEDICAL_CLAIMS = 16;
@@ -107,6 +110,18 @@ export function parseAndValidateModelPayload(
   }
 
   const usedMedicalClaims = parseUsedMedicalClaimsFromModel(record.usedMedicalClaims);
+  const pinterestTitle = truncatePinterestTitle(
+    assertStringField(record.pinterestTitle, "pinterestTitle").slice(
+      0,
+      SMART_UPLOAD_CAPTION_MAX_PINTEREST_TITLE_CHARS,
+    ),
+  );
+  const pinterestDescription = truncatePinterestDescription(
+    assertStringField(record.pinterestDescription, "pinterestDescription").slice(
+      0,
+      SMART_UPLOAD_CAPTION_MAX_PINTEREST_DESCRIPTION_CHARS,
+    ),
+  );
 
   if (mode === "shared") {
     const sharedBody = assertStringField(record.sharedBody, "sharedBody");
@@ -121,6 +136,8 @@ export function parseAndValidateModelPayload(
       sharedBody,
       sharedCta,
       instagramHashtags,
+      pinterestTitle,
+      pinterestDescription,
       usedMedicalClaims,
     };
   }
@@ -142,6 +159,8 @@ export function parseAndValidateModelPayload(
     instagramCta,
     facebookCta,
     instagramHashtags,
+    pinterestTitle,
+    pinterestDescription,
     usedMedicalClaims,
   };
 }

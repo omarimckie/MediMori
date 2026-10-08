@@ -24,7 +24,7 @@ export type SmartUploadPreviewDerivativeIntentPayload = {
   originalPathname: string;
   finalizeKey: string;
   strategy: "pad" | "crop";
-  targetRatio: "4:5" | "1:1";
+  targetRatio: "4:5" | "1:1" | "2:3";
   iat: number;
   exp: number;
 };
@@ -151,7 +151,7 @@ export function issueSmartUploadPreviewDerivativeIntent(input: {
   originalPathname: string;
   finalizeKey: string;
   strategy: "pad" | "crop";
-  targetRatio: "4:5" | "1:1";
+  targetRatio: "4:5" | "1:1" | "2:3";
 }): { uploadIntent: string; expiresAt: number } {
   assertMarketingPublicPathname(input.pathname);
   assertMarketingPublicPathname(input.originalPathname);
@@ -233,7 +233,7 @@ export function verifySmartUploadPreviewDerivativeIntentForFinalize(
     originalPathname: string;
     finalizeKey: string;
     strategy: "pad" | "crop";
-    targetRatio: "4:5" | "1:1";
+    targetRatio: "4:5" | "1:1" | "2:3";
   },
 ): SmartUploadPreviewDerivativeIntentPayload {
   const payload = verifySmartUploadPreviewDerivativeIntentForPathname(

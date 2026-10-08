@@ -45,11 +45,25 @@ import type {
   MarketingContentMetadata,
 } from "./types";
 
-export type SmartUploadValidationIssue = {
-  code: string;
-  message: string;
-  platform?: "instagram" | "facebook";
-};
+export type { SmartUploadValidationIssue } from "./smart-upload-destinations";
+import {
+  assertAtLeastOneDestination,
+  collectSmartUploadValidationIssues,
+  metaImagePassesValidation,
+  pinterestImagePassesValidation,
+  normalizeSmartUploadDestinations,
+  SMART_UPLOAD_DESTINATIONS_META_ONLY,
+  metaDestinationsSelected,
+  type SmartUploadDestinations,
+  type SmartUploadValidationIssue,
+} from "./smart-upload-destinations";
+import {
+  finalizeResultFromLookup,
+  persistSmartUploadMultiPlatform,
+  resolveSmartUploadFinalizeCaptions,
+  resolveSmartUploadPinterestCopy,
+  type SmartUploadImageOutputs,
+} from "./smart-upload-finalize";
 
 export type SmartUploadValidationResult =
   | { ok: true; truth: AssetImageTruth; mime: string }
@@ -64,6 +78,9 @@ export type SmartUploadFinalizeInput = {
   caption: string;
   /** When set, Facebook and Instagram content bodies use these strings instead of `caption`. */
   platformCaptions?: SmartUploadPlatformCaptions;
+  destinations?: SmartUploadDestinations;
+  pinterestTitle?: string | null;
+  pinterestDescription?: string | null;
   batchId: string;
   finalizeKey: string;
   weeklyPlanId?: string | null;
@@ -81,11 +98,17 @@ export type SmartUploadFixFinalizeBundle = {
   original: SmartUploadStagedBlobRef;
 };
 
+export type SmartUploadStagedOutputRef = SmartUploadStagedBlobRef & {
+  fix?: SmartUploadFixFinalizeBundle;
+};
+
 export type SmartUploadBlobFinalizeInput = SmartUploadFinalizeInput & {
   uploadIntent: string;
   pathname: string;
   publicUrl: string;
   fix?: SmartUploadFixFinalizeBundle;
+  /** When Pinterest needs a separate derivative from the original upload. */
+  pinterestOutput?: SmartUploadStagedOutputRef;
 };
 
 export { isSmartUploadAspectRatioOnlyFailure } from "./smart-upload-fix";
@@ -97,21 +120,27 @@ export type SmartUploadBufferFinalizeInput = SmartUploadFinalizeInput & {
 
 export type SmartUploadFinalizeResult = {
   assetId: string;
-  instagramContentId: string;
-  facebookContentId: string;
-  instagram: MarketingContent;
-  facebook: MarketingContent;
+  destinations: SmartUploadDestinations;
+  instagramContentId: string | null;
+  facebookContentId: string | null;
+  pinterestContentId: string | null;
+  instagram: MarketingContent | null;
+  facebook: MarketingContent | null;
+  pinterest: MarketingContent | null;
   idempotentReplay: boolean;
 };
 
+export { resolveSmartUploadFinalizeCaptions } from "./smart-upload-finalize";
+
 export async function validateSmartUploadImageBytes(
   buffer: Buffer,
+  destinations: SmartUploadDestinations = SMART_UPLOAD_DESTINATIONS_META_ONLY,
 ): Promise<SmartUploadValidationResult> {
   try {
     const { mime } = assertImageUpload(buffer);
     const dimensions = await probeImageDimensions(buffer);
     const truth = truthFromDimensions(dimensions.width, dimensions.height, dimensions.mimeType);
-    return validateSmartUploadTruth(truth, mime);
+    return validateSmartUploadTruth(truth, mime, destinations);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid image.";
     return {
@@ -121,22 +150,12 @@ export async function validateSmartUploadImageBytes(
   }
 }
 
-function validateSmartUploadTruth(truth: AssetImageTruth, mime: string): SmartUploadValidationResult {
-  const issues: SmartUploadValidationIssue[] = [];
-  if (!isAssetSuitableForPlatform(truth, "instagram", "post")) {
-    issues.push({
-      code: "invalid_aspect_ratio",
-      platform: "instagram",
-      message: describeAspectRatioFailure("instagram", truth, "post"),
-    });
-  }
-  if (!isAssetSuitableForPlatform(truth, "facebook", "post")) {
-    issues.push({
-      code: "invalid_aspect_ratio",
-      platform: "facebook",
-      message: describeAspectRatioFailure("facebook", truth, "post"),
-    });
-  }
+function validateSmartUploadTruth(
+  truth: AssetImageTruth,
+  mime: string,
+  destinations: SmartUploadDestinations,
+): SmartUploadValidationResult {
+  const issues = collectSmartUploadValidationIssues(truth, destinations);
   if (issues.length > 0) {
     return { ok: false, issues };
   }
@@ -165,27 +184,13 @@ async function resolveOptionalPlanAndCampaign(
   return { weeklyPlanId: resolvedWeeklyPlanId, campaignId: resolvedCampaignId };
 }
 
-function finalizeResultFromComplete(
-  lookup: Extract<SmartUploadFinalizeLookup, { status: "complete" }>,
-  idempotentReplay: boolean,
-): SmartUploadFinalizeResult {
-  return {
-    assetId: lookup.assetId,
-    instagramContentId: lookup.instagram.id,
-    facebookContentId: lookup.facebook.id,
-    instagram: lookup.instagram,
-    facebook: lookup.facebook,
-    idempotentReplay,
-  };
-}
-
 export async function findSmartUploadFinalizeResult(
   store: MarketingStore,
   finalizeKey: string,
 ): Promise<SmartUploadFinalizeResult | null> {
   const lookup = await store.findSmartUploadContentByFinalizeKey(finalizeKey);
   if (lookup.status === "complete") {
-    return finalizeResultFromComplete(lookup, true);
+    return finalizeResultFromLookup(lookup, true);
   }
   return null;
 }
@@ -205,15 +210,16 @@ async function rollbackOwnedFinalizeAttempt(
   const protectedAssetIds = new Set<string>();
   if (finalizeKey?.trim()) {
     const lookup = await store.findSmartUploadContentByFinalizeKey(finalizeKey);
-    if (lookup.status === "complete") {
-      protectedContentIds.add(lookup.instagram.id);
-      protectedContentIds.add(lookup.facebook.id);
+    if (lookup.status === "complete" || lookup.status === "partial") {
+      for (const row of [lookup.instagram, lookup.facebook, lookup.pinterest]) {
+        if (row) protectedContentIds.add(row.id);
+      }
       protectedAssetIds.add(lookup.assetId);
-      const originalId = lookup.instagram.metadata?.originalAssetId?.trim();
+      const originalId =
+        lookup.instagram?.metadata?.originalAssetId?.trim() ??
+        lookup.facebook?.metadata?.originalAssetId?.trim() ??
+        lookup.pinterest?.metadata?.originalAssetId?.trim();
       if (originalId) protectedAssetIds.add(originalId);
-    } else if (lookup.status === "partial") {
-      protectedContentIds.add(lookup.instagram.id);
-      protectedAssetIds.add(lookup.assetId);
     }
   }
 
@@ -265,38 +271,14 @@ type SmartUploadPersistContext = {
   >;
 };
 
-export function resolveSmartUploadFinalizeCaptions(
-  input: Pick<SmartUploadFinalizeInput, "caption" | "platformCaptions">,
-): SmartUploadPlatformCaptions & { primaryForAssetAlt: string } {
-  const platform = input.platformCaptions;
-  if (platform) {
-    const facebook = platform.facebook.trim();
-    const instagram = platform.instagram.trim();
-    if (!facebook || !instagram) {
-      throw new Error("Facebook and Instagram captions are required.");
-    }
-    return {
-      facebook,
-      instagram,
-      primaryForAssetAlt: instagram,
-    };
-  }
-  const caption = input.caption.trim();
-  if (!caption) throw new Error("Caption is required.");
-  return {
-    facebook: caption,
-    instagram: caption,
-    primaryForAssetAlt: caption,
-  };
-}
-
 async function buildSmartUploadPersistContext(
   store: MarketingStore,
   input: SmartUploadPersistInput,
   validation: { truth: AssetImageTruth; mime: string },
   assetId: string,
 ): Promise<SmartUploadPersistContext> {
-  const resolved = resolveSmartUploadFinalizeCaptions(input);
+  const destinations = normalizeSmartUploadDestinations(input.destinations);
+  const resolved = resolveSmartUploadFinalizeCaptions(input, destinations);
   const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
     store,
     input.weeklyPlanId,
@@ -410,7 +392,7 @@ async function recoverSmartUploadAfterConflict(
     throw new Error(lookup.reason);
   }
   if (lookup.status === "complete") {
-    return finalizeResultFromComplete(lookup, true);
+    return finalizeResultFromLookup(lookup, true);
   }
   if (lookup.status === "partial") {
     return completePartialSmartUpload(store, input, validation, lookup, true);
@@ -425,6 +407,9 @@ async function completePartialSmartUpload(
   lookup: Extract<SmartUploadFinalizeLookup, { status: "partial" }>,
   idempotentReplay: boolean,
 ): Promise<SmartUploadFinalizeResult> {
+  if (!lookup.instagram) {
+    throw new Error("Partial Smart Upload finalize is missing an Instagram row.");
+  }
   const assetId = lookup.assetId;
   const owned: OwnedFinalizeResources = {
     contentIds: [],
@@ -464,20 +449,17 @@ async function completePartialSmartUpload(
       assetId,
     );
 
-    return {
-      assetId,
-      instagramContentId: lookup.instagram.id,
-      facebookContentId: facebook.id,
-      instagram: lookup.instagram,
-      facebook,
-      idempotentReplay,
-    };
+    const after = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+    if (after.status !== "complete") {
+      throw new Error("Smart Upload partial recovery did not reach a complete state.");
+    }
+    return finalizeResultFromLookup(after, idempotentReplay);
   } catch (error) {
     if (isSmartUploadFinalizeKeyConflict(error)) {
       await rollbackOwnedFinalizeAttempt(store, owned, input.finalizeKey);
       const after = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
       if (after.status === "complete") {
-        return finalizeResultFromComplete(after, true);
+        return finalizeResultFromLookup(after, true);
       }
     }
     await rollbackOwnedFinalizeAttempt(store, owned, input.finalizeKey);
@@ -495,7 +477,7 @@ async function persistSmartUploadRecords(
     throw new Error(initialLookup.reason);
   }
   if (initialLookup.status === "complete") {
-    return finalizeResultFromComplete(initialLookup, true);
+    return finalizeResultFromLookup(initialLookup, true);
   }
   if (initialLookup.status === "partial") {
     return completePartialSmartUpload(store, input, validation, initialLookup, true);
@@ -545,14 +527,11 @@ async function persistSmartUploadRecords(
 
     await recordSmartUploadFinalizedEvent(store, ctx, input, instagram, facebook, asset.id);
 
-    return {
-      assetId: asset.id,
-      instagramContentId: instagram.id,
-      facebookContentId: facebook.id,
-      instagram,
-      facebook,
-      idempotentReplay: false,
-    };
+    const after = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+    if (after.status !== "complete") {
+      throw new Error("Smart Upload finalize did not reach a complete state.");
+    }
+    return finalizeResultFromLookup(after, false);
   } catch (error) {
     if (isSmartUploadFinalizeKeyConflict(error)) {
       return recoverSmartUploadAfterConflict(store, input, validation, owned);
@@ -581,11 +560,169 @@ export async function validateSmartUploadStagedBlob(input: {
   pathname: string;
   publicUrl: string;
   actor: string | null;
+  destinations?: SmartUploadDestinations;
 }): Promise<SmartUploadValidationResult> {
   verifySmartUploadIntentForPathname(input.uploadIntent, input.actor, input.pathname);
   assertPreviewPublicUrlMatchesPathname(input.pathname, input.publicUrl);
   const buffer = await readMarketingBlobBuffer(input.pathname, "public");
-  return validateSmartUploadImageBytes(buffer);
+  return validateSmartUploadImageBytes(
+    buffer,
+    normalizeSmartUploadDestinations(input.destinations),
+  );
+}
+
+async function readStagedBlobTruth(
+  ref: SmartUploadStagedBlobRef,
+  actor: string | null,
+): Promise<{ truth: AssetImageTruth; mime: string; buffer: Buffer }> {
+  verifySmartUploadIntentForPathname(ref.uploadIntent, actor, ref.pathname);
+  assertPreviewPublicUrlMatchesPathname(ref.pathname, ref.publicUrl);
+  const buffer = await readMarketingBlobBuffer(ref.pathname, "public");
+  const { mime } = assertImageUpload(buffer);
+  const truth = await probeSmartUploadOriginalTruth(buffer);
+  return { truth, mime, buffer };
+}
+
+async function validatedBlobTruth(
+  ref: SmartUploadStagedBlobRef,
+  actor: string | null,
+  destinations: SmartUploadDestinations,
+): Promise<{ truth: AssetImageTruth; mime: string; buffer: Buffer }> {
+  verifySmartUploadIntentForPathname(ref.uploadIntent, actor, ref.pathname);
+  assertPreviewPublicUrlMatchesPathname(ref.pathname, ref.publicUrl);
+  const buffer = await readMarketingBlobBuffer(ref.pathname, "public");
+  const validation = assertValidationOk(await validateSmartUploadImageBytes(buffer, destinations));
+  return { ...validation, buffer };
+}
+
+async function assembleBlobFinalizeOutputs(
+  input: SmartUploadBlobFinalizeInput,
+  destinations: SmartUploadDestinations,
+): Promise<SmartUploadImageOutputs> {
+  const originalRef: SmartUploadStagedBlobRef = input.fix?.original ?? {
+    uploadIntent: input.uploadIntent,
+    pathname: input.pathname,
+    publicUrl: input.publicUrl,
+  };
+
+  const original = await readStagedBlobTruth(originalRef, input.actor);
+  const originalAssetId = crypto.randomUUID();
+  const outputs: SmartUploadImageOutputs = {
+    original: {
+      assetId: originalAssetId,
+      url: originalRef.publicUrl.trim(),
+      truth: original.truth,
+      mime: original.mime,
+    },
+  };
+
+  if (metaDestinationsSelected(destinations)) {
+    if (input.fix) {
+      verifySmartUploadPreviewDerivativeIntentForFinalize(input.uploadIntent, input.actor, {
+        derivativePathname: input.pathname,
+        originalPathname: input.fix.original.pathname,
+        finalizeKey: input.finalizeKey,
+        strategy: input.fix.strategy,
+        targetRatio: input.fix.targetRatio,
+      });
+      assertPreviewPublicUrlMatchesPathname(input.pathname, input.publicUrl);
+      const metaBuffer = await readMarketingBlobBuffer(input.pathname, "public");
+      const metaValidation = assertValidationOk(
+        await validateSmartUploadImageBytes(metaBuffer, { ...destinations, pinterest: false }),
+      );
+      outputs.meta = {
+        assetId: crypto.randomUUID(),
+        url: input.publicUrl.trim(),
+        truth: metaValidation.truth,
+        mime: metaValidation.mime,
+        fix: input.fix,
+      };
+    } else if (!metaImagePassesValidation(original.truth, destinations)) {
+      throwValidationFailure({
+        ok: false,
+        issues: collectSmartUploadValidationIssues(original.truth, destinations).filter(
+          (issue) => issue.platform !== "pinterest",
+        ),
+      });
+    }
+  }
+
+  if (destinations.pinterest) {
+    if (input.pinterestOutput) {
+      const pinRef = input.pinterestOutput;
+      if (pinRef.fix) {
+        verifySmartUploadPreviewDerivativeIntentForFinalize(pinRef.uploadIntent, input.actor, {
+          derivativePathname: pinRef.pathname,
+          originalPathname: pinRef.fix.original.pathname,
+          finalizeKey: input.finalizeKey,
+          strategy: pinRef.fix.strategy,
+          targetRatio: pinRef.fix.targetRatio,
+        });
+      } else {
+        verifySmartUploadIntentForPathname(pinRef.uploadIntent, input.actor, pinRef.pathname);
+      }
+      assertPreviewPublicUrlMatchesPathname(pinRef.pathname, pinRef.publicUrl);
+      const pinBuffer = await readMarketingBlobBuffer(pinRef.pathname, "public");
+      const pinValidation = assertValidationOk(
+        await validateSmartUploadImageBytes(pinBuffer, {
+          facebook: false,
+          instagram: false,
+          pinterest: true,
+        }),
+      );
+      outputs.pinterest = {
+        assetId: crypto.randomUUID(),
+        url: pinRef.publicUrl.trim(),
+        truth: pinValidation.truth,
+        mime: pinValidation.mime,
+        fix: pinRef.fix,
+      };
+    } else if (!pinterestImagePassesValidation(original.truth, destinations)) {
+      throwValidationFailure({
+        ok: false,
+        issues: collectSmartUploadValidationIssues(original.truth, {
+          facebook: false,
+          instagram: false,
+          pinterest: true,
+        }),
+      });
+    }
+  }
+
+  return outputs;
+}
+
+async function runSmartUploadFinalize(
+  store: MarketingStore,
+  input: SmartUploadFinalizeInput & {
+    outputs: SmartUploadImageOutputs;
+    rollbackBlobPathname: string | null;
+  },
+): Promise<SmartUploadFinalizeResult> {
+  const destinations = normalizeSmartUploadDestinations(input.destinations);
+  assertAtLeastOneDestination(destinations);
+  if (metaDestinationsSelected(destinations)) {
+    resolveSmartUploadFinalizeCaptions(input, destinations);
+  }
+  const pinterestCopy = resolveSmartUploadPinterestCopy({
+    destinations,
+    pinterestTitle: input.pinterestTitle,
+    pinterestDescription: input.pinterestDescription,
+  });
+  const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
+    store,
+    input.weeklyPlanId,
+    input.campaignId,
+  );
+  return persistSmartUploadMultiPlatform(store, {
+    ...input,
+    destinations,
+    pinterestCopy,
+    weeklyPlanId,
+    campaignId,
+    outputs: input.outputs,
+    rollbackBlobPathname: input.rollbackBlobPathname,
+  });
 }
 
 async function probeSmartUploadOriginalTruth(buffer: Buffer): Promise<AssetImageTruth> {
@@ -678,7 +815,8 @@ async function buildFixedSmartUploadPersistContext(
   originalAssetId: string,
   fix: SmartUploadFixFinalizeBundle,
 ): Promise<SmartUploadPersistContext> {
-  const resolved = resolveSmartUploadFinalizeCaptions(input);
+  const destinations = normalizeSmartUploadDestinations(input.destinations);
+  const resolved = resolveSmartUploadFinalizeCaptions(input, destinations);
   const { weeklyPlanId, campaignId } = await resolveOptionalPlanAndCampaign(
     store,
     input.weeklyPlanId,
@@ -758,7 +896,7 @@ async function persistFixedSmartUploadRecords(
     throw new Error(initialLookup.reason);
   }
   if (initialLookup.status === "complete") {
-    return finalizeResultFromComplete(initialLookup, true);
+    return finalizeResultFromLookup(initialLookup, true);
   }
   if (initialLookup.status === "partial") {
     throw new Error(
@@ -849,14 +987,11 @@ async function persistFixedSmartUploadRecords(
       derivativeAsset.id,
     );
 
-    return {
-      assetId: derivativeAsset.id,
-      instagramContentId: instagram.id,
-      facebookContentId: facebook.id,
-      instagram,
-      facebook,
-      idempotentReplay: false,
-    };
+    const after = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+    if (after.status !== "complete") {
+      throw new Error("Smart Upload fixed finalize did not reach a complete state.");
+    }
+    return finalizeResultFromLookup(after, false);
   } catch (error) {
     if (isSmartUploadFinalizeKeyConflict(error)) {
       return recoverSmartUploadAfterConflict(store, input, derivativeValidation, owned);
@@ -951,30 +1086,34 @@ export async function finalizeSmartUploadFixedFromBuffers(
     derivativePathname,
   );
 
-  resolveSmartUploadFinalizeCaptions(input);
-
+  const destinations = normalizeSmartUploadDestinations(input.destinations);
   const originalMime = assertImageUpload(input.originalBuffer).mime;
   const originalTruth = await probeSmartUploadOriginalTruth(input.originalBuffer);
   const derivativeValidation = assertValidationOk(
-    await validateSmartUploadImageBytes(input.derivativeBuffer),
+    await validateSmartUploadImageBytes(input.derivativeBuffer, destinations),
   );
+  const originalAssetId = crypto.randomUUID();
 
-  return persistFixedSmartUploadRecords(
-    store,
-    {
-      ...input,
-      imageBuffer: input.derivativeBuffer,
-      imageFilename: input.imageFilename ?? "upload.jpg",
-      assetUrl: input.derivativeAssetUrl,
-      rollbackBlobPathname: null,
+  return runSmartUploadFinalize(store, {
+    ...input,
+    destinations,
+    outputs: {
+      original: {
+        assetId: originalAssetId,
+        url: input.originalAssetUrl,
+        truth: originalTruth,
+        mime: originalMime,
+      },
+      meta: {
+        assetId: crypto.randomUUID(),
+        url: input.derivativeAssetUrl,
+        truth: derivativeValidation.truth,
+        mime: derivativeValidation.mime,
+        fix: input.fix,
+      },
     },
-    originalTruth,
-    originalMime,
-    derivativeValidation,
-    input.fix,
-    input.originalAssetUrl,
-    input.derivativeAssetUrl,
-  );
+    rollbackBlobPathname: null,
+  });
 }
 
 export async function generateSmartUploadPreviewFix(input: {
@@ -983,6 +1122,7 @@ export async function generateSmartUploadPreviewFix(input: {
   original: SmartUploadStagedBlobRef;
   strategy: SmartUploadFixStrategy;
   targetRatio: SmartUploadFixTargetRatio;
+  destinations?: SmartUploadDestinations;
   imageFilename?: string;
 }): Promise<{
   uploadIntent: string;
@@ -1000,19 +1140,25 @@ export async function generateSmartUploadPreviewFix(input: {
     input.original.pathname,
   );
   assertPreviewPublicUrlMatchesPathname(input.original.pathname, input.original.publicUrl);
+  const destinations = normalizeSmartUploadDestinations(input.destinations);
   const originalBuffer = await readMarketingBlobBuffer(input.original.pathname, "public");
-  const validation = await validateSmartUploadImageBytes(originalBuffer);
+  const fixDestinations =
+    input.targetRatio === "2:3"
+      ? { facebook: false, instagram: false, pinterest: true }
+      : { ...destinations, pinterest: false };
+  const validation = await validateSmartUploadImageBytes(originalBuffer, fixDestinations);
   if (validation.ok) {
-    throw new Error("Image already passes Smart Upload validation; fix is not required.");
+    throw new Error("Image already passes validation for this preview target; fix is not required.");
   }
   if (!isSmartUploadAspectRatioOnlyFailure(validation.issues)) {
-    throw new Error("Only invalid aspect ratio images can be fixed in Smart Upload Phase 3.");
+    throw new Error("Only invalid aspect ratio images can be fixed in Smart Upload.");
   }
 
   const transformed = await transformSmartUploadImage({
     buffer: originalBuffer,
     strategy: input.strategy,
     targetRatio: input.targetRatio,
+    destinations: fixDestinations,
   });
 
   const { kind } = assertImageUpload(transformed.buffer);
@@ -1069,29 +1215,68 @@ export async function finalizeSmartUploadFromBuffer(
   if (existing) return existing;
 
   try {
-    const validation = assertValidationOk(await validateSmartUploadImageBytes(input.imageBuffer));
+    const lookup = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+    if (lookup.status === "inconsistent") {
+      throw new Error(lookup.reason);
+    }
 
-    resolveSmartUploadFinalizeCaptions(input);
+    const destinations =
+      lookup.status === "partial"
+        ? lookup.destinations
+        : normalizeSmartUploadDestinations(input.destinations);
+    assertAtLeastOneDestination(destinations);
+    const validation = assertValidationOk(
+      await validateSmartUploadImageBytes(input.imageBuffer, destinations),
+    );
 
     if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
       throw new Error("Unknown book.");
     }
 
+    if (lookup.status === "partial") {
+      const asset = assertSmartUploadAssetRecord(
+        await store.getAsset(lookup.assetId),
+        lookup.assetId,
+      );
+      const recoveredUrl = asset.url?.trim();
+      if (!recoveredUrl) {
+        throw new Error("Smart Upload asset is missing a URL during partial recovery.");
+      }
+      const outputs: SmartUploadImageOutputs = {
+        original: {
+          assetId: lookup.assetId,
+          url: recoveredUrl,
+          truth: validation.truth,
+          mime: validation.mime,
+        },
+      };
+      return await runSmartUploadFinalize(store, {
+        ...input,
+        destinations,
+        outputs,
+        rollbackBlobPathname: null,
+      });
+    }
+
     const { kind, mime } = assertImageUpload(input.imageBuffer);
     const extension = extensionForKind(kind);
     const uploaded = await uploadPublicMarketingFile(input.imageBuffer, mime, extension);
-
-    return await persistSmartUploadRecords(
-      store,
-      {
-        ...input,
-        imageBuffer: input.imageBuffer,
-        imageFilename: input.imageFilename,
-        assetUrl: uploaded.url,
-        rollbackBlobPathname: uploaded.pathname,
+    const originalAssetId = crypto.randomUUID();
+    const outputs: SmartUploadImageOutputs = {
+      original: {
+        assetId: originalAssetId,
+        url: uploaded.url,
+        truth: validation.truth,
+        mime: validation.mime,
       },
-      validation,
-    );
+    };
+
+    return await runSmartUploadFinalize(store, {
+      ...input,
+      destinations,
+      outputs,
+      rollbackBlobPathname: uploaded.pathname,
+    });
   } catch (error) {
     await observeSmartUploadFinalizeFailure(
       {
@@ -1113,38 +1298,40 @@ export async function finalizeSmartUploadFromBlob(
   if (existing) return existing;
 
   try {
-    resolveSmartUploadFinalizeCaptions(input);
+    const lookup = await store.findSmartUploadContentByFinalizeKey(input.finalizeKey);
+    if (lookup.status === "inconsistent") {
+      throw new Error(lookup.reason);
+    }
+
+    const destinations =
+      lookup.status === "partial"
+        ? lookup.destinations
+        : normalizeSmartUploadDestinations(input.destinations);
+    assertAtLeastOneDestination(destinations);
 
     if (input.bookId && !catalogBooks().some((book) => book.id === input.bookId)) {
       throw new Error("Unknown book.");
     }
 
-    if (input.fix) {
-      return await finalizeSmartUploadFixedFromStagedBlobs(store, input);
+    const outputs = await assembleBlobFinalizeOutputs(input, destinations);
+    if (lookup.status === "partial") {
+      const asset = assertSmartUploadAssetRecord(
+        await store.getAsset(lookup.assetId),
+        lookup.assetId,
+      );
+      const recoveredUrl = asset.url?.trim();
+      if (!recoveredUrl) {
+        throw new Error("Smart Upload asset is missing a URL during partial recovery.");
+      }
+      outputs.original.assetId = lookup.assetId;
+      outputs.original.url = recoveredUrl;
     }
-
-    const validation = assertValidationOk(
-      await validateSmartUploadStagedBlob({
-        uploadIntent: input.uploadIntent,
-        pathname: input.pathname,
-        publicUrl: input.publicUrl,
-        actor: input.actor,
-      }),
-    );
-
-    const buffer = await readMarketingBlobBuffer(input.pathname, "public");
-
-    return await persistSmartUploadRecords(
-      store,
-      {
-        ...input,
-        imageBuffer: buffer,
-        imageFilename: input.imageFilename ?? "upload.jpg",
-        assetUrl: input.publicUrl.trim(),
-        rollbackBlobPathname: null,
-      },
-      validation,
-    );
+    return await runSmartUploadFinalize(store, {
+      ...input,
+      destinations,
+      outputs,
+      rollbackBlobPathname: null,
+    });
   } catch (error) {
     await observeSmartUploadFinalizeFailure(
       {

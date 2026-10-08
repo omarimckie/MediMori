@@ -6,7 +6,10 @@ import {
   parseSmartUploadFixStrategy,
   parseSmartUploadFixTargetRatio,
 } from "./smart-upload-fix";
-import type { SmartUploadPlatformCaptions, SmartUploadValidationIssue } from "./smart-upload";
+import type { SmartUploadPlatformCaptions, SmartUploadStagedOutputRef } from "./smart-upload";
+import { parseSmartUploadDestinationsRecord } from "./smart-upload-destinations";
+import type { SmartUploadValidationIssue } from "./smart-upload-destinations";
+import type { SmartUploadDestinations } from "./smart-upload-destinations";
 
 export type SmartUploadStagedBlobRef = {
   uploadIntent: string;
@@ -48,6 +51,10 @@ export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
     targetRatio: SmartUploadFixTargetRatio;
     original: SmartUploadStagedBlobRef;
   };
+  destinations: SmartUploadDestinations;
+  pinterestTitle: string | null;
+  pinterestDescription: string | null;
+  pinterestOutput?: SmartUploadStagedOutputRef;
 } {
   const caption = String(record.caption ?? "").trim();
   const facebookCaption = String(record.facebookCaption ?? "").trim() || null;
@@ -100,10 +107,54 @@ export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
     };
   }
 
-  if (facebookCaption || instagramCaption) {
-    if (!facebookCaption || !instagramCaption) {
-      throw new Error("facebookCaption and instagramCaption must both be provided.");
+  const destinations = parseSmartUploadDestinationsRecord(
+    record.destinations as Record<string, unknown> | undefined,
+  );
+  const pinterestTitle = String(record.pinterestTitle ?? "").trim() || null;
+  const pinterestDescription = String(record.pinterestDescription ?? "").trim() || null;
+
+  let pinterestOutput: SmartUploadStagedOutputRef | undefined;
+  const pinIntent = String(record.pinterestUploadIntent ?? "").trim();
+  const pinPath = String(record.pinterestPathname ?? "").trim();
+  const pinUrl = String(record.pinterestPublicUrl ?? "").trim();
+  const pinStrategyRaw = String(record.pinterestFixStrategy ?? "").trim();
+  const pinTargetRaw = String(record.pinterestFixTargetRatio ?? "").trim();
+  const pinOriginalIntent = String(record.pinterestOriginalUploadIntent ?? "").trim();
+  const pinOriginalPath = String(record.pinterestOriginalPathname ?? "").trim();
+  const pinOriginalUrl = String(record.pinterestOriginalPublicUrl ?? "").trim();
+  if (pinIntent || pinPath || pinUrl) {
+    if (!pinIntent || !pinPath || !pinUrl) {
+      throw new Error("pinterestUploadIntent, pinterestPathname, and pinterestPublicUrl are required together.");
     }
+    let pinFix:
+      | {
+          strategy: SmartUploadFixStrategy;
+          targetRatio: SmartUploadFixTargetRatio;
+          original: SmartUploadStagedBlobRef;
+        }
+      | undefined;
+    if (pinStrategyRaw || pinTargetRaw || pinOriginalIntent || pinOriginalPath || pinOriginalUrl) {
+      if (!pinStrategyRaw || !pinTargetRaw || !pinOriginalIntent || !pinOriginalPath || !pinOriginalUrl) {
+        throw new Error(
+          "Pinterest fixed finalize requires pinterestFixStrategy, pinterestFixTargetRatio, pinterestOriginalUploadIntent, pinterestOriginalPathname, and pinterestOriginalPublicUrl.",
+        );
+      }
+      pinFix = {
+        strategy: parseSmartUploadFixStrategy(pinStrategyRaw),
+        targetRatio: parseSmartUploadFixTargetRatio(pinTargetRaw),
+        original: {
+          uploadIntent: pinOriginalIntent,
+          pathname: pinOriginalPath,
+          publicUrl: pinOriginalUrl,
+        },
+      };
+    }
+    pinterestOutput = {
+      uploadIntent: pinIntent,
+      pathname: pinPath,
+      publicUrl: pinUrl,
+      fix: pinFix,
+    };
   }
 
   return {
@@ -122,6 +173,10 @@ export function parseSmartUploadFinalizeBody(record: Record<string, unknown>): {
     publicUrl,
     imageFilename,
     fix,
+    destinations,
+    pinterestTitle,
+    pinterestDescription,
+    pinterestOutput,
   };
 }
 
@@ -130,6 +185,7 @@ export function parseSmartUploadPreviewFixBody(record: Record<string, unknown>):
   original: SmartUploadStagedBlobRef;
   strategy: SmartUploadFixStrategy;
   targetRatio: SmartUploadFixTargetRatio;
+  destinations?: SmartUploadDestinations;
   imageFilename?: string;
 } {
   const finalizeKey = String(record.finalizeKey ?? "").trim();
@@ -138,7 +194,10 @@ export function parseSmartUploadPreviewFixBody(record: Record<string, unknown>):
   const strategy = parseSmartUploadFixStrategy(String(record.strategy ?? ""));
   const targetRatio = parseSmartUploadFixTargetRatio(String(record.targetRatio ?? ""));
   const imageFilename = String(record.imageFilename ?? "").trim() || undefined;
-  return { finalizeKey, original, strategy, targetRatio, imageFilename };
+  const destinations = record.destinations
+    ? parseSmartUploadDestinationsRecord(record.destinations as Record<string, unknown>)
+    : undefined;
+  return { finalizeKey, original, strategy, targetRatio, destinations, imageFilename };
 }
 
 export function parseSmartUploadDiscardPreviewBody(record: Record<string, unknown>): SmartUploadStagedBlobRef {

@@ -68,13 +68,15 @@ test("parseSmartUploadFinalizeRows detects partial IG-only", () => {
   assert.equal(lookup.status, "partial");
 });
 
-test("parseSmartUploadFinalizeRows rejects FB-only", () => {
+test("parseSmartUploadFinalizeRows allows FB-only row set as complete", () => {
   const key = "key-fb-only";
   const lookup = parseSmartUploadFinalizeRows(
-    [smartUploadRow({ id: "fb", platform: "facebook" }, key, "asset-a")],
+    [
+      smartUploadRow({ id: "fb", platform: "facebook" }, key, "asset-a"),
+    ],
     key,
   );
-  assert.equal(lookup.status, "inconsistent");
+  assert.equal(lookup.status, "complete");
 });
 
 test("memory store rejects duplicate instagram for same finalize key", async () => {
@@ -140,6 +142,6 @@ test("findSmartUploadContentByFinalizeKey is not limited to recent content windo
   const lookup = await store.findSmartUploadContentByFinalizeKey(key);
   assert.equal(lookup.status, "complete");
   if (lookup.status === "complete") {
-    assert.equal(lookup.instagram.metadata?.source, SMART_UPLOAD_SOURCE);
+    assert.equal(lookup.instagram!.metadata?.source, SMART_UPLOAD_SOURCE);
   }
 });

@@ -208,7 +208,12 @@ export type MarketingContentMetadata = {
   /** Original asset id for future derivative linking (same as asset when no derivative). */
   originalAssetId?: string;
   smartUploadFixStrategy?: "pad" | "crop";
-  smartUploadFixTargetRatio?: "4:5" | "1:1";
+  smartUploadFixTargetRatio?: "4:5" | "1:1" | "2:3";
+  smartUploadDestinations?: {
+    facebook: boolean;
+    instagram: boolean;
+    pinterest: boolean;
+  };
   resourceType?: ResourceType;
   slug?: string;
   relatedCondition?: string | null;

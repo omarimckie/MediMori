@@ -105,11 +105,15 @@ export async function POST(request: Request) {
       category: parseCategory(parsed.category),
       audience: parseAudience(parsed.audience),
       actor: auth.username,
-      uploadIntent: parsed.uploadIntent,
-      pathname: parsed.pathname,
-      publicUrl: parsed.publicUrl,
+      uploadIntent: parsed.uploadIntent!,
+      pathname: parsed.pathname!,
+      publicUrl: parsed.publicUrl!,
       imageFilename: parsed.imageFilename,
       fix: parsed.fix,
+      destinations: parsed.destinations,
+      pinterestTitle: parsed.pinterestTitle,
+      pinterestDescription: parsed.pinterestDescription,
+      pinterestOutput: parsed.pinterestOutput,
     });
     return NextResponse.json(result);
   } catch (error) {

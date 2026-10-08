@@ -1,7 +1,7 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, asStringOrNull, toDateOnly, toIso } from "./json";
 import {
+  assertSmartUploadPlatformSlotAvailable,
   parseSmartUploadFinalizeRows,
-  SmartUploadFinalizeKeyConflictError,
   smartUploadFinalizeKeyForContent,
 } from "./smart-upload-idempotency";
 import type { MarketingStore } from "./store";
@@ -171,16 +171,7 @@ export class MemoryMarketingStore implements MarketingStore {
     const finalizeKey = smartUploadFinalizeKeyForContent(input as MarketingContent);
     if (finalizeKey) {
       const lookup = await this.findSmartUploadContentByFinalizeKey(finalizeKey);
-      if (lookup.status === "inconsistent") {
-        throw new Error(lookup.reason);
-      }
-      const platform = input.platform;
-      if (platform === "instagram" && lookup.status !== "none") {
-        throw new SmartUploadFinalizeKeyConflictError(finalizeKey, platform);
-      }
-      if (platform === "facebook" && lookup.status === "complete") {
-        throw new SmartUploadFinalizeKeyConflictError(finalizeKey, platform);
-      }
+      assertSmartUploadPlatformSlotAvailable(finalizeKey, lookup, input.platform);
     }
     const row: MarketingContent = { ...input, createdAt: nowIso(), updatedAt: nowIso() };
     this.content.set(row.id, row);

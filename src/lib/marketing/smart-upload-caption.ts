@@ -155,6 +155,10 @@ function buildMockModelPayload(mode: SmartUploadCaptionMode, bookId: string | nu
 
       instagramHashtags: ["TwilightFeather", "ChildrensBooks"],
 
+      pinterestTitle: `${topic}: a gentle story for families`,
+
+      pinterestDescription: `${body} Save this pin for a calm way to explore ${topic} with your child.`,
+
     };
 
   }
@@ -174,6 +178,10 @@ function buildMockModelPayload(mode: SmartUploadCaptionMode, bookId: string | nu
     facebookBody: `${body}\n\nWe would love to hear from caregivers in the comments.`,
 
     facebookCta: null,
+
+    pinterestTitle: `${topic}: a gentle story for families`,
+
+    pinterestDescription: `${body} Save this pin for a calm way to explore ${topic} with your child.`,
 
   };
 
@@ -195,7 +203,11 @@ function modelRequestSchema(mode: SmartUploadCaptionMode): string {
 
   "sharedCta": "string or null",
 
-  "instagramHashtags": ["string"]
+  "instagramHashtags": ["string"],
+
+  "pinterestTitle": "string",
+
+  "pinterestDescription": "string"
 
 }`;
 
@@ -215,7 +227,11 @@ function modelRequestSchema(mode: SmartUploadCaptionMode): string {
 
   "facebookBody": "string",
 
-  "facebookCta": "string or null"
+  "facebookCta": "string or null",
+
+  "pinterestTitle": "string",
+
+  "pinterestDescription": "string"
 
 }`;
 
@@ -458,13 +474,23 @@ export async function generateSmartUploadCaptions(
 
     });
 
-    const warnings = collectSafetyWarnings([body, cta ?? ""]);
+    const pinterestTitle = validated.pinterestTitle;
+    const pinterestDescription = validated.pinterestDescription;
+    assertCaptionFieldsMedicalPolicy(
+      [body, cta, pinterestTitle, pinterestDescription],
+      declaredClaims,
+      bookId,
+    );
+
+    const warnings = collectSafetyWarnings([body, cta ?? "", pinterestTitle, pinterestDescription]);
 
     return {
 
       mode: "shared",
 
       shared: { body, cta, instagramHashtags },
+
+      pinterest: { title: pinterestTitle, description: pinterestDescription },
 
       warnings,
 
@@ -490,8 +516,10 @@ export async function generateSmartUploadCaptions(
 
   const facebookCta = resolveSmartUploadCaptionCta(ctaBase, "facebook");
 
+  const pinterestTitle = validated.pinterestTitle;
+  const pinterestDescription = validated.pinterestDescription;
   assertCaptionFieldsMedicalPolicy(
-    [instagramBody, facebookBody, instagramCta, facebookCta],
+    [instagramBody, facebookBody, instagramCta, facebookCta, pinterestTitle, pinterestDescription],
     declaredClaims,
     bookId,
   );
@@ -520,6 +548,10 @@ export async function generateSmartUploadCaptions(
 
     facebookCta ?? "",
 
+    pinterestTitle,
+
+    pinterestDescription,
+
   ]);
 
 
@@ -545,6 +577,8 @@ export async function generateSmartUploadCaptions(
       cta: facebookCta,
 
     },
+
+    pinterest: { title: pinterestTitle, description: pinterestDescription },
 
     warnings,
 

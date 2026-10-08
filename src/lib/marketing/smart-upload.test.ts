@@ -118,8 +118,8 @@ test("one valid image creates exactly one asset and two content rows", async () 
   const result = await finalizeValid(store);
   assert.equal((await store.listAssets()).length, 1);
   assert.equal((await store.listContent()).length, 2);
-  assert.equal(result.assetId, result.instagram.assetIds[0]);
-  assert.equal(result.facebook.assetIds[0], result.assetId);
+  assert.equal(result.assetId, result.instagram!.assetIds[0]);
+  assert.equal(result.facebook!.assetIds[0], result.assetId);
 });
 
 test("per-platform finalize persists distinct facebook and instagram bodies", async () => {
@@ -139,50 +139,50 @@ test("per-platform finalize persists distinct facebook and instagram bodies", as
     imageBuffer: buffer,
     imageFilename: "smart.png",
   });
-  assert.equal(result.facebook.body, "Facebook-only caption");
-  assert.equal(result.instagram.body, "Instagram-only caption\n\n#TwilightFeather");
-  assert.doesNotMatch(result.facebook.body, /TwilightFeather/);
+  assert.equal(result.facebook!.body, "Facebook-only caption");
+  assert.equal(result.instagram!.body, "Instagram-only caption\n\n#TwilightFeather");
+  assert.doesNotMatch(result.facebook!.body, /TwilightFeather/);
 });
 
 test("instagram and facebook rows are needs_review with shared caption", async () => {
   const store = new MemoryMarketingStore();
   const caption = "Caption copied to both platforms.";
   const result = await finalizeValid(store, { caption });
-  assert.equal(result.instagram.platform, "instagram");
-  assert.equal(result.facebook.platform, "facebook");
-  assert.equal(result.instagram.format, "post");
-  assert.equal(result.facebook.format, "post");
-  assert.equal(result.instagram.status, "needs_review");
-  assert.equal(result.facebook.status, "needs_review");
-  assert.equal(result.instagram.body, caption);
-  assert.equal(result.facebook.body, caption);
+  assert.equal(result.instagram!.platform, "instagram");
+  assert.equal(result.facebook!.platform, "facebook");
+  assert.equal(result.instagram!.format, "post");
+  assert.equal(result.facebook!.format, "post");
+  assert.equal(result.instagram!.status, "needs_review");
+  assert.equal(result.facebook!.status, "needs_review");
+  assert.equal(result.instagram!.body, caption);
+  assert.equal(result.facebook!.body, caption);
 });
 
 test("optional weeklyPlanId and null weeklyPlanId", async () => {
   const store = new MemoryMarketingStore();
   const { planId } = await planContext(store);
   const withPlan = await finalizeValid(store, { weeklyPlanId: planId, finalizeKey: "k1" });
-  assert.equal(withPlan.instagram.weeklyPlanId, planId);
+  assert.equal(withPlan.instagram!.weeklyPlanId, planId);
 
   const withoutPlan = await finalizeValid(store, { weeklyPlanId: null, finalizeKey: "k2" });
-  assert.equal(withoutPlan.instagram.weeklyPlanId, null);
+  assert.equal(withoutPlan.instagram!.weeklyPlanId, null);
 });
 
 test("optional campaign validates and attaches", async () => {
   const store = new MemoryMarketingStore();
   const { campaignId } = await planContext(store);
   const result = await finalizeValid(store, { campaignId, finalizeKey: "k-campaign" });
-  assert.equal(result.instagram.campaignId, campaignId);
+  assert.equal(result.instagram!.campaignId, campaignId);
 });
 
 test("unique tracking tokens and smart upload metadata", async () => {
   const store = new MemoryMarketingStore();
   const result = await finalizeValid(store, { batchId: "batch-xyz", finalizeKey: "fin-1" });
-  assert.notEqual(result.instagram.trackingToken, result.facebook.trackingToken);
-  assert.equal(result.instagram.metadata?.source, SMART_UPLOAD_SOURCE);
-  assert.equal(result.instagram.metadata?.batchId, "batch-xyz");
-  assert.equal(result.instagram.metadata?.smartUploadFinalizeKey, "fin-1");
-  assert.equal(result.instagram.metadata?.originalAssetId, result.assetId);
+  assert.notEqual(result.instagram!.trackingToken, result.facebook!.trackingToken);
+  assert.equal(result.instagram!.metadata?.source, SMART_UPLOAD_SOURCE);
+  assert.equal(result.instagram!.metadata?.batchId, "batch-xyz");
+  assert.equal(result.instagram!.metadata?.smartUploadFinalizeKey, "fin-1");
+  assert.equal(result.instagram!.metadata?.originalAssetId, result.assetId);
 });
 
 test("no publication rows created", async () => {
@@ -371,6 +371,7 @@ test("partial IG-only state completes facebook without second asset", async () =
       source: "smart_upload",
       smartUploadFinalizeKey: finalizeKey,
       batchId: "batch-partial",
+      smartUploadDestinations: { facebook: true, instagram: true, pinterest: false },
     },
     isDemo: false,
   });
@@ -382,9 +383,29 @@ test("partial IG-only state completes facebook without second asset", async () =
   assert.equal(result.idempotentReplay, true);
 });
 
-test("facebook-only finalize key state fails safely", async () => {
+test("partial facebook-only state completes instagram without second asset", async () => {
   const store = new MemoryMarketingStore();
   const finalizeKey = "fb-only-key";
+  const assetId = crypto.randomUUID();
+  await store.createAsset({
+    id: assetId,
+    name: "seed.png",
+    type: "upload",
+    source: SMART_UPLOAD_SOURCE,
+    bookId: null,
+    characterId: null,
+    campaignId: null,
+    approved: true,
+    usageRestrictions: "Smart Upload original image (immutable).",
+    aspectRatio: "1:1",
+    imageWidth: 1080,
+    imageHeight: 1080,
+    mimeType: "image/png",
+    tags: ["smart_upload"],
+    url: "https://example.com/seed.png",
+    altText: "seed",
+    isDemo: false,
+  });
   await store.createContent({
     id: crypto.randomUUID(),
     campaignId: null,
@@ -401,7 +422,7 @@ test("facebook-only finalize key state fails safely", async () => {
     seoDescription: null,
     scheduledFor: null,
     timezone: "America/New_York",
-    assetIds: [crypto.randomUUID()],
+    assetIds: [assetId],
     needsNewAsset: false,
     warnings: [],
     safetyFlags: [],
@@ -411,10 +432,13 @@ test("facebook-only finalize key state fails safely", async () => {
     metadata: {
       source: "smart_upload",
       smartUploadFinalizeKey: finalizeKey,
+      smartUploadDestinations: { facebook: true, instagram: true, pinterest: false },
     },
     isDemo: false,
   });
-  await assert.rejects(() => finalizeValid(store, { finalizeKey }), /Facebook content without Instagram/);
+  const result = await finalizeValid(store, { finalizeKey, caption: "Recovery caption" });
+  assert.equal((await store.listContent()).length, 2);
+  assert.ok(result.instagramContentId);
 });
 
 test("same finalize key with different image does not create a second pair", async () => {

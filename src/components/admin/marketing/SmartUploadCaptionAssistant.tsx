@@ -18,6 +18,7 @@ import {
 
 type SmartUploadCaptionAssistantProps = {
   state: CaptionAssistantState;
+  showPinterest?: boolean;
   disabled?: boolean;
   generating?: boolean;
   generationReady: boolean;
@@ -29,6 +30,7 @@ type SmartUploadCaptionAssistantProps = {
 
 export function SmartUploadCaptionAssistant({
   state,
+  showPinterest = true,
   disabled = false,
   generating = false,
   generationReady,
@@ -48,6 +50,8 @@ export function SmartUploadCaptionAssistant({
   const igCtaId = useId();
   const igHashtagsId = useId();
   const instructionsId = useId();
+  const pinTitleId = useId();
+  const pinDescId = useId();
 
   const sharedPreview = composeSharedCaptionPreview(state.shared);
   const facebookPreview = composeFacebookCaptionPreview(state.facebook);
@@ -284,6 +288,43 @@ export function SmartUploadCaptionAssistant({
           )}
         </>
       )}
+
+      {showPinterest ? (
+        <div className="space-y-2 rounded-xl border border-brand-brown/10 bg-cream-deep/30 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-green-deep">Pinterest pin</p>
+          <label className="block text-sm font-bold" htmlFor={pinTitleId}>
+            Pin title
+            <input
+              id={pinTitleId}
+              type="text"
+              maxLength={100}
+              disabled={fieldsDisabled}
+              value={state.pinterest.title}
+              onChange={(e) =>
+                onChange({ ...state, pinterest: { ...state.pinterest, title: e.target.value } })
+              }
+              className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-bold" htmlFor={pinDescId}>
+            Pin description
+            <textarea
+              id={pinDescId}
+              rows={4}
+              maxLength={800}
+              disabled={fieldsDisabled}
+              value={state.pinterest.description}
+              onChange={(e) =>
+                onChange({
+                  ...state,
+                  pinterest: { ...state.pinterest, description: e.target.value },
+                })
+              }
+              className="mt-1 w-full rounded-xl border border-brand-brown/20 p-3 text-sm"
+            />
+          </label>
+        </div>
+      ) : null}
 
       <label className="block text-sm font-bold" htmlFor={instructionsId}>
         Instructions (optional)

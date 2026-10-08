@@ -108,7 +108,7 @@ test("valid image unchanged Phase 2 path", async () => {
   });
   assert.equal(first.idempotentReplay, false);
   assert.equal((await store.listAssets()).length, 1);
-  assert.equal(first.instagram.metadata?.originalAssetId, first.assetId);
+  assert.equal(first.instagram!.metadata?.originalAssetId, first.assetId);
 });
 
 test("fixed finalize creates two assets and lineage metadata", async () => {
@@ -141,17 +141,17 @@ test("fixed finalize creates two assets and lineage metadata", async () => {
   });
 
   assert.equal((await store.listAssets()).length, 2);
-  assert.equal(result.instagram.assetIds[0], result.facebook.assetIds[0]);
-  assert.equal(result.assetId, result.instagram.assetIds[0]);
-  assert.notEqual(result.instagram.metadata?.originalAssetId, result.assetId);
-  assert.equal(result.instagram.metadata?.smartUploadFixStrategy, "pad");
-  assert.equal(result.instagram.metadata?.smartUploadFixTargetRatio, "4:5");
+  assert.equal(result.instagram!.assetIds[0], result.facebook!.assetIds[0]);
+  assert.equal(result.assetId, result.instagram!.assetIds[0]);
+  assert.notEqual(result.instagram!.metadata?.originalAssetId, result.assetId);
+  assert.equal(result.instagram!.metadata?.smartUploadFixStrategy, "pad");
+  assert.equal(result.instagram!.metadata?.smartUploadFixTargetRatio, "4:5");
 
   const derivativeAsset = (await store.listAssets()).find((a) => a.id === result.assetId);
   assert.ok(derivativeAsset?.tags.includes(SMART_UPLOAD_DERIVATIVE_TAG));
   assert.ok(
     derivativeAsset?.tags.includes(
-      smartUploadOriginalTag(result.instagram.metadata!.originalAssetId!),
+      smartUploadOriginalTag(result.instagram!.metadata!.originalAssetId!),
     ),
   );
 });
@@ -263,7 +263,7 @@ test("derivative assets use smart_upload source", async () => {
   for (const asset of assets) {
     assert.equal(asset.source, SMART_UPLOAD_SOURCE);
   }
-  const originalAsset = assets.find((a) => a.id === result.instagram.metadata?.originalAssetId);
+  const originalAsset = assets.find((a) => a.id === result.instagram!.metadata?.originalAssetId);
   assert.match(originalAsset?.usageRestrictions ?? "", /immutable/i);
 });
 

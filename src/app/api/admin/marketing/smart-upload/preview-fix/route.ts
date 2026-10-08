@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       original: parsed.original,
       strategy: parsed.strategy,
       targetRatio: parsed.targetRatio,
+      destinations: parsed.destinations,
       imageFilename: parsed.imageFilename,
     });
 

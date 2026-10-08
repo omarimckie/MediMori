@@ -1,5 +1,6 @@
 import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
 import { isSmartUploadAspectRatioOnlyFailure, validateSmartUploadStagedBlob } from "@/lib/marketing/smart-upload";
+import { parseSmartUploadDestinationsRecord } from "@/lib/marketing/smart-upload-destinations";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -53,11 +54,15 @@ export async function POST(request: Request) {
       return jsonError("uploadIntent, pathname, and publicUrl are required.", 400);
     }
 
+    const destinations = parseSmartUploadDestinationsRecord(
+      record.destinations as Record<string, unknown> | undefined,
+    );
     const result = await validateSmartUploadStagedBlob({
       uploadIntent,
       pathname,
       publicUrl,
       actor: auth.username,
+      destinations,
     });
     if (!result.ok) {
       return NextResponse.json(

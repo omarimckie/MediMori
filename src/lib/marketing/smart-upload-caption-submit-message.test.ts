@@ -22,6 +22,8 @@ function row(
     shared: { body: "A", cta: "", instagramHashtags: [] },
     facebook: { body: "", cta: "" },
     instagram: { body: "", cta: "", instagramHashtags: [] },
+    pinterest: { title: "", description: "" },
+    destinations: { facebook: true, instagram: true, pinterest: true },
     generatedFrom: null,
     stale: false,
     staleAcknowledged: false,

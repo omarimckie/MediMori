@@ -51,6 +51,11 @@ import {
   reconcileStaleCaptionSubmitSessionMessage,
 } from "@/lib/marketing/smart-upload-caption-submit-message";
 import { SmartUploadCaptionAssistant } from "./SmartUploadCaptionAssistant";
+import {
+  assertAtLeastOneDestination,
+  normalizeSmartUploadDestinations,
+  type SmartUploadDestinations,
+} from "@/lib/marketing/smart-upload-destinations";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 const UPLOAD_INTENT_URL = "/api/admin/marketing/smart-upload/upload-intent";
@@ -71,7 +76,8 @@ type FileStatus =
   | "submitted";
 
 type FixStrategy = "pad" | "crop";
-type FixTargetRatio = "4:5" | "1:1";
+type FixTargetRatio = "4:5" | "1:1" | "2:3";
+type PreviewRole = "meta" | "pinterest";
 
 type PreviewState = {
   uploadIntent: string;
@@ -98,6 +104,10 @@ type SmartUploadFile = {
   fixTargetRatio: FixTargetRatio;
   preview: PreviewState | null;
   acceptedPreview: PreviewState | null;
+  acceptedPinterestPreview: PreviewState | null;
+  pinterestFixStrategy: FixStrategy;
+  pinterestFixTargetRatio: FixTargetRatio;
+  previewRole: PreviewRole;
   captionAssistant: CaptionAssistantState;
 };
 
@@ -120,6 +130,10 @@ function newFileEntry(file: File): SmartUploadFile {
     fixTargetRatio: "4:5",
     preview: null,
     acceptedPreview: null,
+    acceptedPinterestPreview: null,
+    pinterestFixStrategy: "pad",
+    pinterestFixTargetRatio: "2:3",
+    previewRole: "meta",
     captionAssistant: createDefaultCaptionAssistantState(),
   };
 }
@@ -239,6 +253,11 @@ export function SmartUploadClient() {
   const [weeklyPlanId, setWeeklyPlanId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [bookId, setBookId] = useState("");
+  const [destinations, setDestinations] = useState<SmartUploadDestinations>({
+    facebook: true,
+    instagram: true,
+    pinterest: true,
+  });
   const [files, setFiles] = useState<SmartUploadFile[]>([]);
   const filesRef = useRef<SmartUploadFile[]>([]);
   useEffect(() => {
@@ -406,6 +425,8 @@ export function SmartUploadClient() {
       shared: captionAssistant.shared,
       facebook: captionAssistant.facebook,
       instagram: captionAssistant.instagram,
+      pinterest: captionAssistant.pinterest,
+      destinations,
       generatedFrom: captionAssistant.generatedFrom,
       stale: captionAssistant.stale,
       staleAcknowledged: captionAssistant.staleAcknowledged,
@@ -704,6 +725,7 @@ export function SmartUploadClient() {
         uploadIntent: intentJson.uploadIntent,
         pathname: urlJson.pathname,
         publicUrl,
+        destinations,
       }),
     });
 
@@ -781,8 +803,13 @@ export function SmartUploadClient() {
           uploadIntent: entry.uploadIntent,
           pathname: entry.pathname,
           publicUrl: entry.publicUrl,
-          strategy: entry.fixStrategy,
-          targetRatio: entry.fixTargetRatio,
+          strategy:
+            entry.previewRole === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy,
+          targetRatio:
+            entry.previewRole === "pinterest"
+              ? entry.pinterestFixTargetRatio
+              : entry.fixTargetRatio,
+          destinations,
           imageFilename: entry.file.name,
         }),
       });
@@ -821,7 +848,19 @@ export function SmartUploadClient() {
 
   function acceptPreview(entry: SmartUploadFile): void {
     if (!entry.preview) return;
-    if (!previewMatchesSettings(entry.preview, entry.fixStrategy, entry.fixTargetRatio)) {
+    const strategy =
+      entry.previewRole === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy;
+    const targetRatio =
+      entry.previewRole === "pinterest" ? entry.pinterestFixTargetRatio : entry.fixTargetRatio;
+    if (!previewMatchesSettings(entry.preview, strategy, targetRatio)) {
+      return;
+    }
+    if (entry.previewRole === "pinterest") {
+      updateFile(entry.id, {
+        acceptedPinterestPreview: entry.preview,
+        status: "ready",
+        error: null,
+      });
       return;
     }
     updateFile(entry.id, {
@@ -862,6 +901,9 @@ export function SmartUploadClient() {
         campaignId: campaignId || null,
         bookId: bookId || null,
         imageFilename: entry.file.name,
+        destinations,
+        pinterestTitle: captions.pinterestTitle,
+        pinterestDescription: captions.pinterestDescription,
       };
       if (captions.mode === "per_platform") {
         body.facebookCaption = captions.facebookCaption;
@@ -869,6 +911,7 @@ export function SmartUploadClient() {
       } else {
         body.caption = captions.caption;
       }
+      const pinDerivative = entry.acceptedPinterestPreview;
       if (derivative) {
         body.uploadIntent = derivative.uploadIntent;
         body.pathname = derivative.pathname;
@@ -882,6 +925,16 @@ export function SmartUploadClient() {
         body.uploadIntent = entry.uploadIntent;
         body.pathname = entry.pathname;
         body.publicUrl = entry.publicUrl;
+      }
+      if (pinDerivative && destinations.pinterest) {
+        body.pinterestUploadIntent = pinDerivative.uploadIntent;
+        body.pinterestPathname = pinDerivative.pathname;
+        body.pinterestPublicUrl = pinDerivative.publicUrl;
+        body.pinterestFixStrategy = pinDerivative.strategy;
+        body.pinterestFixTargetRatio = pinDerivative.targetRatio;
+        body.pinterestOriginalUploadIntent = entry.uploadIntent;
+        body.pinterestOriginalPathname = entry.pathname;
+        body.pinterestOriginalPublicUrl = entry.publicUrl;
       }
       response = await fetch(FINALIZE_URL, {
         method: "POST",
@@ -970,9 +1023,37 @@ export function SmartUploadClient() {
     <div className="space-y-6">
       <Card>
         <p className="text-sm text-brand-charcoal/70">
-          Upload images once to create paired Instagram and Facebook feed posts (needs review). Images
-          are validated on the server for both platforms before any content is created.
+          Upload once to create Facebook, Instagram, and/or Pinterest content (needs review). The
+          server validates each selected destination and can produce separate Meta and Pinterest
+          image versions before finalize.
         </p>
+        <fieldset className="mt-4 flex flex-wrap gap-4 text-sm font-bold">
+          <legend className="sr-only">Destinations</legend>
+          {(
+            [
+              ["facebook", "Facebook"],
+              ["instagram", "Instagram"],
+              ["pinterest", "Pinterest"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={destinations[key]}
+                onChange={(e) => {
+                  const next = { ...destinations, [key]: e.target.checked };
+                  try {
+                    assertAtLeastOneDestination(next);
+                    setDestinations(next);
+                  } catch {
+                    setSessionMessage("At least one platform must remain selected.");
+                  }
+                }}
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
         {batchId ? (
           <p className="mt-2 text-xs text-brand-charcoal/50">Session batch ID: {batchId}</p>
         ) : null}
@@ -1252,6 +1333,7 @@ export function SmartUploadClient() {
                   {item.status !== "submitted" ? (
                     <SmartUploadCaptionAssistant
                       state={item.captionAssistant}
+                      showPinterest={destinations.pinterest}
                       disabled={busy}
                       generating={generatingCaptionFileId === item.id}
                       generationReady={captionGenerationUi(item).ready}

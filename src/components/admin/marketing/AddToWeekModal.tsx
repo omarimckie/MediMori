@@ -47,12 +47,14 @@ export function AddToWeekModal({
   const [pairLoading, setPairLoading] = useState(false);
   const [includeInstagram, setIncludeInstagram] = useState(true);
   const [includeFacebook, setIncludeFacebook] = useState(true);
+  const [includePinterest, setIncludePinterest] = useState(true);
 
   useEffect(() => {
     if (!open) return;
     setWeeklyPlanId(initialWeeklyPlanId ?? "");
     setIncludeInstagram(true);
     setIncludeFacebook(true);
+    setIncludePinterest(true);
     setPair(null);
     setPairLoading(true);
     void (async () => {
@@ -83,8 +85,9 @@ export function AddToWeekModal({
   function selectedContentIds(): string[] {
     if (completePair) {
       const ids: string[] = [];
-      if (includeInstagram) ids.push(completePair.instagramId);
-      if (includeFacebook) ids.push(completePair.facebookId);
+      if (includeInstagram && completePair.instagramId) ids.push(completePair.instagramId);
+      if (includeFacebook && completePair.facebookId) ids.push(completePair.facebookId);
+      if (includePinterest && completePair.pinterestId) ids.push(completePair.pinterestId);
       return ids;
     }
     return [anchorContentId];
@@ -171,7 +174,17 @@ export function AddToWeekModal({
                   />
                   Facebook
                 </label>
-                {!includeInstagram && !includeFacebook ? (
+                {completePair.pinterestId ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={includePinterest}
+                      onChange={(e) => setIncludePinterest(e.target.checked)}
+                    />
+                    Pinterest
+                  </label>
+                ) : null}
+                {!includeInstagram && !includeFacebook && !includePinterest ? (
                   <p className="text-xs font-semibold text-brand-orange-deep">
                     Select at least one platform.
                   </p>

@@ -263,10 +263,24 @@ async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffe
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
 }
 
+let readMarketingBlobBufferForTests:
+  | ((pathname: string, access: "public" | "private") => Promise<Buffer>)
+  | null = null;
+
+/** Test-only override for blob reads (Smart Upload integration tests without Vercel Blob). */
+export function setReadMarketingBlobBufferForTests(
+  reader: ((pathname: string, access: "public" | "private") => Promise<Buffer>) | null,
+): void {
+  readMarketingBlobBufferForTests = reader;
+}
+
 export async function readMarketingBlobBuffer(
   pathname: string,
   access: "public" | "private",
 ): Promise<Buffer> {
+  if (readMarketingBlobBufferForTests) {
+    return readMarketingBlobBufferForTests(pathname, access);
+  }
   if (pathname.startsWith("local-public/")) {
     const fileName = pathname.replace("local-public/", "");
     return readFile(path.join(LOCAL_PUBLIC_ROOT, fileName));

@@ -1,3 +1,5 @@
+import type { SmartUploadDestinations } from "./smart-upload-destinations";
+import { metaDestinationsSelected } from "./smart-upload-destinations";
 import type { AudienceId, ContentCategory } from "./types";
 import { AUDIENCES, CONTENT_CATEGORIES } from "./types";
 
@@ -68,11 +70,16 @@ export type CaptionFingerprintContext = {
   originalUploadIntent: string | null;
   acceptedDerivative: { pathname: string; uploadIntent: string } | null;
   fixStrategy: "pad" | "crop";
-  fixTargetRatio: "4:5" | "1:1";
+  fixTargetRatio: "4:5" | "1:1" | "2:3";
   finalizeKey: string;
 };
 
 /** Per-file caption assistant state (shared mode UI in Phase 4B; per_platform reserved for 4C). */
+export type CaptionAssistantPinterestDraft = {
+  title: string;
+  description: string;
+};
+
 export type CaptionAssistantState = {
   mode: CaptionAssistantMode;
   instructions: string;
@@ -90,6 +97,7 @@ export type CaptionAssistantState = {
   shared: CaptionAssistantDraft;
   facebook: CaptionAssistantFacebookDraft;
   instagram: CaptionAssistantInstagramDraft;
+  pinterest: CaptionAssistantPinterestDraft;
 };
 
 export function createDefaultCaptionAssistantState(): CaptionAssistantState {
@@ -108,6 +116,7 @@ export function createDefaultCaptionAssistantState(): CaptionAssistantState {
     shared: { body: "", cta: "", instagramHashtags: [] },
     facebook: { body: "", cta: "" },
     instagram: { body: "", cta: "", instagramHashtags: [] },
+    pinterest: { title: "", description: "" },
   };
 }
 
@@ -332,6 +341,8 @@ export type SubmitValidCaptionPreflightEntry = {
   shared: CaptionAssistantDraft;
   facebook: CaptionAssistantFacebookDraft;
   instagram: CaptionAssistantInstagramDraft;
+  pinterest: CaptionAssistantPinterestDraft;
+  destinations: SmartUploadDestinations;
   generatedFrom: CaptionGenerationSnapshot | null;
   stale: boolean;
   staleAcknowledged: boolean;
@@ -368,20 +379,29 @@ export function isSubmitValidCaptionPreflightTarget(
   return true;
 }
 
+export function hasSubmittablePinterestCopy(pinterest: CaptionAssistantPinterestDraft): boolean {
+  return Boolean(pinterest.title.trim() && pinterest.description.trim());
+}
+
 export function hasSubmittablePerPlatformCaptions(
   facebook: CaptionAssistantFacebookDraft,
   instagram: CaptionAssistantInstagramDraft,
+  destinations?: SmartUploadDestinations,
 ): boolean {
-  return hasSubmittableSharedCaption({
-    body: facebook.body,
-    cta: facebook.cta,
-    instagramHashtags: [],
-  }) &&
+  if (destinations && !destinations.facebook && !destinations.instagram) {
+    return true;
+  }
+  const needsFacebook = destinations?.facebook ?? true;
+  const needsInstagram = destinations?.instagram ?? true;
+  const facebookOk = !needsFacebook || hasSubmittableSharedCaption({ body: facebook.body, cta: facebook.cta, instagramHashtags: [] });
+  const instagramOk =
+    !needsInstagram ||
     hasSubmittableSharedCaption({
       body: instagram.body,
       cta: instagram.cta,
       instagramHashtags: instagram.instagramHashtags,
     });
+  return facebookOk && instagramOk;
 }
 
 export function findSubmitValidCaptionPreflightIssue(
@@ -389,11 +409,18 @@ export function findSubmitValidCaptionPreflightIssue(
 ): SubmitValidCaptionPreflightIssue | null {
   for (const entry of entries) {
     if (!isSubmitValidCaptionPreflightTarget(entry)) continue;
-    const captionOk =
-      entry.mode === "per_platform"
-        ? hasSubmittablePerPlatformCaptions(entry.facebook, entry.instagram)
-        : hasSubmittableSharedCaption(entry.shared);
-    if (!captionOk) {
+    const metaOk =
+      !metaDestinationsSelected(entry.destinations) ||
+      (entry.mode === "per_platform"
+        ? hasSubmittablePerPlatformCaptions(
+            entry.facebook,
+            entry.instagram,
+            entry.destinations,
+          )
+        : hasSubmittableSharedCaption(entry.shared));
+    const pinterestOk =
+      !entry.destinations.pinterest || hasSubmittablePinterestCopy(entry.pinterest);
+    if (!metaOk || !pinterestOk) {
       return { kind: "missing_caption", fileName: entry.fileName };
     }
     if (entry.generatedFrom && entry.stale && !entry.staleAcknowledged) {
@@ -433,21 +460,33 @@ export function composeInstagramCaptionPreview(draft: CaptionAssistantInstagramD
 }
 
 export type CaptionFinalizePayload =
-  | { mode: "shared"; caption: string }
-  | { mode: "per_platform"; facebookCaption: string; instagramCaption: string };
+  | { mode: "shared"; caption: string; pinterestTitle: string; pinterestDescription: string }
+  | {
+      mode: "per_platform";
+      facebookCaption: string;
+      instagramCaption: string;
+      pinterestTitle: string;
+      pinterestDescription: string;
+    };
 
 /** Composed captions for preview and finalize bridge. */
 export function buildCaptionFinalizePayload(state: CaptionAssistantState): CaptionFinalizePayload {
+  const pinterestTitle = state.pinterest.title.trim();
+  const pinterestDescription = state.pinterest.description.trim();
   if (state.mode === "per_platform") {
     return {
       mode: "per_platform",
       facebookCaption: composeFacebookCaptionPreview(state.facebook),
       instagramCaption: composeInstagramCaptionPreview(state.instagram),
+      pinterestTitle,
+      pinterestDescription,
     };
   }
   return {
     mode: "shared",
     caption: composeSharedCaptionPreview(state.shared),
+    pinterestTitle,
+    pinterestDescription,
   };
 }
 
