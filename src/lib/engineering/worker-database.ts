@@ -24,6 +24,7 @@ type IdentityRow = {
   source_binding_ready: boolean;
   source_mismatch_execute: boolean;
   source_mismatch_public_execute: boolean;
+  preclaim_diagnostic_ready: boolean;
   lineage_table_access: boolean;
 };
 
@@ -37,6 +38,7 @@ export type WorkerDatabaseIdentity = {
   lineageReady: true;
   sourceBindingReady: true;
   boundedPrivileges: true;
+  preclaimDiagnosticsReady: true;
 };
 
 type Query = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
@@ -106,6 +108,9 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
         AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.engineering_record_source_mismatch(uuid,text)'::regprocedure AND p.prosecdef AND p.proconfig @> ARRAY['search_path=public, pg_temp'])) AS source_binding_ready,
       COALESCE(has_function_privilege(current_user,to_regprocedure('public.engineering_record_source_mismatch(uuid,text)'),'EXECUTE'),false) AS source_mismatch_execute,
       EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE p.oid=to_regprocedure('public.engineering_record_source_mismatch(uuid,text)') AND a.grantee=0 AND a.privilege_type='EXECUTE') AS source_mismatch_public_execute,
+      (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.engineering_record_preclaim_failure(uuid,text,text)') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=public, pg_temp'])
+        AND COALESCE(has_function_privilege(current_user,to_regprocedure('public.engineering_record_preclaim_failure(uuid,text,text)'),'EXECUTE'),false)
+        AND NOT EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE p.oid=to_regprocedure('public.engineering_record_preclaim_failure(uuid,text,text)') AND a.grantee=0 AND a.privilege_type='EXECUTE')) AS preclaim_diagnostic_ready,
       (COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'SELECT'),false)
         OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'INSERT'),false)
         OR COALESCE(has_table_privilege(current_user,to_regclass('public.engineering_run_lineage'),'UPDATE'),false)
@@ -126,7 +131,7 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
   if (row.actor !== restrictedWorkerDatabaseTarget.role || row.session_actor !== restrictedWorkerDatabaseTarget.role || row.database_name !== restrictedWorkerDatabaseTarget.database) {
     throw new WorkerInitializationError("database_identity", "worker_database_role_mismatch");
   }
-  if (row.worker_call_progress_ready !== true || row.worker_lineage_ready !== true || row.source_binding_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
+  if (row.worker_call_progress_ready !== true || row.worker_lineage_ready !== true || row.source_binding_ready !== true || row.preclaim_diagnostic_ready !== true) throw new WorkerInitializationError("database_identity", "worker_database_schema_mismatch");
   if (row.role_superuser || row.role_createdb || row.role_createrole || row.role_replication || row.role_bypassrls || row.task_mutation || row.approval_mutation || row.lineage_table_access || !row.role_exists || !row.role_member || !row.ingress_exists || !row.ingress_security_definer || !row.ingress_execute || row.public_execute || !row.source_mismatch_execute || row.source_mismatch_public_execute) {
     throw new WorkerInitializationError("database_identity", "worker_database_identity_mismatch");
   }
@@ -140,6 +145,7 @@ export async function verifyWorkerDatabaseIdentityQuery(query: Query): Promise<W
     lineageReady: true,
     sourceBindingReady: true,
     boundedPrivileges: true,
+    preclaimDiagnosticsReady: true,
   };
 }
 
