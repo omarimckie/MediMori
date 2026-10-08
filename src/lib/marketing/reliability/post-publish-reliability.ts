@@ -6,9 +6,11 @@ import {
   publishedPublicationsFromPublishCycle,
 } from "../publication-incidents/partial-publication-failure";
 import { runMarketingReliabilitySweep, type ReliabilitySweepResult } from "./sweep";
+import { runCredentialMonitoringDailyIfEnabled } from "../credential-health/daily";
 
 export type RunReliabilityAfterMarketingPublishDeps = {
   runSweep?: () => Promise<ReliabilitySweepResult>;
+  runCredentialDaily?: typeof runCredentialMonitoringDailyIfEnabled;
 };
 
 /**
@@ -30,8 +32,9 @@ export async function runReliabilityAfterMarketingPublish(
   const runSweep = deps.runSweep ?? runMarketingReliabilitySweep;
   const cycle = input.publishCyclePublications ?? [];
   const store = getMarketingStore();
+  let sweepResult: ReliabilitySweepResult | null = null;
   try {
-    return await runSweep({
+    sweepResult = await runSweep({
       partialPublicationFailureBackup: {
         failedInCycle: failedPublicationsFromPublishCycle(cycle),
         publishedInCycle: publishedPublicationsFromPublishCycle(cycle),
@@ -44,6 +47,19 @@ export async function runReliabilityAfterMarketingPublish(
       success: false,
       error: error instanceof Error ? error.message : "reliability_sweep_failed",
     });
-    return null;
   }
+
+  const runCredentialDaily =
+    deps.runCredentialDaily ?? runCredentialMonitoringDailyIfEnabled;
+  try {
+    await runCredentialDaily();
+  } catch (error) {
+    logMarketing({
+      operation: "credential_health_daily",
+      success: false,
+      error: error instanceof Error ? error.message : "credential_daily_failed",
+    });
+  }
+
+  return sweepResult;
 }

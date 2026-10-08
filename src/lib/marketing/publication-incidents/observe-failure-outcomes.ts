@@ -10,6 +10,9 @@ import { logMarketing } from "../logger";
 import { sanitizeErrorMessage } from "../incidents/sanitize";
 import type { MarketingStore } from "../store";
 import { observePartialPublicationFailureFromPublication } from "./partial-publication-failure";
+import { observeReactiveCredentialFailure } from "../credential-health/reactive";
+import type { CredentialNotifyDeps } from "../credential-health/notify-credential";
+import type { CredentialHealthHeartbeatStore } from "../credential-health/heartbeat-store";
 
 /**
  * Prospective observability after authoritative publication failure is persisted.
@@ -24,6 +27,8 @@ export async function observePublicationFailureOutcomes(
     notifyRecovery?: typeof notifyPublicationRecoveryRequiredWithDeps;
     notifyRecoveryDeps?: PublicationRecoveryNotifyDeps;
     store?: MarketingStore;
+    credentialNotifyDeps?: CredentialNotifyDeps;
+    credentialHeartbeatStore?: CredentialHealthHeartbeatStore;
   },
 ): Promise<void> {
   if (publication.status !== "failed") {
@@ -49,6 +54,12 @@ export async function observePublicationFailureOutcomes(
     input.repository,
   );
   if (!failedResult) {
+    await observeReactiveCredentialFailure(publication, {
+      sourceOperation: input.sourceOperation,
+      repository: input.repository,
+      notifyDeps: input.credentialNotifyDeps,
+      heartbeatStore: input.credentialHeartbeatStore,
+    });
     return;
   }
 

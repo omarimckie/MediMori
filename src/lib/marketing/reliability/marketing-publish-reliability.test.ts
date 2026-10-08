@@ -4,6 +4,13 @@ import { describe, it } from "node:test";
 import { cronAuthDecision } from "../config";
 import { handleMarketingPublishCron } from "./marketing-publish-cron";
 import { runReliabilityAfterMarketingPublish } from "./post-publish-reliability";
+import { createMemoryIncidentRepository } from "../incidents/memory-repository";
+import {
+  createMemoryCredentialHealthHeartbeatStore,
+  runCredentialMonitoringDailyIfEnabled,
+  setCredentialMonitoringEnabledAtForTests,
+  resetCredentialMonitoringEnabledAtForTests,
+} from "../credential-health";
 import type { ReliabilitySweepResult } from "./sweep";
 
 const sweepResult = (): ReliabilitySweepResult => ({
@@ -97,6 +104,44 @@ describe("marketing-publish reliability isolation", () => {
         assert.deepEqual(outcome.body.results, [{ id: "pub-1" }]);
         assert.ok(outcome.body.reliability);
       }
+    });
+
+    it("B2: cron_secret reliability sweep failure still runs credential daily when enabled", async () => {
+      const store = createMemoryCredentialHealthHeartbeatStore();
+      setCredentialMonitoringEnabledAtForTests("2026-10-01T00:00:00.000Z");
+      const nowIso = "2026-10-08T12:00:00.000Z";
+      await runReliabilityAfterMarketingPublish(
+        { authOk: true, authReason: "cron_secret", publishCyclePublications: [] },
+        {
+          runSweep: async () => {
+            throw new Error("reliability_down");
+          },
+          runCredentialDaily: () =>
+            runCredentialMonitoringDailyIfEnabled({
+              nowIso,
+              env: {
+                MARKETING_CREDENTIAL_MONITORING_ENABLED_AT: "2026-10-01T00:00:00.000Z",
+                META_FACEBOOK_PAGE_ID: "p",
+                META_FACEBOOK_PAGE_ACCESS_TOKEN: "t",
+                META_INSTAGRAM_USER_ID: "u",
+                META_INSTAGRAM_ACCESS_TOKEN: "t",
+                META_APP_ID: "app",
+                META_APP_SECRET: "app-secret-value-32chars-minimum!!",
+              },
+              heartbeatStore: store,
+              incidentRepository: createMemoryIncidentRepository(),
+              fetch: async () => ({
+                status: 200,
+                json: async () => ({
+                  data: { is_valid: true, expires_at: 0, scopes: ["pages_manage_posts"] },
+                }),
+              }),
+            }),
+        },
+      );
+      const claimed = await store.load("facebook");
+      assert.equal(claimed?.last_proactive_daily_probe_day, "2026-10-08");
+      resetCredentialMonitoringEnabledAtForTests();
     });
 
     it("B: cron_secret publish success + reliability throws still returns publish success", async () => {
