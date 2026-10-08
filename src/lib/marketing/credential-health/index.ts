@@ -21,3 +21,4 @@ export * from "./monitor";
 export * from "./daily";
 export * from "./reactive";
 export * from "./reactive-attempt";
+export * from "./admin-dashboard";

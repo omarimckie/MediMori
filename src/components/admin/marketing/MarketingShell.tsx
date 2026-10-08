@@ -20,6 +20,7 @@ const MORE_NAV = [
   { href: "/admin/marketing/brain", label: "Marketing brain" },
   { href: "/admin/marketing/costs", label: "Costs" },
   { href: "/admin/marketing/incidents", label: "Incidents" },
+  { href: "/admin/marketing/credential-health", label: "Meta credentials" },
   { href: "/admin/marketing/notifications", label: "Notifications" },
 ];
 
