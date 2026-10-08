@@ -22,6 +22,13 @@ export function publicationFailedNotificationDedupeKey(publicationId: string): s
   return `publication_failed:notify:v1:${publicationId}`;
 }
 
+export function partialPublicationFailureIncidentDedupeKey(
+  batchId: string,
+  failedPublicationId: string,
+): string {
+  return `incident:partial_publication_failure:v1:batch:${batchId}:failed:${failedPublicationId}`;
+}
+
 export function smartUploadCaptionFailedIncidentDedupeKey(finalizeKey: string): string {
   return `incident:smart_upload_caption_failed:v1:${finalizeKey}`;
 }

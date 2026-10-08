@@ -23,6 +23,7 @@ const sweepResult = (): ReliabilitySweepResult => ({
     skippedPolicy: 0,
     failed: 0,
   },
+  partialPublicationFailureObserved: 0,
 });
 
 describe("marketing-publish reliability isolation", () => {

@@ -24,6 +24,12 @@ import {
   reconcileAutoResolvableIncidents,
   type IncidentReconcileStats,
 } from "./incident-reconcile";
+import { getMarketingStore } from "../context";
+import {
+  runPartialPublicationFailureBackupSweep,
+  type PartialPublicationFailureBackupInput,
+} from "../publication-incidents/partial-publication-failure";
+import type { MarketingStore } from "../store";
 
 export type ReliabilitySweepResult = {
   overdueDetected: number;
@@ -32,6 +38,7 @@ export type ReliabilitySweepResult = {
   notificationsSkippedDuplicate: number;
   dedupesCleaned: number;
   reconcile: IncidentReconcileStats;
+  partialPublicationFailureObserved: number;
 };
 
 export type ReliabilityAlertDeps = {
@@ -138,6 +145,9 @@ export type MarketingReliabilitySweepOptions = {
   alertDeps?: ReliabilityAlertDeps;
   cleanupDedupes?: () => Promise<number>;
   reconcile?: () => Promise<IncidentReconcileStats>;
+  /** Publications touched in the current publish cron cycle only (no historical scan). */
+  partialPublicationFailureBackup?: PartialPublicationFailureBackupInput;
+  store?: MarketingStore;
 };
 
 export async function runMarketingReliabilitySweep(
@@ -161,6 +171,14 @@ export async function runMarketingReliabilitySweep(
     ? await options.reconcile()
     : await reconcileAutoResolvableIncidents();
 
+  const store = options?.store ?? getMarketingStore();
+  const partialPublicationFailureObserved = options?.partialPublicationFailureBackup
+    ? await runPartialPublicationFailureBackupSweep(
+        store,
+        options.partialPublicationFailureBackup,
+      )
+    : 0;
+
   return {
     overdueDetected: overdue.length,
     stuckProcessingDetected: stuck.length,
@@ -168,5 +186,6 @@ export async function runMarketingReliabilitySweep(
     notificationsSkippedDuplicate,
     dedupesCleaned,
     reconcile,
+    partialPublicationFailureObserved,
   };
 }

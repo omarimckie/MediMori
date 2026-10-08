@@ -8,6 +8,8 @@ import type { PublicationRecoveryNotifyDeps } from "./recovery-notify";
 import { notifyPublicationRecoveryRequiredWithDeps } from "./recovery-notify";
 import { logMarketing } from "../logger";
 import { sanitizeErrorMessage } from "../incidents/sanitize";
+import type { MarketingStore } from "../store";
+import { observePartialPublicationFailureFromPublication } from "./partial-publication-failure";
 
 /**
  * Prospective observability after authoritative publication failure is persisted.
@@ -21,6 +23,7 @@ export async function observePublicationFailureOutcomes(
     notifyFailed?: typeof notifyPublicationFailedWithDeps;
     notifyRecovery?: typeof notifyPublicationRecoveryRequiredWithDeps;
     notifyRecoveryDeps?: PublicationRecoveryNotifyDeps;
+    store?: MarketingStore;
   },
 ): Promise<void> {
   if (publication.status !== "failed") {
@@ -47,6 +50,36 @@ export async function observePublicationFailureOutcomes(
   );
   if (!failedResult) {
     return;
+  }
+
+  if (
+    input.store &&
+    (failedResult.outcome === "created" || failedResult.outcome === "reopened")
+  ) {
+    try {
+      await observePartialPublicationFailureFromPublication(
+        input.store,
+        publication,
+        "partial_publication_failure_after_actionable_failed",
+        {
+          repository: input.repository,
+          prospective: {
+            kind: "hook_actionable_failure_transition",
+            publicationFailedOutcome: failedResult.outcome,
+            publicationFailedFirstSeenAt: failedResult.incident.firstSeenAt,
+          },
+        },
+      );
+    } catch (error) {
+      logMarketing({
+        operation: "partial_publication_failure_observe",
+        contentId: publication.contentId,
+        success: false,
+        error: sanitizeErrorMessage(
+          error instanceof Error ? error.message : "partial_observe_failed",
+        ),
+      });
+    }
   }
 
   const notify = input.notifyFailed ?? notifyPublicationFailedWithDeps;

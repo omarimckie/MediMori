@@ -63,6 +63,7 @@ export async function applyConfirmedPublicationFailure(
   if (updated) {
     await observePublicationFailureOutcomes(updated, {
       sourceOperation: "publish_confirmed_failure",
+      store,
       ...options?.observeFailureOutcomes,
     });
   }

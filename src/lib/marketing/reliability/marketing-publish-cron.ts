@@ -1,4 +1,5 @@
 import type { MarketingStore } from "../store";
+import type { MarketingPublication } from "../types";
 import type { ReliabilitySweepResult } from "./sweep";
 
 export type MarketingPublishCronAuth = { ok: boolean; reason: string };
@@ -27,6 +28,7 @@ export type MarketingPublishCronDeps = {
   runReliabilityAfterMarketingPublish: (input: {
     authOk: boolean;
     authReason: string;
+    publishCyclePublications?: MarketingPublication[];
   }) => Promise<ReliabilitySweepResult | null>;
 };
 
@@ -39,6 +41,10 @@ export async function handleMarketingPublishCron(
     return { ok: false, status: 401, body: { error: "Unauthorized." } };
   }
   const results = await deps.publishDue(deps.getStore());
+  const publishCyclePublications = results.filter(
+    (row): row is MarketingPublication =>
+      Boolean(row) && typeof row === "object" && typeof (row as MarketingPublication).id === "string",
+  );
   await deps.recordHeartbeat({
     request,
     auth,
@@ -47,6 +53,7 @@ export async function handleMarketingPublishCron(
   const reliability = await deps.runReliabilityAfterMarketingPublish({
     authOk: auth.ok,
     authReason: auth.reason,
+    publishCyclePublications,
   });
   return {
     ok: true,

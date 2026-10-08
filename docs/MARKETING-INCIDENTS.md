@@ -134,9 +134,19 @@ Prospective capture only — **no** historical backfill, sweeps, or startup scan
 - User validation errors (4xx / validation issues) are excluded.
 - Browser-only / client telemetry deferred (Decision 3.A). **No** phone push for Smart Upload incidents in B1.
 
+### Phase III-B2 (partial publication failure)
+
+Prospective only — no historical backfill. **All** partial observation is off until deploy env `MARKETING_PARTIAL_PUBLICATION_FAILURE_ENABLED_AT` is set to a valid ISO-8601 UTC instant. Hook runs only on `publication_failed` **created/reopened** (not occurrence-only) and requires the same `publication_failed.first_seen_at >= ENABLED_AT` anchor as sweep (reopen does not move `first_seen_at`). Sweep pairs within the current publish cycle only (failed leg and published-counterpart paths).
+
+- Facebook + Instagram only; same Smart Upload `batchId` with exactly one content row per platform.
+- Both canonical publications (`pub:{contentId}:{platform}`) with identical non-null `scheduled_for`; recycle rows are excluded.
+- One side `published`, the other `failed` and actionable per `evaluatePublicationFailedCapture` (no cron retry pending, recovery, ambiguity, or credential class).
+- Dedupe: `incident:partial_publication_failure:v1:batch:{batchId}:failed:{failedPublicationId}`.
+- **Silent** — no admin notification or Web Push; `publication_failed` notifications unchanged when both apply.
+- Observed after actionable `publication_failed` capture and as a backup for failed rows from the current publish cron cycle only.
+
 ### Future phases (not B1)
 
-- **III-B2:** conservative `partial_publication_failure` detection.
 - **III-B3:** credential lifecycle + credential-level incidents.
 - **III-B4:** independent dispatcher monitor.
 
