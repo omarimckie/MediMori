@@ -78,7 +78,10 @@ if (process.argv[2] === "--module-graph-smoke") {
     worker.main(runId).catch(error => {
       const { WorkerInitializationError, sanitizedInitializationDiagnostic } = require("../src/lib/engineering/worker-initialization");
       const { WorkspaceExportError } = require("../src/lib/engineering/workspace-export-diagnostics");
-      if (error instanceof WorkerInitializationError || error instanceof WorkspaceExportError) {
+      const { PreclaimWorkerError, preclaimDiagnosticToJson } = require("../src/lib/engineering/preclaim-diagnostics");
+      if (error instanceof PreclaimWorkerError) {
+        console.error(JSON.stringify(preclaimDiagnosticToJson(error.diagnostic)));
+      } else if (error instanceof WorkerInitializationError || error instanceof WorkspaceExportError) {
         console.error(JSON.stringify(sanitizedInitializationDiagnostic(error, true)));
       } else {
         // Runtime failures can happen after claim or dispatch. Do not label

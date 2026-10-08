@@ -57,7 +57,10 @@ For a disposable engineering database, install the additive engineering schema i
 1. `sql/engineering-schema.sql` — control-plane tasks, plans, approvals, runs, evidence, and bounded initial lifecycle procedures.
 2. `sql/engineering-worker.sql` — restricted worker call accounting, progress and validation diagnostics, security-definer ingress, and worker grants.
 3. `sql/engineering-lineage.sql` — immutable plan/attempt target lineage and fresh-attempt preparation binding.
-4. `sql/engineering-merge.sql` — separately gated merge approvals and executor lifecycle records.
+4. `sql/engineering-initial-attempt-preparation.sql` — immutable initial-attempt preparation before plan approval.
+5. `sql/engineering-source-binding.sql` — implementation-source binding for prepared attempts and retries.
+6. `sql/engineering-merge.sql` — separately gated merge approvals and executor lifecycle records.
+7. `sql/engineering-preclaim-diagnostics.sql` — bounded pre-claim failure evidence; install only after the six preceding migrations.
 
 Apply only the specifically reviewed engineering SQL to the intended disposable branch. Do not apply these files to production or mix them with unrelated business migrations. Verify schema compatibility and the restricted role after each approved synchronization.
 

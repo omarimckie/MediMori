@@ -8,7 +8,9 @@ import { createApprovedExecutionExport } from "../src/lib/engineering/source-bin
 import { openaiGenerate, runWorker, type Ingress, type IsolatedWorkspace } from "../src/lib/engineering/worker";
 import { parseWorkerInitializationConfig, runScratchInitializationPreflight, diagnoseWorkerInitialization, sanitizedInitializationDiagnostic } from "../src/lib/engineering/worker-initialization";
 import { verifyWorkerDatabaseIdentity } from "../src/lib/engineering/worker-database";
-import { verifyTargetAncestry } from "../src/lib/engineering/lineage";
+import { verifyWorkerTargetAncestry } from "../src/lib/engineering/merge-target";
+import { classifyPreclaimFailure, PreclaimWorkerError, type PreclaimDiagnosticStage } from "../src/lib/engineering/preclaim-diagnostics";
+import { ApprovedSourceRevisionMismatch } from "../src/lib/engineering/source-binding";
 
 export { diagnoseWorkerInitialization };
 
@@ -60,37 +62,64 @@ export async function diagnoseWorkerSourceExport(env = process.env) {
 
 // Explicit invocation only. Never use DATABASE_URL/admin sessions as worker identity.
 export async function main(run = process.argv[2]) {
-  const config = parseWorkerInitializationConfig(process.env, run);
-  const { workerDatabaseUrl: connection, exportParent, scratchRoot, sourceRoot, sandboxImage: image, dependencyVolume, openAiKey: key, rates, models, escalationReason } = config;
-  await runScratchInitializationPreflight(config);
-  // Keep the SQL client in main()'s lexical scope: the ingress capability
-  // below closes over it for the later claim and lifecycle calls.
-  const sql = neon(connection);
-  await verifyWorkerDatabaseIdentity(connection);
-  const lineageRows = await sql`SELECT engineering_worker(${run}::uuid,'lineage','worker-lineage-preflight',0,'{}'::jsonb) AS result`;
-  const lineage = lineageRows[0]?.result as Record<string, unknown> | undefined;
-  if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string" || lineage.source_binding_version !== 1 || typeof lineage.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(lineage.implementation_source_revision)) {
-    throw new EngineeringInputError("Approved execution lineage is unavailable.");
+  let stage: PreclaimDiagnosticStage = "configuration";
+  let config: ReturnType<typeof parseWorkerInitializationConfig>;
+  let sql: ReturnType<typeof neon> | undefined;
+  let exportRoot: string;
+  let preflightRevision: string;
+  try {
+    config = parseWorkerInitializationConfig(process.env, run);
+    const { workerDatabaseUrl: connection } = config;
+    // Constructing a Neon client is local-only; it allows eligible pre-claim
+    // failures to be recorded through the restricted diagnostic function.
+    sql = neon(connection);
+    stage = "scratch_preflight";
+    await runScratchInitializationPreflight(config);
+    stage = "database_identity";
+    await verifyWorkerDatabaseIdentity(connection);
+    stage = "lineage_lookup";
+    const lineageRows = await sql`SELECT engineering_worker(${run}::uuid,'lineage','worker-lineage-preflight',0,'{}'::jsonb) AS result` as unknown as Array<{ result: unknown }>;
+    const lineage = lineageRows[0]?.result as Record<string, unknown> | undefined;
+    if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string" || lineage.source_binding_version !== 1 || typeof lineage.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(lineage.implementation_source_revision)) {
+      throw new EngineeringInputError("Approved execution lineage is unavailable.");
+    }
+    stage = "target_verification";
+    await verifyWorkerTargetAncestry(lineage.target_base_sha, config.scratchRoot);
+    stage = "source_export";
+    const exported = await createApprovedExecutionExport(
+      config.sourceRoot,
+      config.exportParent,
+      lineage.implementation_source_revision,
+      async actualRevision => { await sql!`SELECT engineering_record_source_mismatch(${run}::uuid,${actualRevision})`; },
+    );
+    exportRoot = exported.exportRoot;
+    preflightRevision = exported.revision;
+  } catch (error) {
+    const diagnostic = classifyPreclaimFailure(error, stage);
+    // Source mismatch already uses its existing authoritative, fail-closed
+    // control-plane transition. All other records use only a bounded allow-list.
+    if (!(error instanceof ApprovedSourceRevisionMismatch) && sql && run && /^[a-f0-9-]{36}$/i.test(run)) {
+      await sql`SELECT engineering_record_preclaim_failure(${run}::uuid,${diagnostic.stage},${diagnostic.code})`.catch(() => []);
+    }
+    throw new PreclaimWorkerError(diagnostic);
   }
-  await verifyTargetAncestry(sourceRoot, lineage.target_base_sha);
-  const { exportRoot, revision: preflightRevision } = await createApprovedExecutionExport(
-    sourceRoot,
-    exportParent,
-    lineage.implementation_source_revision,
-    async actualRevision => { await sql`SELECT engineering_record_source_mismatch(${run}::uuid,${actualRevision})`; },
-  );
+  const activeConfig = config!;
+  const controlPlane = sql!;
+  const { scratchRoot, sandboxImage: image, dependencyVolume, openAiKey: key, rates, models, escalationReason } = activeConfig;
   let workspace: DockerWorkspace|undefined;
+  let claimSucceeded = false;
   const ingress: Ingress = async (op, owner, epoch, data = {}) => {
     try {
       const payload=op==="claim"?{...data,preflightRevision}:data;
-      const rows = await sql`SELECT engineering_worker(${run}::uuid,${op},${owner},${epoch},${JSON.stringify(payload)}::jsonb) AS result`;
+      const rows = await controlPlane`SELECT engineering_worker(${run}::uuid,${op},${owner},${epoch},${JSON.stringify(payload)}::jsonb) AS result` as unknown as Array<{ result: unknown }>;
       const result = rows[0].result as Record<string, unknown>;
       if (op === "claim") {
+        claimSucceeded = true;
         try {
           workspace = await DockerWorkspace.create(exportRoot, executablePlan(result.plan), image, dependencyVolume, { taskId: String(result.task_id ?? ""), runId: run as string }, resolve(scratchRoot));
           if ((await workspace.snapshot()).revision!==preflightRevision) throw new EngineeringInputError("Preflight revision mismatch.");
         } catch {
-          await sql`SELECT engineering_worker(${run}::uuid,'block',${owner},${Number(result.lease_epoch)},${JSON.stringify({diagnostic:{stage:"worker",code:"replacement_revision_mismatch"}})}::jsonb)`.catch(()=>{});
+          await controlPlane`SELECT engineering_worker(${run}::uuid,'block',${owner},${Number(result.lease_epoch)},${JSON.stringify({diagnostic:{stage:"worker",code:"replacement_revision_mismatch"}})}::jsonb)`.catch(()=>{});
           throw new EngineeringInputError("Preflight workspace verification failed.");
         }
       }
@@ -104,6 +133,18 @@ export async function main(run = process.argv[2]) {
   // The trusted supervisor keeps its API capability in closure. Neither Docker
   // clients nor validation children inherit admin/database/API environment keys.
   for (const name of ["DATABASE_URL", "ADMIN_SESSION_SECRET", "ADMIN_USERS", "OPENAI_API_KEY", "ENGINEERING_WORKER_DATABASE_URL"]) delete process.env[name];
-  try {const result = await runWorker(ingress, proxy, openaiGenerate(key), { escalationReason, rates, models });console.log(JSON.stringify({...result,reviewWorkspace:exportRoot}));}
+  try {
+    try {
+      const result = await runWorker(ingress, proxy, openaiGenerate(key), { escalationReason, rates, models });
+      console.log(JSON.stringify({...result,reviewWorkspace:exportRoot}));
+    } catch (error) {
+      if (!claimSucceeded) {
+        const diagnostic = classifyPreclaimFailure(error, "claim_preflight");
+        await controlPlane`SELECT engineering_record_preclaim_failure(${run}::uuid,${diagnostic.stage},${diagnostic.code})`.catch(() => []);
+        throw new PreclaimWorkerError(diagnostic);
+      }
+      throw error;
+    }
+  }
   finally {if(workspace)await workspace.dispose().catch(()=>{});else await rm(exportRoot,{recursive:true,force:true}).catch(()=>{});}
 }
