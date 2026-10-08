@@ -21,6 +21,47 @@ export type CredentialProbeFetch = (
   init: { signal: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
+/** Production cron path: Node/edge `fetch` with injectable probe shape. */
+export async function runtimeCredentialProbeFetch(
+  url: string,
+  init: { signal: AbortSignal },
+): Promise<{ status: number; json: () => Promise<unknown> }> {
+  const response = await fetch(url, init);
+  return {
+    status: response.status,
+    json: () => response.json(),
+  };
+}
+
+function credentialsConfiguredForPlatform(
+  platform: MetaCredentialPlatform,
+  env: Record<string, string | undefined>,
+): boolean {
+  if (platform === "facebook") {
+    const pageToken = facebookAccessToken(env);
+    const app = getMetaAppCredentialsForDebugToken(env);
+    return Boolean(pageToken && app);
+  }
+  return Boolean(instagramAccessToken(env));
+}
+
+function attemptProbeFetchNotConfigured(
+  platform: MetaCredentialPlatform,
+  method: CredentialValidationAttempt["method"],
+  attemptedAt: string,
+  env: Record<string, string | undefined>,
+): CredentialValidationAttempt {
+  return {
+    platform,
+    method,
+    attemptedAt,
+    monitoringAvailability: "unavailable",
+    credentialsConfigured: credentialsConfiguredForPlatform(platform, env),
+    permissionCheck: "not_checked",
+    errorClass: "meta_probe_fetch_not_configured",
+  };
+}
+
 export type RunCredentialProbeInput = {
   platform: MetaCredentialPlatform;
   attemptedAt: string;
@@ -104,16 +145,12 @@ export async function runCredentialProbe(
   }
 
   if (!fetchImpl) {
-    return {
-      platform: input.platform,
+    return attemptProbeFetchNotConfigured(
+      input.platform,
       method,
-      attemptedAt: input.attemptedAt,
-      monitoringAvailability: "unavailable",
-      credentialsConfigured: false,
-      unsupportedMethod: true,
-      permissionCheck: "not_checked",
-      errorClass: "meta_probe_fetch_not_configured",
-    };
+      input.attemptedAt,
+      env,
+    );
   }
 
   if (input.platform === "facebook") {

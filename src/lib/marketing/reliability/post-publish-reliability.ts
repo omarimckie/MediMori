@@ -7,6 +7,7 @@ import {
 } from "../publication-incidents/partial-publication-failure";
 import { runMarketingReliabilitySweep, type ReliabilitySweepResult } from "./sweep";
 import { runCredentialMonitoringDailyIfEnabled } from "../credential-health/daily";
+import { runtimeCredentialProbeFetch } from "../credential-health/probes";
 
 export type RunReliabilityAfterMarketingPublishDeps = {
   runSweep?: () => Promise<ReliabilitySweepResult>;
@@ -52,7 +53,7 @@ export async function runReliabilityAfterMarketingPublish(
   const runCredentialDaily =
     deps.runCredentialDaily ?? runCredentialMonitoringDailyIfEnabled;
   try {
-    await runCredentialDaily();
+    await runCredentialDaily({ fetch: runtimeCredentialProbeFetch });
   } catch (error) {
     logMarketing({
       operation: "credential_health_daily",
