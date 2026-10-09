@@ -7,6 +7,7 @@ import {
   smartUploadErrorStatus,
   validationIssuesFromError,
 } from "@/lib/marketing/smart-upload-api";
+import { parseSmartUploadDestinationsFormValue } from "@/lib/marketing/smart-upload-multipart";
 import {
   finalizeSmartUploadFromBlob,
   finalizeSmartUploadFromBuffer,
@@ -66,6 +67,9 @@ export async function POST(request: Request) {
       }
       const buffer = Buffer.from(await imageEntry.arrayBuffer());
       assertImageUpload(buffer);
+      const destinations = parseSmartUploadDestinationsFormValue(form.get("destinations"));
+      const pinterestTitle = String(form.get("pinterestTitle") ?? "").trim() || null;
+      const pinterestDescription = String(form.get("pinterestDescription") ?? "").trim() || null;
       const result = await finalizeSmartUploadFromBuffer(store, {
         ...captionFields,
         batchId,
@@ -78,6 +82,9 @@ export async function POST(request: Request) {
         actor: auth.username,
         imageBuffer: buffer,
         imageFilename: sanitizeUploadFilename(imageEntry.name || "upload.jpg"),
+        destinations,
+        pinterestTitle,
+        pinterestDescription,
       });
       return NextResponse.json(result);
     }

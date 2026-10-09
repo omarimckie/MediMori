@@ -10,6 +10,8 @@ export type CaptionGenerationFileSnapshot = {
   finalizeKey: string;
   fixStrategy: string;
   fixTargetRatio: string;
+  /** Meta caption image is ready even when file status is needs_attention (e.g. Pinterest-only fix pending). */
+  captionImagePreparationReady: boolean;
   acceptedPreview: {
     uploadIntent: string;
     pathname: string;
@@ -42,14 +44,20 @@ export async function ensureStagedForCaptionGeneration(
     stagedInThisCall = true;
   }
 
-  if (working.status === "needs_attention") {
+  if (working.status === "needs_attention" && !working.captionImagePreparationReady) {
     return {
       ok: false,
       message: "Fix image validation issues before generating a caption.",
     };
   }
 
-  if (working.status !== "ready" || !working.uploadIntent?.trim() || !working.pathname?.trim()) {
+  const stagedRefsReady =
+    Boolean(working.uploadIntent?.trim()) && Boolean(working.pathname?.trim());
+  const statusAllowsCaption =
+    working.status === "ready" ||
+    (working.status === "needs_attention" && working.captionImagePreparationReady);
+
+  if (!statusAllowsCaption || !stagedRefsReady) {
     return {
       ok: false,
       message: working.error?.trim() || "Upload or validation failed.",
@@ -57,7 +65,9 @@ export async function ensureStagedForCaptionGeneration(
   }
 
   const readiness = assessCaptionGenerationReadiness({
-    status: working.status,
+    status: working.captionImagePreparationReady && working.status === "needs_attention"
+      ? "ready"
+      : working.status,
     uploadIntent: working.uploadIntent,
     pathname: working.pathname,
     acceptedPreview: working.acceptedPreview,

@@ -1,6 +1,7 @@
 import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
 import { isSmartUploadAspectRatioOnlyFailure, validateSmartUploadStagedBlob } from "@/lib/marketing/smart-upload";
 import { parseSmartUploadDestinationsRecord } from "@/lib/marketing/smart-upload-destinations";
+import { parseSmartUploadDestinationsFormValue } from "@/lib/marketing/smart-upload-multipart";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -19,8 +20,9 @@ export async function POST(request: Request) {
         return jsonError("Expected one image file.", 400);
       }
       const buffer = Buffer.from(await imageEntry.arrayBuffer());
+      const destinations = parseSmartUploadDestinationsFormValue(form.get("destinations"));
       const { validateSmartUploadImageBytes } = await import("@/lib/marketing/smart-upload");
-      const result = await validateSmartUploadImageBytes(buffer);
+      const result = await validateSmartUploadImageBytes(buffer, destinations);
       if (!result.ok) {
         return NextResponse.json(
           {

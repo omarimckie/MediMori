@@ -60,6 +60,31 @@ test("assertAtLeastOneDestination rejects empty selection", () => {
   );
 });
 
+test("buffer finalize rejects square image when all destinations including pinterest are selected", async () => {
+  const store = new MemoryMarketingStore();
+  const square = await png(1080, 1080);
+  await assert.rejects(
+    () =>
+      finalizeSmartUploadFromBuffer(store, {
+        caption: "Test",
+        batchId: crypto.randomUUID(),
+        finalizeKey: crypto.randomUUID(),
+        actor: "tester",
+        imageBuffer: square,
+        imageFilename: "square.png",
+        destinations: normalizeSmartUploadDestinations({
+          facebook: true,
+          instagram: true,
+          pinterest: true,
+        }),
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      return /aspect ratio|validation/i.test(error.message);
+    },
+  );
+});
+
 test("meta-only backward compatibility uses meta validation scope by default", async () => {
   const square = await png(1080, 1080);
   const metaOnly = await validateSmartUploadImageBytes(square);

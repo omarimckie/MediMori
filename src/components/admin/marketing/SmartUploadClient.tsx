@@ -7,10 +7,7 @@ import {
   resourceBlobStorageUnavailableMessage,
   shouldUseResourceMultipartFallbackWhenBlobUnavailable,
 } from "@/lib/marketing/resource-multipart-fallback";
-import {
-  canStartPreviewGeneration,
-  invalidateAcceptedBeforePreviewRegeneration,
-} from "@/lib/marketing/smart-upload-preview-client";
+import { canStartPreviewGeneration } from "@/lib/marketing/smart-upload-preview-client";
 import { smartUploadStagedImageUrl } from "@/lib/marketing/smart-upload-staged-image-url";
 import {
   createSmartUploadSessionBatchId,
@@ -53,9 +50,23 @@ import {
 import { SmartUploadCaptionAssistant } from "./SmartUploadCaptionAssistant";
 import {
   assertAtLeastOneDestination,
+  metaDestinationsSelected,
   normalizeSmartUploadDestinations,
   type SmartUploadDestinations,
 } from "@/lib/marketing/smart-upload-destinations";
+import { localMultipartSmartUploadFinalizeBlockedReason } from "@/lib/marketing/smart-upload-multipart";
+import {
+  deriveUploadStatusAfterValidation,
+  isCaptionImagePreparationReady,
+  isMetaImageReady,
+  isPinterestImageReady,
+  isSmartUploadSubmissionReady,
+  metaImageNeedsAspectFix,
+  onlyAspectRatioIssues,
+  pinterestImageNeedsAspectFix,
+  validationIssuesAfterAcceptingMetaFix,
+  validationIssuesAfterAcceptingPinterestFix,
+} from "@/lib/marketing/smart-upload-ui-readiness";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 const UPLOAD_INTENT_URL = "/api/admin/marketing/smart-upload/upload-intent";
@@ -99,15 +110,16 @@ type SmartUploadFile = {
   pathname: string | null;
   publicUrl: string | null;
   finalizeKey: string;
-  fixPanelOpen: boolean;
+  metaFixPanelOpen: boolean;
+  pinterestFixPanelOpen: boolean;
   fixStrategy: FixStrategy;
   fixTargetRatio: FixTargetRatio;
-  preview: PreviewState | null;
+  metaPreview: PreviewState | null;
+  pinterestPreview: PreviewState | null;
   acceptedPreview: PreviewState | null;
   acceptedPinterestPreview: PreviewState | null;
   pinterestFixStrategy: FixStrategy;
   pinterestFixTargetRatio: FixTargetRatio;
-  previewRole: PreviewRole;
   captionAssistant: CaptionAssistantState;
 };
 
@@ -125,20 +137,42 @@ function newFileEntry(file: File): SmartUploadFile {
     pathname: null,
     publicUrl: null,
     finalizeKey: crypto.randomUUID(),
-    fixPanelOpen: false,
+    metaFixPanelOpen: false,
+    pinterestFixPanelOpen: false,
     fixStrategy: "pad",
     fixTargetRatio: "4:5",
-    preview: null,
+    metaPreview: null,
+    pinterestPreview: null,
     acceptedPreview: null,
     acceptedPinterestPreview: null,
     pinterestFixStrategy: "pad",
     pinterestFixTargetRatio: "2:3",
-    previewRole: "meta",
     captionAssistant: createDefaultCaptionAssistantState(),
   };
 }
 
-function captionGenerationFileSnapshot(item: SmartUploadFile): CaptionGenerationFileSnapshot {
+function formatTargetRatioLabel(targetRatio: FixTargetRatio): string {
+  if (targetRatio === "2:3") return "2:3";
+  if (targetRatio === "4:5") return "4:5";
+  return "Square";
+}
+
+function submissionReadyForFile(
+  item: SmartUploadFile,
+  selectedDestinations: SmartUploadDestinations,
+): boolean {
+  return isSmartUploadSubmissionReady(
+    selectedDestinations,
+    item.validationIssues,
+    Boolean(item.acceptedPreview),
+    Boolean(item.acceptedPinterestPreview),
+  );
+}
+
+function captionGenerationFileSnapshot(
+  item: SmartUploadFile,
+  selectedDestinations: SmartUploadDestinations,
+): CaptionGenerationFileSnapshot {
   return {
     uploadIntent: item.uploadIntent,
     pathname: item.pathname,
@@ -148,6 +182,11 @@ function captionGenerationFileSnapshot(item: SmartUploadFile): CaptionGeneration
     finalizeKey: item.finalizeKey,
     fixStrategy: item.fixStrategy,
     fixTargetRatio: item.fixTargetRatio,
+    captionImagePreparationReady: isCaptionImagePreparationReady(
+      selectedDestinations,
+      item.validationIssues,
+      Boolean(item.acceptedPreview),
+    ),
     acceptedPreview: item.acceptedPreview
       ? {
           uploadIntent: item.acceptedPreview.uploadIntent,
@@ -156,8 +195,8 @@ function captionGenerationFileSnapshot(item: SmartUploadFile): CaptionGeneration
           targetRatio: item.acceptedPreview.targetRatio,
         }
       : null,
-    preview: item.preview
-      ? { strategy: item.preview.strategy, targetRatio: item.preview.targetRatio }
+    preview: item.metaPreview
+      ? { strategy: item.metaPreview.strategy, targetRatio: item.metaPreview.targetRatio }
       : null,
   };
 }
@@ -187,11 +226,11 @@ function captionFingerprintContext(
   };
 }
 
-function isAspectRatioFixable(item: SmartUploadFile): boolean {
+function canUseInBrowserFixWorkflow(item: SmartUploadFile): boolean {
   if (!item.validationIssues.length) return false;
   if (!item.uploadIntent || !item.pathname || !item.publicUrl) return false;
   if (item.uploadIntent === "local-multipart") return false;
-  return item.validationIssues.every((issue) => issue.code === "invalid_aspect_ratio");
+  return onlyAspectRatioIssues(item.validationIssues);
 }
 
 function previewMatchesSettings(
@@ -200,6 +239,23 @@ function previewMatchesSettings(
   targetRatio: FixTargetRatio,
 ): boolean {
   return Boolean(preview && preview.strategy === strategy && preview.targetRatio === targetRatio);
+}
+
+function appendSmartUploadMultipartDestinations(
+  form: FormData,
+  selectedDestinations: SmartUploadDestinations,
+): void {
+  form.set("destinations", JSON.stringify(selectedDestinations));
+}
+
+function appendSmartUploadMultipartFinalizeFields(
+  form: FormData,
+  selectedDestinations: SmartUploadDestinations,
+  captions: CaptionFinalizePayload,
+): void {
+  appendSmartUploadMultipartDestinations(form, selectedDestinations);
+  form.set("pinterestTitle", captions.pinterestTitle ?? "");
+  form.set("pinterestDescription", captions.pinterestDescription ?? "");
 }
 
 function statusLabel(status: FileStatus): string {
@@ -401,6 +457,28 @@ export function SmartUploadClient() {
     return filesRef.current.find((item) => item.id === id);
   }
 
+  const destinationsJson = JSON.stringify(destinations);
+  const prevDestinationsJsonRef = useRef(destinationsJson);
+  useEffect(() => {
+    if (prevDestinationsJsonRef.current === destinationsJson) return;
+    prevDestinationsJsonRef.current = destinationsJson;
+    setFiles((prev) => {
+      let touched = false;
+      const next = prev.map((item) => {
+        if (item.uploadIntent !== "local-multipart") return item;
+        touched = true;
+        return mergeSmartUploadFile(item, {
+          status: "needs_attention",
+          error: "Upload & validate again after changing destinations.",
+          validationIssues: [],
+        });
+      });
+      if (touched) filesRef.current = next;
+      return touched ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mergeSmartUploadFile uses bookId/campaignId from closure
+  }, [destinationsJson, bookId, campaignId]);
+
   function captionPreflightEntry(entry: SmartUploadFile): SubmitValidCaptionPreflightEntry {
     const captionAssistant = refreshCaptionAssistantStale(
       entry.captionAssistant,
@@ -416,8 +494,8 @@ export function SmartUploadClient() {
             targetRatio: entry.acceptedPreview.targetRatio,
           }
         : null,
-      previewDerivative: entry.preview
-        ? { strategy: entry.preview.strategy, targetRatio: entry.preview.targetRatio }
+      previewDerivative: entry.metaPreview
+        ? { strategy: entry.metaPreview.strategy, targetRatio: entry.metaPreview.targetRatio }
         : null,
       fixStrategy: entry.fixStrategy,
       fixTargetRatio: entry.fixTargetRatio,
@@ -437,14 +515,23 @@ export function SmartUploadClient() {
     if (item.status === "submitted" || item.status === "failed") {
       return { ready: false, reason: "This image cannot be used for caption generation." };
     }
-    if (item.status === "needs_attention") {
-      return { ready: false, reason: "Fix image validation issues before generating a caption." };
-    }
     if (!item.uploadIntent || !item.pathname) {
-      return { ready: true };
+      return { ready: false, reason: "Upload and validate this image before generating a caption." };
+    }
+    if (
+      !isCaptionImagePreparationReady(
+        destinations,
+        item.validationIssues,
+        Boolean(item.acceptedPreview),
+      )
+    ) {
+      return {
+        ready: false,
+        reason: "Fix Meta image validation issues before generating a caption.",
+      };
     }
     const assessed = assessCaptionGenerationReadiness({
-      status: item.status,
+      status: "ready",
       uploadIntent: item.uploadIntent,
       pathname: item.pathname,
       acceptedPreview: item.acceptedPreview
@@ -453,8 +540,8 @@ export function SmartUploadClient() {
             targetRatio: item.acceptedPreview.targetRatio,
           }
         : null,
-      preview: item.preview
-        ? { strategy: item.preview.strategy, targetRatio: item.preview.targetRatio }
+      preview: item.metaPreview
+        ? { strategy: item.metaPreview.strategy, targetRatio: item.metaPreview.targetRatio }
         : null,
       fixStrategy: item.fixStrategy,
       fixTargetRatio: item.fixTargetRatio,
@@ -502,11 +589,11 @@ export function SmartUploadClient() {
 
     const fileForStaging = file;
     const prepared = await ensureStagedForCaptionGeneration(
-      captionGenerationFileSnapshot(fileForStaging),
+      captionGenerationFileSnapshot(fileForStaging, destinations),
       async () => {
         const latest = getFileById(fileId) ?? fileForStaging;
         const staged = await uploadAndValidateOne(latest);
-        return captionGenerationFileSnapshot(staged);
+        return captionGenerationFileSnapshot(staged, destinations);
       },
     );
 
@@ -635,15 +722,25 @@ export function SmartUploadClient() {
       file = commitFile(fileId, { status: "validating" });
       const form = new FormData();
       form.set("image", file.file);
+      appendSmartUploadMultipartDestinations(form, destinations);
       const response = await fetch(VALIDATE_URL, { method: "POST", body: form });
       if (response.status === 422) {
         const json = (await response.json()) as {
           issues?: Array<{ code: string; message: string; platform?: string }>;
         };
+        const validationIssues = json.issues ?? [];
         return commitFile(fileId, {
-          status: "needs_attention",
-          error: json.issues?.map((i) => i.message).join(" ") ?? "Validation failed.",
-          validationIssues: json.issues ?? [],
+          status: deriveUploadStatusAfterValidation(
+            destinations,
+            validationIssues,
+            false,
+            false,
+          ),
+          error: validationIssues.map((i) => i.message).join(" ") || "Validation failed.",
+          validationIssues,
+          uploadIntent: "local-multipart",
+          pathname: "local-multipart",
+          publicUrl: "local-multipart",
         });
       }
       if (!response.ok) {
@@ -653,7 +750,7 @@ export function SmartUploadClient() {
         });
       }
       return commitFile(fileId, {
-        status: "ready",
+        status: deriveUploadStatusAfterValidation(destinations, [], false, false),
         error: null,
         validationIssues: [],
         uploadIntent: "local-multipart",
@@ -733,13 +830,36 @@ export function SmartUploadClient() {
       const json = (await validateRes.json()) as {
         issues?: Array<{ code: string; message: string; platform?: string }>;
       };
-      return commitFile(fileId, {
-        status: "needs_attention",
-        error: json.issues?.map((i) => i.message).join(" ") ?? "Validation failed.",
-        validationIssues: json.issues ?? [],
+      const validationIssues = json.issues ?? [];
+      const afterUpload = {
         uploadIntent: intentJson.uploadIntent,
         pathname: urlJson.pathname,
         publicUrl,
+        acceptedPreview: file.acceptedPreview,
+        acceptedPinterestPreview: file.acceptedPinterestPreview,
+      };
+      const needsMetaFix = metaImageNeedsAspectFix(
+        destinations,
+        validationIssues,
+        Boolean(file.acceptedPreview),
+      );
+      const needsPinFix = pinterestImageNeedsAspectFix(
+        destinations,
+        validationIssues,
+        Boolean(file.acceptedPinterestPreview),
+      );
+      return commitFile(fileId, {
+        status: deriveUploadStatusAfterValidation(
+          destinations,
+          validationIssues,
+          Boolean(file.acceptedPreview),
+          Boolean(file.acceptedPinterestPreview),
+        ),
+        error: validationIssues.map((i) => i.message).join(" ") || "Validation failed.",
+        validationIssues,
+        metaFixPanelOpen: needsMetaFix,
+        pinterestFixPanelOpen: needsPinFix,
+        ...afterUpload,
       });
     }
     if (!validateRes.ok) {
@@ -779,14 +899,16 @@ export function SmartUploadClient() {
     }
   }
 
-  async function generatePreview(entry: SmartUploadFile): Promise<void> {
+  async function generatePreview(entry: SmartUploadFile, role: PreviewRole): Promise<void> {
     if (!entry.uploadIntent || !entry.pathname || !entry.publicUrl) return;
     if (!canStartPreviewGeneration(entry.id, previewGeneratingEntryId)) return;
 
     setPreviewGeneratingEntryId(entry.id);
-    const previousPreview = entry.preview;
+    const previousPreview = role === "pinterest" ? entry.pinterestPreview : entry.metaPreview;
     updateFile(entry.id, {
-      ...invalidateAcceptedBeforePreviewRegeneration(),
+      ...(role === "pinterest"
+        ? { acceptedPinterestPreview: null }
+        : { acceptedPreview: null }),
       error: null,
     });
 
@@ -795,6 +917,9 @@ export function SmartUploadClient() {
         await discardPreviewForEntry(entry, previousPreview);
       }
       updateFile(entry.id, { status: "validating" });
+      const strategy = role === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy;
+      const targetRatio =
+        role === "pinterest" ? entry.pinterestFixTargetRatio : entry.fixTargetRatio;
       const response = await fetch(PREVIEW_FIX_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -803,71 +928,99 @@ export function SmartUploadClient() {
           uploadIntent: entry.uploadIntent,
           pathname: entry.pathname,
           publicUrl: entry.publicUrl,
-          strategy:
-            entry.previewRole === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy,
-          targetRatio:
-            entry.previewRole === "pinterest"
-              ? entry.pinterestFixTargetRatio
-              : entry.fixTargetRatio,
+          strategy,
+          targetRatio,
           destinations,
           imageFilename: entry.file.name,
         }),
       });
       if (!response.ok) {
         updateFile(entry.id, {
-          status: "needs_attention",
+          status: deriveUploadStatusAfterValidation(
+            destinations,
+            entry.validationIssues,
+            Boolean(entry.acceptedPreview),
+            Boolean(entry.acceptedPinterestPreview),
+          ),
           error: await parseApiError(response),
-          acceptedPreview: null,
         });
         return;
       }
       const json = (await response.json()) as {
         preview: PreviewState;
       };
+      const latest = getFileById(entry.id) ?? entry;
+      const nextIssues = latest.validationIssues;
       updateFile(entry.id, {
-        status: "needs_attention",
+        status: deriveUploadStatusAfterValidation(
+          destinations,
+          nextIssues,
+          Boolean(latest.acceptedPreview),
+          Boolean(latest.acceptedPinterestPreview),
+        ),
         error: null,
-        preview: json.preview,
-        acceptedPreview: null,
+        ...(role === "pinterest"
+          ? { pinterestPreview: json.preview }
+          : { metaPreview: json.preview }),
       });
     } finally {
       setPreviewGeneratingEntryId(null);
     }
   }
 
-  async function discardPreviewAction(entry: SmartUploadFile): Promise<void> {
-    if (entry.preview) {
-      await discardPreviewForEntry(entry, entry.preview);
+  async function discardPreviewAction(entry: SmartUploadFile, role: PreviewRole): Promise<void> {
+    const preview = role === "pinterest" ? entry.pinterestPreview : entry.metaPreview;
+    if (preview) {
+      await discardPreviewForEntry(entry, preview);
     }
     updateFile(entry.id, {
-      preview: null,
-      acceptedPreview: null,
-      status: "needs_attention",
+      ...(role === "pinterest" ? { pinterestPreview: null } : { metaPreview: null }),
+      status: deriveUploadStatusAfterValidation(
+        destinations,
+        entry.validationIssues,
+        Boolean(entry.acceptedPreview),
+        Boolean(entry.acceptedPinterestPreview),
+      ),
     });
   }
 
-  function acceptPreview(entry: SmartUploadFile): void {
-    if (!entry.preview) return;
-    const strategy =
-      entry.previewRole === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy;
+  function acceptPreview(entry: SmartUploadFile, role: PreviewRole): void {
+    const preview = role === "pinterest" ? entry.pinterestPreview : entry.metaPreview;
+    if (!preview) return;
+    const strategy = role === "pinterest" ? entry.pinterestFixStrategy : entry.fixStrategy;
     const targetRatio =
-      entry.previewRole === "pinterest" ? entry.pinterestFixTargetRatio : entry.fixTargetRatio;
-    if (!previewMatchesSettings(entry.preview, strategy, targetRatio)) {
+      role === "pinterest" ? entry.pinterestFixTargetRatio : entry.fixTargetRatio;
+    if (!previewMatchesSettings(preview, strategy, targetRatio)) {
       return;
     }
-    if (entry.previewRole === "pinterest") {
+    if (role === "pinterest") {
+      const validationIssues = validationIssuesAfterAcceptingPinterestFix(entry.validationIssues);
       updateFile(entry.id, {
-        acceptedPinterestPreview: entry.preview,
-        status: "ready",
+        acceptedPinterestPreview: preview,
+        pinterestPreview: null,
+        validationIssues,
+        status: deriveUploadStatusAfterValidation(
+          destinations,
+          validationIssues,
+          Boolean(entry.acceptedPreview),
+          true,
+        ),
         error: null,
       });
       return;
     }
+    const validationIssues = validationIssuesAfterAcceptingMetaFix(entry.validationIssues);
     updateFile(entry.id, {
-      acceptedPreview: entry.preview,
-      status: "ready",
+      acceptedPreview: preview,
+      metaPreview: null,
+      validationIssues,
+      status: deriveUploadStatusAfterValidation(
+        destinations,
+        validationIssues,
+        true,
+        Boolean(entry.acceptedPinterestPreview),
+      ),
       error: null,
-      validationIssues: [],
     });
   }
 
@@ -879,6 +1032,18 @@ export function SmartUploadClient() {
 
     let response: Response;
     if (entry.uploadIntent === "local-multipart") {
+      const multipartBlock = localMultipartSmartUploadFinalizeBlockedReason(destinations, {
+        acceptedMetaPreview: Boolean(entry.acceptedPreview),
+        acceptedPinterestPreview: Boolean(entry.acceptedPinterestPreview),
+        validationIssues: entry.validationIssues,
+      });
+      if (multipartBlock) {
+        updateFile(entry.id, {
+          status: "needs_attention",
+          error: multipartBlock,
+        });
+        return;
+      }
       const form = new FormData();
       form.set("image", entry.file);
       if (captions.mode === "per_platform") {
@@ -892,6 +1057,7 @@ export function SmartUploadClient() {
       if (weeklyPlanId) form.set("weeklyPlanId", weeklyPlanId);
       if (campaignId) form.set("campaignId", campaignId);
       if (bookId) form.set("bookId", bookId);
+      appendSmartUploadMultipartFinalizeFields(form, destinations, captions);
       response = await fetch(FINALIZE_URL, { method: "POST", body: form });
     } else {
       const body: Record<string, unknown> = {
@@ -998,13 +1164,16 @@ export function SmartUploadClient() {
 
     setBusy(true);
     for (const entry of snapshot) {
-      if (entry.status === "submitted" || entry.status === "needs_attention") continue;
+      if (entry.status === "submitted") continue;
       const latest = getFileById(entry.id) ?? entry;
       if (!latest.uploadIntent) {
         await uploadAndValidateOne(latest);
       }
       const afterUpload = getFileById(entry.id);
-      if (afterUpload?.status === "ready" && afterUpload.uploadIntent) {
+      if (
+        afterUpload?.uploadIntent &&
+        submissionReadyForFile(afterUpload, destinations)
+      ) {
         const finalizeCaptions = buildCaptionFinalizePayload(afterUpload.captionAssistant);
         await finalizeOne(afterUpload, finalizeCaptions);
       }
@@ -1013,10 +1182,7 @@ export function SmartUploadClient() {
   }
 
   const submittableCount = files.filter(
-    (f) =>
-      f.status === "ready" &&
-      f.uploadIntent &&
-      (!f.acceptedPreview || previewMatchesSettings(f.preview, f.fixStrategy, f.fixTargetRatio)),
+    (f) => f.uploadIntent && submissionReadyForFile(f, destinations),
   ).length;
 
   return (
@@ -1144,7 +1310,192 @@ export function SmartUploadClient() {
 
         {files.length > 0 ? (
           <ul className="mt-4 space-y-3">
-            {files.map((item) => (
+            {files.map((item) => {
+              const metaReady = isMetaImageReady(
+                destinations,
+                item.validationIssues,
+                Boolean(item.acceptedPreview),
+              );
+              const pinReady = isPinterestImageReady(
+                destinations,
+                item.validationIssues,
+                Boolean(item.acceptedPinterestPreview),
+              );
+              const needsMetaFix = metaImageNeedsAspectFix(
+                destinations,
+                item.validationIssues,
+                Boolean(item.acceptedPreview),
+              );
+              const needsPinFix = pinterestImageNeedsAspectFix(
+                destinations,
+                item.validationIssues,
+                Boolean(item.acceptedPinterestPreview),
+              );
+              const renderDestinationFix = (
+                role: PreviewRole,
+                panelOpen: boolean,
+                panelKey: "metaFixPanelOpen" | "pinterestFixPanelOpen",
+                preview: PreviewState | null,
+                strategy: FixStrategy,
+                targetRatio: FixTargetRatio,
+                strategyKey: "fixStrategy" | "pinterestFixStrategy",
+                targetKey: "fixTargetRatio" | "pinterestFixTargetRatio",
+                previewKey: "metaPreview" | "pinterestPreview",
+                accepted: PreviewState | null,
+                title: string,
+                targetRatios: FixTargetRatio[],
+              ) => (
+                <div className="mt-3 space-y-3 rounded-lg border border-brand-brown/15 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-brand-navy">{title}</p>
+                    {accepted ? (
+                      <span className="text-xs font-semibold text-brand-green-deep">Ready</span>
+                    ) : (role === "pinterest" ? needsPinFix : needsMetaFix) ? (
+                      <span className="text-xs font-semibold text-brand-orange-deep">Needs fix</span>
+                    ) : null}
+                  </div>
+                  {accepted ? (
+                    <img
+                      src={smartUploadStagedImageUrl({
+                        pathname: accepted.pathname,
+                        uploadIntent: accepted.uploadIntent,
+                      })}
+                      alt={`${title} accepted`}
+                      className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
+                    />
+                  ) : null}
+                  {!accepted && (panelOpen || preview) ? (
+                    <>
+                      <fieldset className="space-y-2 text-sm">
+                        <p className="font-semibold text-brand-charcoal">Strategy</p>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`${role}-strategy-${item.id}`}
+                            checked={strategy === "pad"}
+                            onChange={() =>
+                              updateFile(item.id, {
+                                [strategyKey]: "pad",
+                                [previewKey]: null,
+                                ...(role === "meta" ? { acceptedPreview: null } : {}),
+                                ...(role === "pinterest" ? { acceptedPinterestPreview: null } : {}),
+                              })
+                            }
+                          />
+                          Fit with padding
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`${role}-strategy-${item.id}`}
+                            checked={strategy === "crop"}
+                            onChange={() =>
+                              updateFile(item.id, {
+                                [strategyKey]: "crop",
+                                [previewKey]: null,
+                                ...(role === "meta" ? { acceptedPreview: null } : {}),
+                                ...(role === "pinterest" ? { acceptedPinterestPreview: null } : {}),
+                              })
+                            }
+                          />
+                          Crop
+                        </label>
+                        <p className="pt-1 font-semibold text-brand-charcoal">Target ratio</p>
+                        {targetRatios.map((ratio) => (
+                          <label key={ratio} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name={`${role}-target-${item.id}`}
+                              checked={targetRatio === ratio}
+                              onChange={() =>
+                                updateFile(item.id, {
+                                  [targetKey]: ratio,
+                                  [previewKey]: null,
+                                  ...(role === "meta" ? { acceptedPreview: null } : {}),
+                                  ...(role === "pinterest" ? { acceptedPinterestPreview: null } : {}),
+                                })
+                              }
+                            />
+                            {formatTargetRatioLabel(ratio)}
+                          </label>
+                        ))}
+                      </fieldset>
+                      <SecondaryButton
+                        type="button"
+                        disabled={
+                          busy || !canStartPreviewGeneration(item.id, previewGeneratingEntryId)
+                        }
+                        onClick={() => void generatePreview(item, role)}
+                      >
+                        Generate preview
+                      </SecondaryButton>
+                      {preview ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-brand-charcoal">
+                            Preview · {preview.strategy === "pad" ? "Fit with padding" : "Crop"} ·{" "}
+                            {formatTargetRatioLabel(preview.targetRatio)} ({preview.width}×
+                            {preview.height})
+                          </p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Original</p>
+                              {item.pathname && item.uploadIntent ? (
+                                <img
+                                  src={smartUploadStagedImageUrl({
+                                    pathname: item.pathname,
+                                    uploadIntent: item.uploadIntent,
+                                  })}
+                                  alt="Original upload"
+                                  className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
+                                />
+                              ) : null}
+                            </div>
+                            <div>
+                              <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Preview</p>
+                              <img
+                                src={smartUploadStagedImageUrl({
+                                  pathname: preview.pathname,
+                                  uploadIntent: preview.uploadIntent,
+                                })}
+                                alt="Corrected preview"
+                                className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <SecondaryButton
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void discardPreviewAction(item, role)}
+                            >
+                              Discard
+                            </SecondaryButton>
+                            <PrimaryButton
+                              type="button"
+                              disabled={
+                                busy || !previewMatchesSettings(preview, strategy, targetRatio)
+                              }
+                              onClick={() => acceptPreview(item, role)}
+                            >
+                              Use this image
+                            </PrimaryButton>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : !accepted ? (
+                    <SecondaryButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => updateFile(item.id, { [panelKey]: true })}
+                    >
+                      Fix + Preview
+                    </SecondaryButton>
+                  ) : null}
+                </div>
+              );
+
+              return (
               <li
                 key={item.id}
                 className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-brand-brown/15 bg-cream-deep/30 px-3 py-3"
@@ -1154,6 +1505,20 @@ export function SmartUploadClient() {
                   <p className="text-xs text-brand-charcoal/55">
                     {(item.file.size / 1024).toFixed(0)} KB
                   </p>
+                  {item.uploadIntent && item.pathname ? (
+                    <ul className="mt-2 space-y-1 text-xs font-semibold text-brand-charcoal">
+                      {metaDestinationsSelected(destinations) ? (
+                        <li className={metaReady ? "text-brand-green-deep" : "text-brand-orange-deep"}>
+                          Meta (Facebook / Instagram): {metaReady ? "Ready" : "Needs attention"}
+                        </li>
+                      ) : null}
+                      {destinations.pinterest ? (
+                        <li className={pinReady ? "text-brand-green-deep" : "text-brand-orange-deep"}>
+                          Pinterest: {pinReady ? "Ready" : "Needs attention"}
+                        </li>
+                      ) : null}
+                    </ul>
+                  ) : null}
                   {item.error ? (
                     <p className="mt-1 text-sm font-semibold text-brand-orange-deep">{item.error}</p>
                   ) : null}
@@ -1167,167 +1532,56 @@ export function SmartUploadClient() {
                       ))}
                     </ul>
                   ) : null}
-                  {isAspectRatioFixable(item) ? (
-                    <div className="mt-3 space-y-3 rounded-lg border border-brand-brown/15 bg-white p-3">
-                      {!item.fixPanelOpen ? (
-                        <SecondaryButton
-                          type="button"
-                          disabled={busy}
-                          onClick={() => updateFile(item.id, { fixPanelOpen: true })}
-                        >
-                          Fix + Preview
-                        </SecondaryButton>
-                      ) : (
-                        <>
-                          <p className="text-sm font-bold text-brand-navy">Fix Image</p>
-                          <fieldset className="space-y-2 text-sm">
-                            <p className="font-semibold text-brand-charcoal">Strategy</p>
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name={`strategy-${item.id}`}
-                                checked={item.fixStrategy === "pad"}
-                                onChange={() =>
-                                  updateFile(item.id, {
-                                    fixStrategy: "pad",
-                                    acceptedPreview: null,
-                                    preview: null,
-                                  })
-                                }
-                              />
-                              Fit with padding
-                            </label>
-                            <p className="ml-6 text-xs text-brand-charcoal/65">
-                              Keep the entire image. Padding is added where needed.
-                            </p>
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name={`strategy-${item.id}`}
-                                checked={item.fixStrategy === "crop"}
-                                onChange={() =>
-                                  updateFile(item.id, {
-                                    fixStrategy: "crop",
-                                    acceptedPreview: null,
-                                    preview: null,
-                                  })
-                                }
-                              />
-                              Crop
-                            </label>
-                            <p className="ml-6 text-xs text-brand-charcoal/65">
-                              Fill the entire frame. Some content around the edges may be removed.
-                            </p>
-                            <p className="pt-1 font-semibold text-brand-charcoal">Target</p>
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name={`target-${item.id}`}
-                                checked={item.fixTargetRatio === "4:5"}
-                                onChange={() =>
-                                  updateFile(item.id, {
-                                    fixTargetRatio: "4:5",
-                                    acceptedPreview: null,
-                                    preview: null,
-                                  })
-                                }
-                              />
-                              4:5
-                            </label>
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name={`target-${item.id}`}
-                                checked={item.fixTargetRatio === "1:1"}
-                                onChange={() =>
-                                  updateFile(item.id, {
-                                    fixTargetRatio: "1:1",
-                                    acceptedPreview: null,
-                                    preview: null,
-                                  })
-                                }
-                              />
-                              Square
-                            </label>
-                          </fieldset>
-                          <SecondaryButton
-                            type="button"
-                            disabled={
-                              busy || !canStartPreviewGeneration(item.id, previewGeneratingEntryId)
-                            }
-                            onClick={() => void generatePreview(item)}
-                          >
-                            Generate Preview
-                          </SecondaryButton>
-                          {item.preview ? (
-                            <div className="space-y-2">
-                              <p className="text-xs font-semibold text-brand-charcoal">
-                                Preview · {item.preview.strategy === "pad" ? "Fit with padding" : "Crop"} ·{" "}
-                                {item.preview.targetRatio === "4:5" ? "4:5" : "Square"} (
-                                {item.preview.width}×{item.preview.height})
-                              </p>
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <div>
-                                  <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Original</p>
-                                  {item.pathname && item.uploadIntent ? (
-                                    <img
-                                      src={smartUploadStagedImageUrl({
-                                        pathname: item.pathname,
-                                        uploadIntent: item.uploadIntent,
-                                      })}
-                                      alt="Original upload"
-                                      className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
-                                    />
-                                  ) : null}
-                                </div>
-                                <div>
-                                  <p className="mb-1 text-xs font-bold text-brand-charcoal/70">Preview</p>
-                                  <img
-                                    src={smartUploadStagedImageUrl({
-                                      pathname: item.preview.pathname,
-                                      uploadIntent: item.preview.uploadIntent,
-                                    })}
-                                    alt="Corrected preview"
-                                    className="max-h-48 w-full rounded-lg border border-brand-brown/15 object-contain bg-white"
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <SecondaryButton
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => void discardPreviewAction(item)}
-                                >
-                                  Discard
-                                </SecondaryButton>
-                                <PrimaryButton
-                                  type="button"
-                                  disabled={
-                                    busy ||
-                                    !previewMatchesSettings(
-                                      item.preview,
-                                      item.fixStrategy,
-                                      item.fixTargetRatio,
-                                    )
-                                  }
-                                  onClick={() => acceptPreview(item)}
-                                >
-                                  Use This Image
-                                </PrimaryButton>
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      )}
+                  {canUseInBrowserFixWorkflow(item) ? (
+                    <div className="mt-2 space-y-2">
+                      {(metaDestinationsSelected(destinations) && (needsMetaFix || item.acceptedPreview)) ||
+                      metaReady ? (
+                        metaReady && !needsMetaFix && !item.acceptedPreview ? (
+                          <p className="text-xs font-semibold text-brand-green-deep">
+                            Meta feed image is ready (original upload).
+                          </p>
+                        ) : (
+                          renderDestinationFix(
+                            "meta",
+                            item.metaFixPanelOpen,
+                            "metaFixPanelOpen",
+                            item.metaPreview,
+                            item.fixStrategy,
+                            item.fixTargetRatio,
+                            "fixStrategy",
+                            "fixTargetRatio",
+                            "metaPreview",
+                            item.acceptedPreview,
+                            "Meta feed (Facebook / Instagram)",
+                            ["4:5", "1:1"],
+                          )
+                        )
+                      ) : null}
+                      {destinations.pinterest && (needsPinFix || item.acceptedPinterestPreview) ? (
+                        renderDestinationFix(
+                          "pinterest",
+                          item.pinterestFixPanelOpen,
+                          "pinterestFixPanelOpen",
+                          item.pinterestPreview,
+                          item.pinterestFixStrategy,
+                          item.pinterestFixTargetRatio,
+                          "pinterestFixStrategy",
+                          "pinterestFixTargetRatio",
+                          "pinterestPreview",
+                          item.acceptedPinterestPreview,
+                          "Pinterest pin (2:3)",
+                          ["2:3"],
+                        )
+                      ) : null}
                     </div>
                   ) : item.status === "needs_attention" ? (
                     <p className="mt-2 text-xs text-brand-charcoal/70">
                       This issue cannot be fixed here. Adjust the file and upload again.
                     </p>
                   ) : null}
-                  {item.acceptedPreview && item.status === "ready" ? (
+                  {submissionReadyForFile(item, destinations) ? (
                     <p className="mt-2 text-xs font-semibold text-brand-green-deep">
-                      Corrected image accepted — included in Submit valid.
+                      All selected destinations are ready for Submit valid.
                     </p>
                   ) : null}
                   {item.status !== "submitted" ? (
@@ -1358,7 +1612,8 @@ export function SmartUploadClient() {
                   {statusLabel(item.status)}
                 </span>
               </li>
-            ))}
+            );
+            })}
           </ul>
         ) : null}
 

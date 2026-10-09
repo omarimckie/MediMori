@@ -15,6 +15,7 @@ function freshUnstaged(): CaptionGenerationFileSnapshot {
     finalizeKey: "fk-1",
     fixStrategy: "pad",
     fixTargetRatio: "4:5",
+    captionImagePreparationReady: false,
     acceptedPreview: null,
     preview: null,
   };
@@ -30,6 +31,7 @@ function stagedReady(overrides: Partial<CaptionGenerationFileSnapshot> = {}): Ca
     finalizeKey: "fk-1",
     fixStrategy: "pad",
     fixTargetRatio: "4:5",
+    captionImagePreparationReady: true,
     acceptedPreview: null,
     preview: null,
     ...overrides,
@@ -142,6 +144,30 @@ test("F: duplicate stage is not invoked when already staged", async () => {
     return stagedReady();
   });
   assert.equal(stageCalls, 0);
+});
+
+test("needs_attention with meta caption ready allows generation (Pinterest fix pending)", async () => {
+  const result = await ensureStagedForCaptionGeneration(
+    stagedReady({
+      status: "needs_attention",
+      captionImagePreparationReady: true,
+    }),
+    async () => stagedReady(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("needs_attention without meta caption ready blocks generation", async () => {
+  const result = await ensureStagedForCaptionGeneration(
+    stagedReady({
+      status: "needs_attention",
+      captionImagePreparationReady: false,
+    }),
+    async () => stagedReady(),
+  );
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.match(result.message, /validation issues/i);
 });
 
 test("regression: one-click uses stage return value not pre-stage snapshot", async () => {

@@ -14,8 +14,8 @@ test("original preview pane uses staged-image route not publicUrl", () => {
 });
 
 test("corrected preview pane uses staged-image route not previewSignedUrl", () => {
-  assert.match(clientSource, /pathname: item\.preview\.pathname/);
-  assert.match(clientSource, /uploadIntent: item\.preview\.uploadIntent/);
+  assert.match(clientSource, /pathname: preview\.pathname/);
+  assert.match(clientSource, /uploadIntent: preview\.uploadIntent/);
   assert.doesNotMatch(clientSource, /previewSignedUrl/);
 });
 
