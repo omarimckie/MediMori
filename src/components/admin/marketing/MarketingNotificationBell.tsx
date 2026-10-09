@@ -63,21 +63,48 @@ export function MarketingNotificationBell() {
   const rootRef = useRef<HTMLDivElement>(null);
   const closePanel = useCallback(() => setOpen(false), []);
 
-  const load = useCallback(async () => {
-    const res = await fetch("/api/admin/marketing/notifications");
-    if (!res.ok) return;
-    const data = (await res.json()) as {
+  const mounted = useRef(false);
+  const requestVersion = useRef(0);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/admin/marketing/notifications", signal ? { signal } : undefined);
+    if (!res.ok) return null;
+    return (await res.json()) as {
       notifications: NotificationRow[];
       unreadCount: number;
     };
-    setItems(data.notifications ?? []);
-    setUnreadCount(data.unreadCount ?? 0);
   }, []);
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(), 60_000);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let inFlight = false;
+    const controller = new AbortController();
+    mounted.current = true;
+    const refresh = () => {
+      if (inFlight) return;
+      inFlight = true;
+      const version = ++requestVersion.current;
+      void load(controller.signal)
+        .then((data) => {
+          if (!active || version !== requestVersion.current || !data) return;
+          setItems(data.notifications ?? []);
+          setUnreadCount(data.unreadCount ?? 0);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          throw error;
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      mounted.current = false;
+      controller.abort();
+      window.clearInterval(timer);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -89,7 +116,12 @@ export function MarketingNotificationBell() {
 
   async function markRead(id: string) {
     await fetch(`/api/admin/marketing/notifications/${id}/read`, { method: "POST" });
-    await load();
+    if (!mounted.current) return;
+    const version = ++requestVersion.current;
+    const data = await load();
+    if (!mounted.current || version !== requestVersion.current || !data) return;
+    setItems(data.notifications ?? []);
+    setUnreadCount(data.unreadCount ?? 0);
   }
 
   return (

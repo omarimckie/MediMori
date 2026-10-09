@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import {
   getMarketingPageGuide,
   type MarketingPageGuideId,
@@ -8,6 +8,48 @@ import {
 
 export function marketingPageGuideStorageKey(id: MarketingPageGuideId): string {
   return `marketing-page-guide:${id}`;
+}
+const guidePreferenceFallback = new Map<string, boolean>();
+const guidePreferenceListeners = new Map<string, Set<() => void>>();
+
+function readGuidePreference(id: MarketingPageGuideId): boolean {
+  const key = marketingPageGuideStorageKey(id);
+  try {
+    const stored = window.localStorage.getItem(key);
+    return stored === null ? (guidePreferenceFallback.get(key) ?? false) : stored === "expanded";
+  } catch {
+    return guidePreferenceFallback.get(key) ?? false;
+  }
+}
+
+function subscribeToGuidePreference(id: MarketingPageGuideId, listener: () => void) {
+  const key = marketingPageGuideStorageKey(id);
+  const listeners = guidePreferenceListeners.get(key) ?? new Set<() => void>();
+  listeners.add(listener);
+  guidePreferenceListeners.set(key, listeners);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== key && event.key !== null) return;
+    if (event.key === null || event.newValue === null) guidePreferenceFallback.delete(key);
+    else guidePreferenceFallback.set(key, event.newValue === "expanded");
+    listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    listeners.delete(listener);
+    if (listeners.size === 0) guidePreferenceListeners.delete(key);
+  };
+}
+
+function writeGuidePreference(id: MarketingPageGuideId, expanded: boolean) {
+  const key = marketingPageGuideStorageKey(id);
+  guidePreferenceFallback.set(key, expanded);
+  try {
+    window.localStorage.setItem(key, expanded ? "expanded" : "collapsed");
+  } catch {
+    // Keep the preference usable for this page when browser storage is unavailable.
+  }
+  guidePreferenceListeners.get(key)?.forEach((listener) => listener());
 }
 
 type MarketingPageGuideProps = {
@@ -19,30 +61,23 @@ type MarketingPageGuideProps = {
 export function MarketingPageGuide({ id, initialExpanded }: MarketingPageGuideProps) {
   const guide = getMarketingPageGuide(id);
   const panelId = useId();
-  const [expanded, setExpanded] = useState(initialExpanded ?? false);
-
-  useEffect(() => {
-    if (initialExpanded !== undefined) return;
-    try {
-      const stored = window.localStorage.getItem(marketingPageGuideStorageKey(id));
-      if (stored === "expanded") setExpanded(true);
-    } catch {
-      // ignore unavailable storage
-    }
-  }, [id, initialExpanded]);
+  const subscribe = useCallback(
+    (listener: () => void) => initialExpanded === undefined ? subscribeToGuidePreference(id, listener) : () => {},
+    [id, initialExpanded],
+  );
+  const getPreference = useCallback(() => initialExpanded === undefined ? readGuidePreference(id) : initialExpanded, [id, initialExpanded]);
+  const getServerPreference = useCallback(() => initialExpanded ?? false, [initialExpanded]);
+  const storedExpanded = useSyncExternalStore(subscribe, getPreference, getServerPreference);
+  const [testExpanded, setTestExpanded] = useState(initialExpanded ?? false);
+  const expanded = initialExpanded === undefined ? storedExpanded : testExpanded;
 
   function toggle() {
     const next = !expanded;
-    setExpanded(next);
-    if (initialExpanded !== undefined) return;
-    try {
-      window.localStorage.setItem(
-        marketingPageGuideStorageKey(id),
-        next ? "expanded" : "collapsed",
-      );
-    } catch {
-      // ignore
+    if (initialExpanded !== undefined) {
+      setTestExpanded(next);
+      return;
     }
+    writeGuidePreference(id, next);
   }
 
   return (
