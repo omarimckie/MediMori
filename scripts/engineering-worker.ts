@@ -10,7 +10,8 @@ import { parseWorkerInitializationConfig, runScratchInitializationPreflight, dia
 import { verifyWorkerDatabaseIdentity } from "../src/lib/engineering/worker-database";
 import { verifyWorkerTargetAncestry } from "../src/lib/engineering/merge-target";
 import { classifyPreclaimFailure, PreclaimWorkerError, type PreclaimDiagnosticStage } from "../src/lib/engineering/preclaim-diagnostics";
-import { ApprovedSourceRevisionMismatch } from "../src/lib/engineering/source-binding";
+import { isWorkspaceExportError, workspaceExportDiagnostic } from "../src/lib/engineering/workspace-export-diagnostics";
+import { ApprovedSourceRevisionMismatch, SOURCE_SELECTION_POLICY_VERSION } from "../src/lib/engineering/source-binding";
 
 export { diagnoseWorkerInitialization };
 
@@ -39,7 +40,7 @@ export async function diagnoseWorkerSourceExport(env = process.env) {
   try {
     const config = parseWorkerInitializationConfig(env);
     const scratch = await runScratchInitializationPreflight(config);
-    const exported = await diagnoseFreshExport(config.sourceRoot, config.scratchRoot, config.exportParent);
+    const exported = await diagnoseFreshExport(config.sourceRoot, config.scratchRoot, config.exportParent, scratch.manifest);
     return {
       ready: true,
       stage: "source_export" as const,
@@ -74,13 +75,13 @@ export async function main(run = process.argv[2]) {
     // failures to be recorded through the restricted diagnostic function.
     sql = neon(connection);
     stage = "scratch_preflight";
-    await runScratchInitializationPreflight(config);
+    const scratchPreflight = await runScratchInitializationPreflight(config);
     stage = "database_identity";
     await verifyWorkerDatabaseIdentity(connection);
     stage = "lineage_lookup";
     const lineageRows = await sql`SELECT engineering_worker(${run}::uuid,'lineage','worker-lineage-preflight',0,'{}'::jsonb) AS result` as unknown as Array<{ result: unknown }>;
     const lineage = lineageRows[0]?.result as Record<string, unknown> | undefined;
-    if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string" || lineage.source_binding_version !== 1 || typeof lineage.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(lineage.implementation_source_revision)) {
+    if (!lineage || lineage.run_id !== run || lineage.target_repository !== "omarimckie/MediMori" || lineage.target_branch !== "main" || typeof lineage.target_base_sha !== "string" || lineage.source_binding_version !== 1 || lineage.source_selection_policy_version !== SOURCE_SELECTION_POLICY_VERSION || typeof lineage.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(lineage.implementation_source_revision)) {
       throw new EngineeringInputError("Approved execution lineage is unavailable.");
     }
     stage = "target_verification";
@@ -91,6 +92,7 @@ export async function main(run = process.argv[2]) {
       config.exportParent,
       lineage.implementation_source_revision,
       async actualRevision => { await sql!`SELECT engineering_record_source_mismatch(${run}::uuid,${actualRevision})`; },
+      scratchPreflight.manifest,
     );
     exportRoot = exported.exportRoot;
     preflightRevision = exported.revision;
@@ -101,7 +103,7 @@ export async function main(run = process.argv[2]) {
     if (!(error instanceof ApprovedSourceRevisionMismatch) && sql && run && /^[a-f0-9-]{36}$/i.test(run)) {
       await sql`SELECT engineering_record_preclaim_failure(${run}::uuid,${diagnostic.stage},${diagnostic.code})`.catch(() => []);
     }
-    throw new PreclaimWorkerError(diagnostic);
+    throw new PreclaimWorkerError(diagnostic, isWorkspaceExportError(error) ? workspaceExportDiagnostic(error) : undefined);
   }
   const activeConfig = config!;
   const controlPlane = sql!;

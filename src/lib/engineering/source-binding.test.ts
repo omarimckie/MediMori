@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,13 +7,16 @@ import { join } from "node:path";
 import { computeImplementationSourceRevision, createApprovedExecutionExport, ApprovedSourceRevisionMismatch } from "./source-binding";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
 
+function git(root: string, ...args: string[]) { execFileSync("git", ["-C", root, ...args], { stdio: "ignore", windowsHide: true }); }
+async function commit(root: string) { git(root, "add", "-A"); git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "fixture"); }
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "engineering-source-binding-"));
   const source = join(root, "source"), exports = join(root, "exports");
-  await mkdir(join(source, "docs"), { recursive: true });
-  await mkdir(exports);
+  await mkdir(join(source, "docs"), { recursive: true }); await mkdir(exports); git(source, "init", "-q");
+  await writeFile(join(source, ".gitignore"), ".env.local\n");
   await writeFile(join(source, "docs", "guide.md"), "Approved source text.\n");
   await writeFile(join(source, ".env.local"), "SYNTHETIC_SOURCE_SECRET=excluded\n");
+  await commit(source);
   return { root, source, exports };
 }
 
@@ -65,6 +69,7 @@ test("same approved revision proceeds and a changed source is never accepted und
     assert.equal(same.revision, approvedRevision);
     await rm(same.exportRoot, { recursive: true, force: true });
     await writeFile(join(f.source, "docs", "guide.md"), "Changed source text.\n");
+    await commit(f.source);
     await assert.rejects(createApprovedExecutionExport(f.source, f.exports, approvedRevision, async actual => {
       assert.notEqual(actual, approvedRevision);
     }), ApprovedSourceRevisionMismatch);

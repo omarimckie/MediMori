@@ -11,39 +11,35 @@ import { anchorLimits, issuedAnchorId, sha256, verifyAnchorIdentity, type Anchor
 import { allowlistedSystemCode, relativePathHash, WorkspaceExportError, type WorkspaceExportCode } from "./workspace-export-diagnostics";
 import { makeValidationEvidence, ValidationPreparationError, type ValidationPreparationCode, type ValidationPreparationStage, type ValidationEvidence } from "./validation-diagnostics";
 import { initializeNextEnvPrivateOverlayCommand, validationVolumeMountArgs } from "./validation-volume-policy";
+import { resolveCanonicalSourceManifest, verifyCanonicalSourceCheckout, copyCanonicalSourceManifest, SOURCE_SELECTION_LIMITS, SOURCE_SELECTION_POLICY_VERSION, type CanonicalSourceManifest } from "./source-manifest";
 const exec = promisify(execFile);
-const ignored = new Set(["node_modules", ".next", "tsconfig.tsbuildinfo", "next-env.d.ts"]);
-const exportIgnored = new Set(["node_modules", ".next", ".git", "tsconfig.tsbuildinfo"]);
 const secret = /(?:sk-(?:proj-)?[A-Za-z0-9_-]{24,}|(?:postgres(?:ql)?:\/\/)[^\s/:@]+:[^\s/@]+@[^\s]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}|vercel_blob_rw_[A-Za-z0-9_]{20,})/;
 const gib = BigInt(1024) * BigInt(1024) * BigInt(1024);
 const minimumScratchReserve = BigInt(10) * gib;
-const fat32MaximumFileBytes = BigInt(4) * gib;
 /** Applies the production scratch-capacity rule to measured or deterministic test inputs. */
 export function checkedScratchCapacity(availableBytes: bigint, sourceBytes: bigint, minimumFreeBytes = minimumScratchReserve) {
   const requiredBytes = sourceBytes * BigInt(2) + minimumFreeBytes;
   if (availableBytes < requiredBytes) throw new EngineeringInputError("Configured engineering scratch has insufficient free space.");
   return { availableBytes, requiredBytes, sourceBytes };
 }
-async function sourceFootprint(root: string, prefix = "") {
-  let bytes = BigInt(0);
-  async function visit(dir: string, relative = "") {
-    for (const entry of await readdir(join(dir, relative), { withFileTypes: true })) {
-      if (exportIgnored.has(entry.name) || entry.name.startsWith(".env") && entry.name !== ".env.example") continue;
-      const path = relative ? `${relative}/${entry.name}` : entry.name;
-      if (entry.isSymbolicLink()) throw new EngineeringInputError("Unsafe scratch source tree.");
-      if (entry.isDirectory()) await visit(dir, path);
-      else if (entry.isFile()) {
-        const size = (await lstat(join(dir, path), { bigint: true })).size;
-        if (size >= fat32MaximumFileBytes) throw new EngineeringInputError("Scratch source contains a file too large for the configured filesystem.");
-        bytes += size;
-      }
-    }
+async function contents(root: string, prefix = "", map: Record<string, string> = {}, count = { files: 0, bytes: 0 }) {
+  for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink() || entry.name === ".git" || entry.name.startsWith(".env") && entry.name !== ".env.example") throw new EngineeringInputError("Unsafe exported workspace.");
+    if (entry.isDirectory()) {
+      await contents(root, path, map, count);
+    } else if (entry.isFile()) {
+      const bytes = await readFile(join(root, path));
+      if (bytes.length > SOURCE_SELECTION_LIMITS.maxFileBytes || ++count.files > SOURCE_SELECTION_LIMITS.maxFiles || (count.bytes += bytes.length) > SOURCE_SELECTION_LIMITS.maxTotalBytes) throw new EngineeringInputError("Exported workspace size limit.");
+      if (secret.test(bytes.toString("utf8"))) throw new EngineeringInputError("Secret detected; context export refused.");
+      map[path] = createHash("sha256").update(bytes).digest("hex");
+    } else throw new EngineeringInputError("Unsupported exported workspace entry.");
   }
-  await visit(root, prefix);
-  return bytes;
+  return map;
 }
-/** Fail closed before claim/provider dispatch if the configured host scratch cannot hold the export and staging copy. */
-export async function preflightEngineeringScratch(sourceRoot: string, scratchRoot: string, exportParent: string, minimumFreeBytes = minimumScratchReserve) {
+
+/** The same clean Git-tree manifest drives storage capacity, export, verification, and S. */
+export async function preflightEngineeringScratch(sourceRoot: string, scratchRoot: string, exportParent: string, minimumFreeBytes = minimumScratchReserve, suppliedManifest?: CanonicalSourceManifest) {
   const source = await realpath(sourceRoot);
   const scratch = await realpath(scratchRoot);
   const parent = await realpath(exportParent);
@@ -51,24 +47,11 @@ export async function preflightEngineeringScratch(sourceRoot: string, scratchRoo
   if (scratch === source || scratch.startsWith(`${source}${sep}`) || relativeParent === ".." || relativeParent.startsWith(`..${sep}`) || isAbsolute(relativeParent)) {
     throw new EngineeringInputError("Invalid engineering scratch configuration.");
   }
-  const footprint = await sourceFootprint(source);
+  const manifest = suppliedManifest ?? await resolveCanonicalSourceManifest(source);
+  if (manifest.root !== source) throw new EngineeringInputError("Canonical source manifest root mismatch.");
   const capacity = await statfs(scratch, { bigint: true });
   const available = capacity.bavail * capacity.bsize;
-  return checkedScratchCapacity(available, footprint, minimumFreeBytes);
-}
-async function contents(root: string, prefix = "", map: Record<string, string> = {}) {
-  for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
-    if (ignored.has(entry.name)) continue;
-    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isSymbolicLink() || entry.name === ".git" || entry.name.startsWith(".env") && entry.name !== ".env.example") throw new EngineeringInputError("Unsafe exported workspace.");
-    if (entry.isDirectory()) await contents(root, path, map);
-    else {
-      const bytes = await readFile(join(root, path));
-      if (secret.test(bytes.toString("utf8").replaceAll("postgresql://USER:PASSWORD@HOST/DB?sslmode=require", ""))) throw new EngineeringInputError("Secret detected; context export refused.");
-      map[path] = createHash("sha256").update(bytes).digest("hex");
-    }
-  }
-  return map;
+  return { ...checkedScratchCapacity(available, manifest.totalBytes, minimumFreeBytes), manifest, sourcePolicyVersion: SOURCE_SELECTION_POLICY_VERSION };
 }
 function exportFailure(code: WorkspaceExportCode, operation: "realpath" | "lstat" | "readdir" | "read" | "mkdir" | "write" | "mkdtemp" | "manifest" | "revision" | "finalize" | "cleanup" | "verify", relativePath = "", error?: unknown, entryType?: "file" | "directory" | "symlink" | "unsupported" | "root") {
   return new WorkspaceExportError(code, {
@@ -79,9 +62,6 @@ function exportFailure(code: WorkspaceExportCode, operation: "realpath" | "lstat
   });
 }
 
-function hasSecret(bytes: Buffer) {
-  return secret.test(bytes.toString("utf8").replaceAll("postgresql://USER:PASSWORD@HOST/DB?sslmode=require", ""));
-}
 
 async function sourceRootAndParent(sourceRoot: string, exportParent: string) {
   let source: string;
@@ -108,54 +88,26 @@ async function sourceRootAndParent(sourceRoot: string, exportParent: string) {
   return { source, parent };
 }
 
-async function copiedTree(source: string, root: string, prefix = "") {
-  let entries;
-  try { entries = await readdir(join(source, prefix), { withFileTypes: true }); }
-  catch (error) { throw exportFailure("source_traversal_failed", "readdir", prefix, error, prefix ? "directory" : "root"); }
-  for (const entry of entries) {
-    if (exportIgnored.has(entry.name) || entry.name.startsWith(".env") && entry.name !== ".env.example") continue;
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-    const from = join(source, rel), to = join(root, rel);
-    let metadata;
-    try { metadata = await lstat(from); }
-    catch (error) { throw exportFailure("source_traversal_failed", "lstat", rel, error, "unsupported"); }
-    if (entry.isSymbolicLink() || metadata.isSymbolicLink()) throw exportFailure("source_symlink_rejected", "lstat", rel, undefined, "symlink");
-    if (metadata.isDirectory()) {
-      try { await mkdir(to, { recursive: true }); }
-      catch (error) { throw exportFailure("export_directory_creation_failed", "mkdir", rel, error, "directory"); }
-      await copiedTree(source, root, rel);
-      continue;
-    }
-    if (!metadata.isFile()) throw exportFailure("source_entry_unsupported", "lstat", rel, undefined, "unsupported");
-    if (metadata.size >= fat32MaximumFileBytes) throw exportFailure("export_file_size_limit_exceeded", "lstat", rel, undefined, "file");
-    let bytes: Buffer;
-    try { bytes = await readFile(from); }
-    catch (error) { throw exportFailure("source_file_read_failed", "read", rel, error, "file"); }
-    if (hasSecret(bytes)) throw exportFailure("export_sensitive_content_rejected", "read", rel, undefined, "file");
-    try { await mkdir(dirname(to), { recursive: true }); }
-    catch (error) { throw exportFailure("export_directory_creation_failed", "mkdir", rel, error, "directory"); }
-    try { await writeFile(to, bytes, { flag: "wx" }); }
-    catch (error) { throw exportFailure("export_file_write_failed", "write", rel, error, "file"); }
-  }
-}
-
-/** Copy and verify a fresh credential-free export; incomplete trees are never published as final exports. */
-export async function createFreshExport(sourceRoot: string, exportParent: string) {
+/** Copy only entries and bytes from the immutable Git manifest; never walk the source checkout. */
+export async function createFreshExport(sourceRoot: string, exportParent: string, suppliedManifest?: CanonicalSourceManifest) {
   const { source, parent } = await sourceRootAndParent(sourceRoot, exportParent);
+  const manifest = suppliedManifest ?? await resolveCanonicalSourceManifest(source);
+  if (manifest.root !== source) throw exportFailure("source_git_revision_invalid", "verify", "", undefined, "root");
   let partial: string;
   try { partial = await mkdtemp(join(parent, ".medimori-worker-export-partial-")); }
   catch (error) { throw exportFailure("export_root_creation_failed", "mkdtemp", "", error, "root"); }
   const finalRoot = join(parent, `medimori-worker-export-${randomUUID()}`);
   let primary: WorkspaceExportError | undefined;
   try {
-    await copiedTree(source, partial);
-    try { await contents(partial); }
-    catch (error) {
-      if (error instanceof EngineeringInputError && /Secret detected|Unsafe exported workspace/.test(error.message)) throw exportFailure("export_sensitive_content_rejected", "manifest");
+    await copyCanonicalSourceManifest(manifest, partial);
+    try {
+      const exported = await contents(partial);
+      if (Object.keys(exported).length !== manifest.files.length || treeRevision(exported) !== manifest.revision) throw new Error("manifest_mismatch");
+      await verifyCanonicalSourceCheckout(manifest);
+    } catch (error) {
+      if (error instanceof WorkspaceExportError) throw error;
       throw exportFailure("export_manifest_failed", "manifest", "", error);
     }
-    try { treeRevision(await contents(partial)); }
-    catch (error) { throw exportFailure("export_revision_failed", "revision", "", error); }
     try { await rename(partial, finalRoot); }
     catch (error) { throw exportFailure("export_finalize_failed", "finalize", "", error, "root"); }
     return finalRoot;
@@ -169,7 +121,7 @@ export async function createFreshExport(sourceRoot: string, exportParent: string
   throw primary;
 }
 function treeRevision(tree: Record<string, string>) {
-  return createHash("sha1").update(JSON.stringify(Object.entries(tree).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
+  return createHash("sha1").update(JSON.stringify(Object.entries(tree).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))).digest("hex");
 }
 export async function exportedWorkspaceRevision(root:string) {
   let manifest: Record<string, string>;
@@ -182,42 +134,15 @@ export async function exportedWorkspaceRevision(root:string) {
   catch (error) { throw exportFailure("export_revision_failed", "revision", "", error); }
 }
 
-async function sourceFingerprint(sourceRoot: string) {
-  const { source } = await sourceRootAndParent(sourceRoot, dirname(sourceRoot));
-  const files: Record<string, string> = {};
-  async function visit(prefix = "") {
-    let entries;
-    try { entries = await readdir(join(source, prefix), { withFileTypes: true }); }
-    catch (error) { throw exportFailure("source_traversal_failed", "readdir", prefix, error, prefix ? "directory" : "root"); }
-    for (const entry of entries) {
-      if ((exportIgnored.has(entry.name) || ignored.has(entry.name)) || entry.name.startsWith(".env") && entry.name !== ".env.example") continue;
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const fullPath = join(source, rel);
-      let metadata;
-      try { metadata = await lstat(fullPath); }
-      catch (error) { throw exportFailure("source_traversal_failed", "lstat", rel, error, "unsupported"); }
-      if (entry.isSymbolicLink() || metadata.isSymbolicLink()) throw exportFailure("source_symlink_rejected", "lstat", rel, undefined, "symlink");
-      if (metadata.isDirectory()) { await visit(rel); continue; }
-      if (!metadata.isFile()) throw exportFailure("source_entry_unsupported", "lstat", rel, undefined, "unsupported");
-      if (metadata.size >= fat32MaximumFileBytes) throw exportFailure("export_file_size_limit_exceeded", "lstat", rel, undefined, "file");
-      let bytes: Buffer;
-      try { bytes = await readFile(fullPath); }
-      catch (error) { throw exportFailure("source_file_read_failed", "read", rel, error, "file"); }
-      files[rel] = createHash("sha256").update(bytes).digest("hex");
-    }
-  }
-  await visit();
-  return treeRevision(files);
-}
 
-async function verifySanitizedExport(root: string) {
+async function verifySanitizedExport(root: string, manifest: CanonicalSourceManifest) {
   let count = 0;
   async function visit(prefix = "") {
     let entries;
     try { entries = await readdir(join(root, prefix), { withFileTypes: true }); }
     catch (error) { throw exportFailure("export_manifest_failed", "manifest", prefix, error); }
     for (const entry of entries) {
-      if (exportIgnored.has(entry.name) || entry.name === ".git" || entry.name.startsWith(".env") && entry.name !== ".env.example") {
+      if (entry.name === ".git" || entry.name.startsWith(".env") && entry.name !== ".env.example") {
         throw exportFailure("export_sensitive_content_rejected", "verify", prefix ? `${prefix}/${entry.name}` : entry.name, undefined, "unsupported");
       }
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -232,29 +157,31 @@ async function verifySanitizedExport(root: string) {
     }
   }
   await visit();
+  if (count !== manifest.files.length) throw exportFailure("export_manifest_failed", "verify");
   return count;
 }
 
 /** Safe local probe around the exact production exporter. It owns and removes only its unique D:-rooted directory. */
-export async function diagnoseFreshExport(sourceRoot: string, scratchRoot: string, exportParent: string) {
+export async function diagnoseFreshExport(sourceRoot: string, scratchRoot: string, exportParent: string, suppliedManifest?: CanonicalSourceManifest) {
   const { parent } = await sourceRootAndParent(sourceRoot, exportParent);
   const scratch = await realpath(scratchRoot).catch(error => { throw exportFailure("export_root_unavailable", "realpath", "", error, "root"); });
   const relativeParent = relative(scratch, parent);
   if (relativeParent === ".." || relativeParent.startsWith(`..${sep}`) || isAbsolute(relativeParent)) throw exportFailure("export_root_unavailable", "verify", "", undefined, "root");
-  const sourceBefore = await sourceFingerprint(sourceRoot);
+  const sourceManifest = suppliedManifest ?? await resolveCanonicalSourceManifest(sourceRoot);
+  const sourceBefore = sourceManifest.revision;
   let diagnosticRoot: string;
   try { diagnosticRoot = await mkdtemp(join(parent, "engineering-export-diagnostic-")); }
   catch (error) { throw exportFailure("export_root_creation_failed", "mkdtemp", "", error, "root"); }
-  let result: { revision: string; fileCount: number; sourceUnchanged: boolean } | undefined;
+  let result: { revision: string; fileCount: number; sourceBytes: number; sourcePolicyVersion: number; sourceUnchanged: boolean } | undefined;
   let failure: WorkspaceExportError | undefined;
   try {
-    const exportRoot = await createFreshExport(sourceRoot, diagnosticRoot);
+    const exportRoot = await createFreshExport(sourceRoot, diagnosticRoot, sourceManifest);
     const revision = await exportedWorkspaceRevision(exportRoot);
-    const fileCount = await verifySanitizedExport(exportRoot);
-    const sourceAfter = await sourceFingerprint(sourceRoot);
+    const fileCount = await verifySanitizedExport(exportRoot, sourceManifest);
+    const sourceAfter = (await resolveCanonicalSourceManifest(sourceRoot)).revision;
     if (sourceBefore !== sourceAfter) throw new WorkspaceExportError("source_changed_during_export", { operation: "verify" });
     if (sourceBefore !== revision) throw new WorkspaceExportError("export_manifest_failed", { operation: "verify" });
-    result = { revision, fileCount, sourceUnchanged: true };
+    result = { revision, fileCount, sourceBytes: Number(sourceManifest.totalBytes), sourcePolicyVersion: SOURCE_SELECTION_POLICY_VERSION, sourceUnchanged: true };
   } catch (error) {
     failure = error instanceof WorkspaceExportError ? error : exportFailure("export_manifest_failed", "verify", "", error);
   }
@@ -336,15 +263,15 @@ export class DockerWorkspace implements IsolatedWorkspace {
         await mkdir(dirname(target), { recursive: true });
         await copyFile(join(this.root, path), target);
       }
-      // Next generates this declaration file, so it remains outside revision
-      // hashing, but the build needs its current contents in the source volume.
+      // next-env.d.ts is part of the approved Git source revision. The runner
+      // moves only its isolated volume copy to a private writable overlay.
       const nextEnv = join(this.root, "next-env.d.ts");
       const metadata = await lstat(nextEnv);
       if (!metadata.isFile() || metadata.isSymbolicLink()) throw new EngineeringInputError("Unsafe Next.js declaration file.");
       const bytes = await readFile(nextEnv);
       if (secret.test(bytes.toString("utf8"))) throw new EngineeringInputError("Secret detected; context export refused.");
       this.nextEnvSourceHash = createHash("sha256").update(bytes).digest("hex");
-      await copyFile(nextEnv, join(staging, "next-env.d.ts"));
+      if (!/^[a-f0-9]{64}$/.test(tree["next-env.d.ts"] ?? "") || this.nextEnvSourceHash !== tree["next-env.d.ts"]) throw new EngineeringInputError("Next.js declaration file differs from the approved source revision.");
       for (const volume of [this.sourceVolume, this.cacheVolume, this.uploadsVolume, this.privateVolume]) await this.createVolume(volume);
       helper = `medimori-worker-populate-${this.id}`;
       this.resourcesMayExist = true;
@@ -370,7 +297,7 @@ export class DockerWorkspace implements IsolatedWorkspace {
         "--mount", `type=volume,source=${this.cacheVolume},target=/cache`,
         "--mount", `type=volume,source=${this.uploadsVolume},target=/uploads`,
         "--mount", `type=volume,source=${this.privateVolume},target=/private`,
-        "--entrypoint=/bin/sh", this.image, "-c", initializeNextEnvPrivateOverlayCommand], { timeout: 60000, windowsHide: true });
+        "--entrypoint=/bin/sh", this.image, "-c", initializeNextEnvPrivateOverlayCommand(this.nextEnvSourceHash!)], { timeout: 60000, windowsHide: true });
       this.volumesReady = true;
     } catch (error) {
       if (helper) await exec("docker", ["rm", "--force", helper], { timeout: 10000, windowsHide: true }).catch(() => {});
@@ -390,7 +317,7 @@ export class DockerWorkspace implements IsolatedWorkspace {
     let stage = "source_manifest";
     try {
       const before = await contents(this.root);
-      const nodeScript = "const f=require('node:fs'),p=require('node:path'),c=require('node:crypto'),o={},skip=new Set(['.next','node_modules','.git','tsconfig.tsbuildinfo']);function walk(d,r=''){for(const e of f.readdirSync(d,{withFileTypes:true})){if(skip.has(e.name))continue;const q=r?r+'/'+e.name:e.name,x=p.join(d,e.name);if(e.isSymbolicLink())throw Error('unsupported');if(e.isDirectory())walk(x,q);else if(e.isFile())o[q]=c.createHash('sha256').update(f.readFileSync(x)).digest('hex')}}walk('/workspace');try{o['@next-env']=c.createHash('sha256').update(f.readFileSync('/workspace/next-env.d.ts')).digest('hex')}catch{}process.stdout.write(JSON.stringify(o))";
+      const nodeScript = "const f=require('node:fs'),p=require('node:path'),c=require('node:crypto'),o={},skip=new Set(['.next','node_modules','.git','tsconfig.tsbuildinfo','next-env.d.ts']);function walk(d,r=''){for(const e of f.readdirSync(d,{withFileTypes:true})){if(skip.has(e.name))continue;const q=r?r+'/'+e.name:e.name,x=p.join(d,e.name);if(e.isSymbolicLink())throw Error('unsupported');if(e.isDirectory())walk(x,q);else if(e.isFile())o[q]=c.createHash('sha256').update(f.readFileSync(x)).digest('hex')}}walk('/workspace');try{o['@next-env']=c.createHash('sha256').update(f.readFileSync('/workspace/next-env.d.ts')).digest('hex')}catch{}process.stdout.write(JSON.stringify(o))";
       stage = "observer_run";
       const output = (await exec("docker", ["run", "--name", observer, ...dockerOwnershipArgs(this.owner, "validation-container"), "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=512m", "--user=1000:1000", "--cgroupns=private", "--mount", `type=volume,source=${this.sourceVolume},target=/workspace,readonly`, "--entrypoint=node", this.image, "-e", nodeScript], { timeout: 30000, maxBuffer: 1024 * 1024, windowsHide: true })).stdout.trim();
       stage = "observer_output_parse";
@@ -399,7 +326,8 @@ export class DockerWorkspace implements IsolatedWorkspace {
       const entries = Object.entries(after).filter(([path, hash]) => path === "@next-env" && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash) || validRelativePath(path) && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash));
       if (entries.length !== Object.keys(after).length || entries.length > 5000) throw new Error("manifest_invalid");
       const sourceAfter = Object.fromEntries(entries.filter(([path]) => path !== "@next-env")) as Record<string, string>;
-      const changed = [...new Set([...Object.keys(before), ...Object.keys(sourceAfter)])].filter(path => before[path] !== sourceAfter[path]).sort();
+      const sourceBefore = Object.fromEntries(Object.entries(before).filter(([path]) => path !== "next-env.d.ts"));
+      const changed = [...new Set([...Object.keys(sourceBefore), ...Object.keys(sourceAfter)])].filter(path => sourceBefore[path] !== sourceAfter[path]).sort();
       const beforeNext = await readFile(join(this.root, "next-env.d.ts")).then(value => createHash("sha256").update(value).digest("hex")).catch(() => null);
       const afterNext = typeof after["@next-env"] === "string" ? after["@next-env"] : null;
       const nextEnvEffect = beforeNext === null && afterNext !== null ? "created" : beforeNext !== null && afterNext === null ? "removed" : beforeNext === null || afterNext === null ? "unavailable" : beforeNext === afterNext ? "unchanged" : "changed";
@@ -565,7 +493,7 @@ export class DockerWorkspace implements IsolatedWorkspace {
     try {
       this.resourcesMayExist = true;
       if (variant.nextEnvPrivateOverlay) {
-        const setup = "set -eu; test -f /workspace/next-env.d.ts; cp /workspace/next-env.d.ts /private/engineering-next-env.d.ts; chown 1000:1000 /private/engineering-next-env.d.ts; rm /workspace/next-env.d.ts; ln -s private/engineering-next-env.d.ts /workspace/next-env.d.ts";
+        const setup = initializeNextEnvPrivateOverlayCommand(this.nextEnvSourceHash ?? "");
         await exec("docker", ["run", "--rm", ...dockerOwnershipArgs(this.owner, "populate-container"), "--network=none", "--user=0:0", "--mount", `type=volume,source=${this.sourceVolume},target=/workspace`, "--mount", `type=volume,source=${this.privateVolume},target=/private`, "--entrypoint=/bin/sh", this.image, "-c", setup], { timeout: 30000, windowsHide: true });
       }
       const dockerArgs = ["run", "--name", container, ...dockerOwnershipArgs(this.owner, "validation-container"), "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", `--pids-limit=${variant.pidsLimit}`, `--memory=${variant.memory}`, "--cpus=2", "--user=1000:1000", "--cgroupns=private", `--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=${variant.tmpfs}`,

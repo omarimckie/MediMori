@@ -27,6 +27,7 @@ async function createTestSql() {
   await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
   const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
   return { db, sql };
@@ -122,8 +123,8 @@ test("initial attempt is immutably target-bound before approval and same-key pre
     assert.equal(task.status, "implementing");
     const lineageCheck = await sql`SELECT engineering_run_lineage_valid(${prepared.attemptId}::uuid) AS valid`;
     assert.equal(lineageCheck[0].valid, true, "prepared first-attempt lineage must validate after approval");
-    const approvedSource = (await sql`SELECT implementation_source_revision,source_binding_version FROM engineering_run_lineage WHERE run_id=${prepared.attemptId}::uuid`)[0];
-    assert.deepEqual(approvedSource, { implementation_source_revision: "e".repeat(40), source_binding_version: 1 });
+    const approvedSource = (await sql`SELECT implementation_source_revision,source_binding_version,source_selection_policy_version FROM engineering_run_lineage WHERE run_id=${prepared.attemptId}::uuid`)[0];
+    assert.deepEqual(approvedSource, { implementation_source_revision: "e".repeat(40), source_binding_version: 1, source_selection_policy_version: 2 });
     const claim = await db.query<{ result: Record<string, unknown> }>("SELECT engineering_worker($1::uuid,'claim','synthetic-worker',0,$2::jsonb) result", [prepared.attemptId, JSON.stringify({ preflightRevision: "e".repeat(40) })]);
     assert.equal(claim.rows[0].result.preflight_revision, "e".repeat(40));
   } finally { await db.close(); delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED; delete process.env.ENGINEERING_WORKER_ENABLED; }
@@ -167,6 +168,7 @@ test("source-binding migrations reapply cleanly and preserve readable legacy nul
   try {
     await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
+    await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     const taskId = randomUUID(), runId = randomUUID(), planVersion = 4;
     const plan = { summary: "Historical task", files: ["docs/engineering-agent.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] };
     await sql`INSERT INTO engineering_tasks(id,request,status,risk,plan,version,created_by) VALUES(${taskId}::uuid,'legacy request','implementing','low',${JSON.stringify(plan)}::jsonb,${planVersion + 1},'human')`;
@@ -174,8 +176,23 @@ test("source-binding migrations reapply cleanly and preserve readable legacy nul
     await sql`INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition) VALUES(${runId}::uuid,${taskId}::uuid,${planVersion},true,1,${JSON.stringify(plan)}::jsonb,'active')`;
     await sql`INSERT INTO engineering_plan_lineage(task_id,plan_version,target_repository,target_branch,target_base_sha) VALUES(${taskId}::uuid,${planVersion},'omarimckie/MediMori','main',${testTargetSha})`;
     await sql`INSERT INTO engineering_run_lineage(run_id,task_id,attempt_number,plan_version,target_repository,target_branch,target_base_sha) VALUES(${runId}::uuid,${taskId}::uuid,1,${planVersion},'omarimckie/MediMori','main',${testTargetSha})`;
-    const legacy = (await sql`SELECT source_binding_version,implementation_source_revision,engineering_run_lineage_valid(${runId}::uuid) AS valid FROM engineering_run_lineage WHERE run_id=${runId}::uuid`)[0];
-    assert.deepEqual(legacy, { source_binding_version: 0, implementation_source_revision: null, valid: true });
+    const legacy = (await sql`SELECT source_binding_version,implementation_source_revision,source_selection_policy_version,engineering_run_lineage_valid(${runId}::uuid) AS valid FROM engineering_run_lineage WHERE run_id=${runId}::uuid`)[0];
+    assert.deepEqual(legacy, { source_binding_version: 0, implementation_source_revision: null, source_selection_policy_version: 0, valid: true });
+
+    const oldTaskId=randomUUID(),oldRunId=randomUUID(),oldVersion=8,oldS="a".repeat(40);
+    const oldRequest="historical P+T+S subject";
+    await sql`INSERT INTO engineering_tasks(id,request,status,risk,plan,version,created_by) VALUES(${oldTaskId}::uuid,${oldRequest},'implementing','low',${JSON.stringify(plan)}::jsonb,${oldVersion+1},'human')`;
+    await sql`INSERT INTO engineering_approvals(id,task_id,plan_version,gate,decision,actor) VALUES(${randomUUID()}::uuid,${oldTaskId}::uuid,${oldVersion},'plan','approved','human')`;
+    await sql`INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition) VALUES(${oldRunId}::uuid,${oldTaskId}::uuid,${oldVersion},true,1,${JSON.stringify(plan)}::jsonb,'active')`;
+    await sql`INSERT INTO engineering_plan_lineage(task_id,plan_version,target_repository,target_branch,target_base_sha) VALUES(${oldTaskId}::uuid,${oldVersion},'omarimckie/MediMori','main',${testTargetSha})`;
+    const prepareKey=randomUUID(),preimages={"docs/engineering-agent.md":"b".repeat(64)};
+    await sql`INSERT INTO engineering_prepared_attempts(attempt_id,task_id,attempt_number,plan_version,idempotency_key,actor,request_snapshot,plan_snapshot,risk,target_repository,target_branch,target_base_sha,target_preimages,implementation_source_revision)
+      VALUES(${oldRunId}::uuid,${oldTaskId}::uuid,1,${oldVersion},${prepareKey}::uuid,'human',${oldRequest},${JSON.stringify(plan)}::jsonb,'low','omarimckie/MediMori','main',${testTargetSha},${JSON.stringify(preimages)}::jsonb,${oldS})`;
+    await sql`INSERT INTO engineering_run_lineage(run_id,task_id,attempt_number,plan_version,target_repository,target_branch,target_base_sha,implementation_source_revision,source_binding_version)
+      VALUES(${oldRunId}::uuid,${oldTaskId}::uuid,1,${oldVersion},'omarimckie/MediMori','main',${testTargetSha},${oldS},1)`;
+    const oldV1=(await sql`SELECT source_binding_version,source_selection_policy_version,engineering_run_lineage_valid(${oldRunId}::uuid) AS valid FROM engineering_run_lineage WHERE run_id=${oldRunId}::uuid`)[0];
+    assert.deepEqual(oldV1,{source_binding_version:1,source_selection_policy_version:0,valid:true},"historical version-1 P+T+S remains auditable");
+    await assert.rejects(db.query("SELECT engineering_worker($1::uuid,'claim','legacy-worker',0,$2::jsonb)",[oldRunId,JSON.stringify({preflightRevision:oldS})]),/approved_source_policy_or_revision_mismatch/i,"historical policy 0 cannot execute under policy 2");
   } finally { await db.close(); }
 });
 
@@ -235,6 +252,7 @@ test("Postgres control plane enforces approval, versions, evidence cycles, and c
     await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
+    await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
     const adapter = async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
@@ -298,6 +316,7 @@ test("successful validation can reach review, with no merge transition", async (
     await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
+    await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Small fix", "owner", "a6666666-6666-4666-8666-666666666666", sql);
@@ -332,6 +351,7 @@ test("evidence audit events contain only allowlisted metadata, with detailed rec
     await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
+    await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Audit isolation", "owner", "a7777777-7777-4777-8777-777777777777", sql);
@@ -437,6 +457,7 @@ test("expired execution is preserved and a same-request retry requires a fresh p
     assert.equal((await sql`SELECT * FROM engineering_approvals WHERE task_id=${task.id}::uuid`).length, 1, "retry preparation does not create approval");
     const retryPrepared = (await sql`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${retrySubject.attemptId}::uuid`)[0] as Record<string,unknown>;
     assert.equal(retryPrepared.implementation_source_revision, "f".repeat(40));
+    assert.equal(Number(retryPrepared.source_selection_policy_version),2);
     const retryReplay = await prepareRetryAttemptSubject(task.id, task.version, retryKeys[winnerIndex], "human", sql, async () => "f".repeat(40));
     assert.equal(retryReplay.replayed, true);
     assert.equal(retryReplay.attemptId, retrySubject.attemptId);
@@ -458,6 +479,7 @@ test("expired execution is preserved and a same-request retry requires a fresh p
     assert.equal(runLineage.target_base_sha,testTargetSha);
     assert.equal(runLineage.implementation_source_revision, "f".repeat(40));
     assert.equal(Number(runLineage.source_binding_version),1);
+    assert.equal(Number(runLineage.source_selection_policy_version),2);
     assert.equal(runLineage.previous_run_id,firstRunId);
     assert.ok(new Date(String(freshRun.started_at)).getTime() > Date.now() - 60_000);
     assert.equal(history.approvals.length, 2);

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -62,6 +63,11 @@ test("offline diagnostic passes real config and read-only scratch preflight with
     const scratch = join(root, "scratch");
     const exports = join(scratch, "exports");
     await Promise.all([mkdir(source), mkdir(exports, { recursive: true })]);
+    await writeFile(join(source, "README.md"), "temporary clean source fixture\n");
+    await writeFile(join(source, "next-env.d.ts"), "declare const offlineFixture: true;\n");
+    execFileSync("git", ["-C", source, "init", "-q"], { windowsHide: true });
+    execFileSync("git", ["-C", source, "add", "-A"], { windowsHide: true });
+    execFileSync("git", ["-C", source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "offline fixture"], { windowsHide: true });
     const result = await diagnoseWorkerInitialization(validEnvironment(root), { minimumScratchFreeBytes: BigInt(0) });
     assert.equal(result.ready, true);
     if (result.ready && "scratch" in result) {

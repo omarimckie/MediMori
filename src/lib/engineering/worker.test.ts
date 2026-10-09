@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -14,6 +15,8 @@ import { DockerCleanupError } from "./docker-ownership";
 import { buildBoundedReplacementContext } from "./replacement-anchors";
 import { ValidationPreparationError } from "./validation-diagnostics";
 
+function gitFixture(root:string,...args:string[]){execFileSync("git",["-C",root,...args],{stdio:"ignore",windowsHide:true});}
+async function commitGitFixture(root:string){gitFixture(root,"add","-A");gitFixture(root,"-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","--allow-empty","-qm","fixture");}
 const plan = { summary: "Small isolated change", files: ["src/demo.ts"], operations: [], validations: ["test","test:engineering","lint","typecheck","build","security:check"] };
 const revision = "a".repeat(40);
 const testTargetSha = "c".repeat(40);
@@ -39,6 +42,7 @@ async function fixture() {
   await db.exec(await readFile(new URL("../../../sql/engineering-lineage.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url),"utf8"));
   const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => (await db.query(strings.reduce((s,p,i)=>s+(i?`$${i}`:"")+p,""),values)).rows) as unknown as ReturnType<typeof getSql>;
   let task=await createTask("Synthetic 2B fixture","human","a8888888-8888-4888-8888-888888888888",sql);
   task=await actOnTask(task.id,task.version,"transition","analyzing","human",sql);
@@ -166,9 +170,9 @@ test("bounded proposal parser classifies malformed shapes without retaining valu
   assert.equal(extractResponsesOutputText({output:[{content:"not content objects"}]}),"");
 });
 test("fresh sanitized export refreshes current source and excludes environment and Git data",async()=>{
-  const parent=await mkdtemp(join(tmpdir(),"m2c6a-export-"));const source=join(parent,"source"),exports=join(parent,"exports");await mkdir(source);await mkdir(exports);await mkdir(join(source,".git"));
+  const parent=await mkdtemp(join(tmpdir(),"m2c6a-export-"));const source=join(parent,"source"),exports=join(parent,"exports");await mkdir(source);await mkdir(exports);gitFixture(source,"init","-q");
   try{
-    await writeFile(join(source,"docs.md"),"current M2C.6A source\n");await writeFile(join(source,".env.local"),"SECRET_SENTINEL");await writeFile(join(source,".git","config"),"git data");
+    await writeFile(join(source,".gitignore"),".env.local\n");await writeFile(join(source,"docs.md"),"current M2C.6A source\n");await writeFile(join(source,".env.local"),"SECRET_SENTINEL");await commitGitFixture(source);
     const fresh=await createFreshExport(source,exports);assert.equal(await readFile(join(fresh,"docs.md"),"utf8"),"current M2C.6A source\n");
     await assert.rejects(readFile(join(fresh,".env.local")));await assert.rejects(readFile(join(fresh,".git","config")));
     assert.match(await exportedWorkspaceRevision(fresh),/^[a-f0-9]{40}$/);
