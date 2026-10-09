@@ -138,6 +138,7 @@ export function parseWorkerInitializationConfig(env: WorkerEnvironment, runId?: 
 }
 
 function scratchFailureCode(error: unknown): InitializationCode {
+  if (isWorkspaceExportError(error)) return error.code;
   if (error && typeof error === "object" && "code" in error) {
     if (error.code === "ENOENT" || error.code === "ENOTDIR") return "scratch_path_missing";
     if (error.code === "EACCES" || error.code === "EPERM") return "scratch_path_inaccessible";

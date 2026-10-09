@@ -1,7 +1,7 @@
 import { ApprovedSourceRevisionMismatch } from "./source-binding";
 import { TargetAncestryError } from "./merge-target";
 import { WorkerInitializationError } from "./worker-initialization";
-import { WorkspaceExportError } from "./workspace-export-diagnostics";
+import { WorkspaceExportError, workspaceExportDiagnostic } from "./workspace-export-diagnostics";
 
 export const preclaimDiagnosticStages = [
   "configuration", "scratch_preflight", "database_identity", "lineage_lookup", "target_verification", "target_preimage", "source_export", "claim_preflight",
@@ -39,7 +39,7 @@ export type PreclaimDiagnostic = {
 };
 
 export class PreclaimWorkerError extends Error {
-  constructor(readonly diagnostic: PreclaimDiagnostic) {
+  constructor(readonly diagnostic: PreclaimDiagnostic, readonly localExportDiagnostic?: ReturnType<typeof workspaceExportDiagnostic>) {
     super(diagnostic.summary);
     this.name = "PreclaimWorkerError";
   }

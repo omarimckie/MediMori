@@ -2,6 +2,9 @@ import { lstat, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { EngineeringInputError } from "./policy";
 import { createFreshExport, exportedWorkspaceRevision, preflightEngineeringScratch } from "./workspace";
+import { SOURCE_SELECTION_POLICY_VERSION, resolveCanonicalSourceManifest, type CanonicalSourceManifest } from "./source-manifest";
+
+export { SOURCE_SELECTION_POLICY_VERSION };
 
 const revisionPattern = /^[a-f0-9]{40}$/;
 
@@ -29,13 +32,14 @@ async function removeOwnedExport(path: string) {
 /** Computes the approved implementation identity with the same sanitized export used by the worker. */
 export async function deriveImplementationSourceRevision(env: NodeJS.ProcessEnv = process.env) {
   const { sourceRoot, exportParent, scratchRoot } = sourcePaths(env);
-  await preflightEngineeringScratch(sourceRoot, scratchRoot, exportParent);
-  return computeImplementationSourceRevision(sourceRoot, exportParent);
+  const manifest = await resolveCanonicalSourceManifest(sourceRoot);
+  await preflightEngineeringScratch(sourceRoot, scratchRoot, exportParent, undefined, manifest);
+  return computeImplementationSourceRevision(sourceRoot, exportParent, manifest);
 }
 
 /** Shared sanitized-export calculation; its unique temporary export is removed after hashing. */
-export async function computeImplementationSourceRevision(sourceRoot: string, exportParent: string) {
-  const exportRoot = await createFreshExport(sourceRoot, exportParent);
+export async function computeImplementationSourceRevision(sourceRoot: string, exportParent: string, manifest?: CanonicalSourceManifest) {
+  const exportRoot = await createFreshExport(sourceRoot, exportParent, manifest);
   try {
     return await exportedWorkspaceRevision(exportRoot);
   } finally {
@@ -53,9 +57,10 @@ export async function createApprovedExecutionExport(
   exportParent: string,
   approvedRevision: string,
   onMismatch: (actualRevision: string) => Promise<void>,
+  manifest?: CanonicalSourceManifest,
 ) {
   if (!revisionPattern.test(approvedRevision)) throw new EngineeringInputError("Approved implementation source revision is invalid.");
-  const exportRoot = await createFreshExport(sourceRoot, exportParent);
+  const exportRoot = await createFreshExport(sourceRoot, exportParent, manifest);
   try {
     const actualRevision = await exportedWorkspaceRevision(exportRoot);
     if (actualRevision !== approvedRevision) {

@@ -27,6 +27,7 @@ function validIdentityRow() {
     worker_call_progress_ready: true,
     worker_lineage_ready: true,
     source_binding_ready: true,
+    source_selection_policy_ready: true,
     source_mismatch_execute: true,
     source_mismatch_public_execute: false,
     preclaim_diagnostic_ready: true,
@@ -46,6 +47,7 @@ test("read-only identity query accepts the intended disposable restricted role",
   assert.equal(identity.sessionUser, identity.currentUser);
   assert.equal(identity.boundedPrivileges, true);
   assert.equal(identity.lineageReady, true);
+  assert.equal(identity.sourceSelectionPolicyReady, true);
   assert.equal(identity.preclaimDiagnosticsReady, true);
 });
 
@@ -71,7 +73,7 @@ for (const change of [{ role_superuser: true }, { task_mutation: true }, { appro
 });
 
 test("identity query fails closed before claim when call-progress or lineage schema is missing", async () => {
-for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }, { source_binding_ready: false }, { preclaim_diagnostic_ready: false }]) {
+for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }, { source_binding_ready: false }, { source_selection_policy_ready: false }, { preclaim_diagnostic_ready: false }]) {
     await assert.rejects(
       verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
       error => error instanceof WorkerInitializationError && error.code === "worker_database_schema_mismatch",

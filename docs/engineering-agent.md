@@ -61,6 +61,9 @@ For a disposable engineering database, install the additive engineering schema i
 5. `sql/engineering-source-binding.sql` — implementation-source binding for prepared attempts and retries.
 6. `sql/engineering-merge.sql` — separately gated merge approvals and executor lifecycle records.
 7. `sql/engineering-preclaim-diagnostics.sql` — bounded pre-claim failure evidence; install only after the six preceding migrations.
+8. `sql/engineering-source-selection-policy.sql` — additive source-selection policy version binding; install after migration seven. Historical policy-version-0/1 evidence remains readable, while the worker accepts only the current Git-tree policy version 2.
+
+Source policy version 2 builds S exclusively from a clean immutable Git tree, rejects unsupported entries and unsafe binaries, and excludes ignored/untracked local assets by never enumerating them. The tracked `next-env.d.ts` remains part of S; the validation runner copies that hash-verified file into its private writable overlay in an isolated volume, outside provider-controlled source.
 
 Apply only the specifically reviewed engineering SQL to the intended disposable branch. Do not apply these files to production or mix them with unrelated business migrations. Verify schema compatibility and the restricted role after each approved synchronization.
 

@@ -29,6 +29,8 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 export function generateStaticParams() {
   return getBooks().map((book) => ({ id: book.id }));
 }

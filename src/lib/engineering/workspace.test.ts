@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, symlink } from "node:fs/promises";
@@ -8,14 +9,16 @@ import { createFreshExport, diagnoseFreshExport, DockerWorkspace, preflightEngin
 import { WorkspaceExportError, workspaceExportCodes } from "./workspace-export-diagnostics";
 import { verifyCiEvidence } from "./ci-evidence";
 import { buildBoundedReplacementContext } from "./replacement-anchors";
-import { initializeNextEnvPrivateOverlayCommand, validationVolumeMountArgs } from "./validation-volume-policy";
+import { initializeNextEnvPrivateOverlayCommand, VALIDATION_OVERLAY_POLICY_VERSION, validationVolumeMountArgs } from "./validation-volume-policy";
 const plan={summary:"Document change",files:["docs/demo.md"],validations:["lint","typecheck","security:check"],operations:[]};
 const image=`example/worker@sha256:${"a".repeat(64)}`;
 const dependencyVolume="medimori-validation-dependencies";
 const owner={taskId:"11111111-1111-4111-8111-111111111111",runId:"22222222-2222-4222-8222-222222222222"};
+function git(root:string,...args:string[]){execFileSync("git",["-C",root,...args],{stdio:"ignore",windowsHide:true});}
+async function commitFixture(root:string){git(root,"init","-q");git(root,"add","-A");git(root,"-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","--allow-empty","-qm","fixture");}
 test("production validation routes only next-env.d.ts through private writable storage",()=>{
- const setup=initializeNextEnvPrivateOverlayCommand;
- assert.match(setup,/test -f \/workspace\/next-env\.d\.ts/);assert.match(setup,/test ! -L \/workspace\/next-env\.d\.ts/);
+ const setup=initializeNextEnvPrivateOverlayCommand("a".repeat(64));
+ assert.equal(VALIDATION_OVERLAY_POLICY_VERSION,1);assert.match(setup,/test -f \/workspace\/next-env\.d\.ts/);assert.match(setup,/node -e .*workspace\/next-env\.d\.ts/);assert.match(setup,/node -e .*private\/engineering-next-env\.d\.ts/);assert.match(setup,/test ! -L \/workspace\/next-env\.d\.ts/);
  assert.match(setup,/cp \/workspace\/next-env\.d\.ts \/private\/engineering-next-env\.d\.ts/);
  assert.match(setup,/ln -s private\/engineering-next-env\.d\.ts \/workspace\/next-env\.d\.ts/);
  assert.ok(setup.indexOf("chown -R")<setup.indexOf("ln -s private/engineering-next-env.d.ts"));
@@ -25,19 +28,21 @@ test("production validation routes only next-env.d.ts through private writable s
  assert.match(mounts,/source=owned-private,target=\/workspace\/private(?!,readonly)/);assert.match(mounts,/source=owned-cache,target=\/workspace\/\.next/);assert.match(mounts,/source=owned-uploads,target=\/workspace\/public\/marketing-uploads/);
  assert.doesNotMatch(mounts,/target=\/workspace(?: |$)(?!,readonly)/);
 });
-test("validation ignores generated next-env output when binding source and proposal revisions",async()=>{
+test("next-env.d.ts is bound in source while the private overlay command verifies its trusted source hash",async()=>{
  const root=await mkdtemp(join(tmpdir(),"medimori-next-env-revision-"));
  try{
   await mkdir(join(root,"docs"));await writeFile(join(root,"docs/demo.md"),"stable approved source");await writeFile(join(root,"next-env.d.ts"),"declare const initial: true;");
   const w=await DockerWorkspace.create(root,plan,image,dependencyVolume,owner);const before=await w.snapshot();
   await writeFile(join(root,"next-env.d.ts"),"declare const runtimeGenerated: true;");
-  assert.equal((await w.snapshot()).revision,before.revision);
+  await assert.rejects(w.snapshot(),/scope/);
+  assert.notEqual((await import("node:crypto")).createHash("sha256").update("declare const initial: true;").digest("hex"),(await import("node:crypto")).createHash("sha256").update("declare const runtimeGenerated: true;").digest("hex"));
+  assert.equal(VALIDATION_OVERLAY_POLICY_VERSION,1);assert.match(initializeNextEnvPrivateOverlayCommand(before.files["next-env.d.ts"]??"a".repeat(64)),/private\/engineering-next-env\.d\.ts/);
  }finally{await rm(root,{recursive:true,force:true});}
 });
 test("scratch preflight checks the configured filesystem and refuses an export outside it",async()=>{
  const parent=await mkdtemp(join(tmpdir(),"medimori-scratch-preflight-"));const source=join(parent,"source"),scratch=join(parent,"scratch"),exports=join(scratch,"exports"),outside=join(parent,"outside");
  try{
-  await mkdir(source);await mkdir(exports,{recursive:true});await mkdir(outside);await writeFile(join(source,"doc.md"),"bounded source");
+  await mkdir(source);await mkdir(exports,{recursive:true});await mkdir(outside);await writeFile(join(source,"doc.md"),"bounded source");await commitFixture(source);
   const result=await preflightEngineeringScratch(source,scratch,exports,BigInt(0));assert.equal(result.sourceBytes,BigInt(Buffer.byteLength("bounded source")));assert.ok(result.availableBytes>=result.requiredBytes);
   await assert.rejects(preflightEngineeringScratch(source,scratch,outside,BigInt(0)),/Invalid engineering scratch configuration/);
   await assert.rejects(preflightEngineeringScratch(source,join(parent,"missing"),exports,BigInt(0)));
@@ -46,13 +51,16 @@ test("scratch preflight checks the configured filesystem and refuses an export o
 test("offline production export diagnostic is deterministic, sanitized, source-read-only, and ownership-scoped",async()=>{
  const root=await mkdtemp(join(tmpdir(),"medimori-export-diagnostic-"));const source=join(root,"checkout"),scratch=join(root,"scratch"),exports=join(scratch,"exports");
  try{
-  await mkdir(join(source,"docs"),{recursive:true});await mkdir(exports,{recursive:true});await mkdir(join(source,"node_modules"),{recursive:true});
-  await writeFile(join(source,"docs/readme.md"),"bounded documentation source");await writeFile(join(source,".env.example"),"DATABASE_URL=postgresql://USER:PASSWORD@HOST/DB?sslmode=require\n");
+  await mkdir(join(source,"docs"),{recursive:true});await mkdir(exports,{recursive:true});
+  await writeFile(join(source,".gitignore"),".env.private\nnode_modules/\nprivate/\npublic/marketing-uploads/\n");
+  await mkdir(join(source,"node_modules"),{recursive:true});await writeFile(join(source,"docs/readme.md"),"bounded documentation source");await writeFile(join(source,".env.example"),"DATABASE_URL=postgresql://localhost:5432/medimori\n");
+  await commitFixture(source);
   await writeFile(join(source,".env.private"),"must not be exported");await writeFile(join(source,"node_modules/ignored.js"),"must not be exported");
+  await mkdir(join(source,"private"),{recursive:true});await writeFile(join(source,"private/ignored.secret"),"must not be exported");
   await writeFile(join(exports,"unrelated.keep"),"leave this unrelated scratch file alone");
   const original=await readFile(join(source,"docs/readme.md"),"utf8");
   const first=await diagnoseFreshExport(source,scratch,exports),second=await diagnoseFreshExport(source,scratch,exports);
-  assert.equal(first.revision,second.revision);assert.equal(first.sourceUnchanged,true);assert.equal(first.cleanup,"owned_diagnostic_directory_removed");assert.equal(first.sensitiveExclusions,"verified");assert.equal(first.fileCount,2);
+  assert.equal(first.revision,second.revision);assert.equal(first.sourceUnchanged,true);assert.equal(first.cleanup,"owned_diagnostic_directory_removed");assert.equal(first.sensitiveExclusions,"verified");assert.equal(first.fileCount,3);
   assert.equal(await readFile(join(source,"docs/readme.md"),"utf8"),original);assert.equal(await readFile(join(exports,"unrelated.keep"),"utf8"),"leave this unrelated scratch file alone");
   assert.deepEqual((await readdir(exports)),["unrelated.keep"]);
  }finally{await rm(root,{recursive:true,force:true});}
@@ -60,7 +68,7 @@ test("offline production export diagnostic is deterministic, sanitized, source-r
 test("export diagnostic fails closed on credential-shaped source content and preserves unrelated scratch",async()=>{
  const root=await mkdtemp(join(tmpdir(),"medimori-export-sensitive-"));const source=join(root,"checkout"),scratch=join(root,"scratch"),exports=join(scratch,"exports");
  try{
-  await mkdir(join(source,"docs"),{recursive:true});await mkdir(exports,{recursive:true});await writeFile(join(source,"docs/sensitive.fixture"),["postgresql","://","fake-user:fake-password@host/db"].join(""));await writeFile(join(exports,"keep.txt"),"keep");
+  await mkdir(join(source,"docs"),{recursive:true});await mkdir(exports,{recursive:true});await writeFile(join(source,"docs/sensitive.fixture"),["postgresql","://","fake-user:fake-password@host/db"].join(""));await commitFixture(source);await writeFile(join(exports,"keep.txt"),"keep");
   await assert.rejects(diagnoseFreshExport(source,scratch,exports),error=>error instanceof WorkspaceExportError&&error.code==="export_sensitive_content_rejected"&&/^[a-f0-9]{16}$/.test(error.metadata.relativePathHash??"")&&!error.message.includes(root));
   assert.equal(await readFile(join(exports,"keep.txt"),"utf8"),"keep");assert.deepEqual(await readdir(exports),["keep.txt"]);
  }finally{await rm(root,{recursive:true,force:true});}
@@ -79,7 +87,8 @@ test("production exporter rejects symlink entries without exposing their paths",
  try{
   await mkdir(source);await mkdir(exports,{recursive:true});await writeFile(join(root,"outside.txt"),"outside");
   try{await symlink(join(root,"outside.txt"),join(source,"linked.txt"));}catch(error){if(error&&typeof error==="object"&&"code" in error&&["EPERM","EACCES","ENOTSUP"].includes(String(error.code))){t.skip("host policy does not permit creating a test symlink");return;}throw error;}
-  await assert.rejects(createFreshExport(source,exports),error=>error instanceof WorkspaceExportError&&error.code==="source_symlink_rejected"&&/^[a-f0-9]{16}$/.test(error.metadata.relativePathHash??"")&&!error.message.includes(root));
+  await commitFixture(source);
+  await assert.rejects(createFreshExport(source,exports),error=>error instanceof WorkspaceExportError&&error.code==="source_git_entry_unsupported"&&/^[a-f0-9]{16}$/.test(error.metadata.relativePathHash??"")&&!error.message.includes(root));
   assert.equal(await readFile(join(root,"outside.txt"),"utf8"),"outside");assert.deepEqual(await readdir(exports),[]);
  }finally{await rm(root,{recursive:true,force:true});}
 });
