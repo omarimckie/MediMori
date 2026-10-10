@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { sortMarketingContentForAdminList } from "./content-list-order";
 import {
   mapApproval,
   mapAsset,
@@ -357,8 +358,9 @@ export class PostgresMarketingStore implements MarketingStore {
     const sql = getSql();
     const rows = await sql`SELECT * FROM marketing_content ORDER BY created_at DESC LIMIT 500`;
     const mapped = rows.map((row) => mapContent(row as Record<string, unknown>));
-    if (!filters) return mapped;
-    return mapped.filter((item) => {
+    const filtered = !filters
+      ? mapped
+      : mapped.filter((item) => {
       if (filters.campaignId && item.campaignId !== filters.campaignId) return false;
       if (filters.weeklyPlanId && item.weeklyPlanId !== filters.weeklyPlanId) return false;
       if (filters.platform && item.platform !== filters.platform) return false;
@@ -368,6 +370,7 @@ export class PostgresMarketingStore implements MarketingStore {
       if (filters.excludeStatuses?.includes(item.status)) return false;
       return true;
     });
+    return sortMarketingContentForAdminList(filtered);
   }
 
   async deleteContent(id: string) {

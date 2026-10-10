@@ -1,4 +1,5 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, asStringOrNull, toDateOnly, toIso } from "./json";
+import { sortMarketingContentForAdminList } from "./content-list-order";
 import {
   assertSmartUploadPlatformSlotAvailable,
   parseSmartUploadFinalizeRows,
@@ -205,10 +206,11 @@ export class MemoryMarketingStore implements MarketingStore {
   }
 
   async listContent(filters?: ContentFilters) {
-    return [...this.content.values()]
-      .filter((item) => matchesFilters(item, filters))
-      .map(clone)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return sortMarketingContentForAdminList(
+      [...this.content.values()]
+        .filter((item) => matchesFilters(item, filters))
+        .map(clone),
+    );
   }
 
   async findSmartUploadContentByFinalizeKey(finalizeKey: string) {

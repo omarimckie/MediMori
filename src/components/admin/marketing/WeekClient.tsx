@@ -183,16 +183,6 @@ export function WeekClient() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, ContentItem[]>();
-    for (const item of content) {
-      const list = map.get(item.platform) ?? [];
-      list.push(item);
-      map.set(item.platform, list);
-    }
-    return map;
-  }, [content]);
-
   async function act(path: string, body: unknown) {
     setBusy(true);
     setMessage(null);
@@ -480,10 +470,8 @@ export function WeekClient() {
         </Card>
       ) : null}
 
-      {[...grouped.entries()].map(([platform, items]) => (
-        <section key={platform} className="space-y-3">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-brand-green-deep">{platform}</h3>
-          {items.map((item) => {
+      <section className="space-y-3">
+          {content.map((item) => {
             const review = reviewByContentId[item.id];
             const contentPublications = (settings?.publications ?? []).filter(
               (row) => row.contentId === item.id,
@@ -585,8 +573,7 @@ export function WeekClient() {
             </Card>
             );
           })}
-        </section>
-      ))}
+      </section>
     </div>
   );
 }

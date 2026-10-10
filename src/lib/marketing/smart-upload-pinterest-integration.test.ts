@@ -350,5 +350,15 @@ test("blob finalize with meta and pinterest derivatives creates three platform r
 
   assert.equal(replay.idempotentReplay, true);
   assert.equal((await store.listContent()).length, 3);
+
+  const ordered = await store.listContent({ status: "needs_review" });
+  const triple = ordered.filter(
+    (row) => row.metadata?.smartUploadFinalizeKey === finalizeKey,
+  );
+  assert.equal(triple.length, 3);
+  assert.deepEqual(
+    triple.map((row) => row.platform),
+    ["instagram", "facebook", "pinterest"],
+  );
   assert.equal((await store.listAssets()).length, assets.length);
 });
