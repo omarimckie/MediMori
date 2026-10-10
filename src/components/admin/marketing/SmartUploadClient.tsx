@@ -52,8 +52,16 @@ import {
   assertAtLeastOneDestination,
   metaDestinationsSelected,
   normalizeSmartUploadDestinations,
+  SMART_UPLOAD_DESTINATIONS_ALL,
   type SmartUploadDestinations,
 } from "@/lib/marketing/smart-upload-destinations";
+import {
+  countSmartUploadSubmitTargets,
+  createNextSmartUploadSessionBatchId,
+  defaultSmartUploadClientFormState,
+  formatSmartUploadSubmitSuccessMessage,
+  shouldAutoResetSmartUploadAfterSubmitValid,
+} from "@/lib/marketing/smart-upload-client-session";
 import { localMultipartSmartUploadFinalizeBlockedReason } from "@/lib/marketing/smart-upload-multipart";
 import {
   deriveUploadStatusAfterValidation,
@@ -310,9 +318,7 @@ export function SmartUploadClient() {
   const [campaignId, setCampaignId] = useState("");
   const [bookId, setBookId] = useState("");
   const [destinations, setDestinations] = useState<SmartUploadDestinations>({
-    facebook: true,
-    instagram: true,
-    pinterest: true,
+    ...SMART_UPLOAD_DESTINATIONS_ALL,
   });
   const [files, setFiles] = useState<SmartUploadFile[]>([]);
   const filesRef = useRef<SmartUploadFile[]>([]);
@@ -326,6 +332,7 @@ export function SmartUploadClient() {
   const [plans, setPlans] = useState<WeeklyPlanOption[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewGeneratingEntryId, setPreviewGeneratingEntryId] = useState<string | null>(null);
   const [generatingCaptionFileId, setGeneratingCaptionFileId] = useState<string | null>(null);
@@ -384,6 +391,7 @@ export function SmartUploadClient() {
   }, [files]);
 
   function addFiles(fileList: FileList | null) {
+    if (busy) return;
     if (!fileList?.length) return;
     const next: SmartUploadFile[] = [];
     for (const file of Array.from(fileList)) {
@@ -446,10 +454,12 @@ export function SmartUploadClient() {
   }
 
   function updateFile(id: string, patch: Partial<SmartUploadFile>) {
+    if (!filesRef.current.some((entry) => entry.id === id)) return;
     commitFile(id, patch);
   }
 
   function updateCaptionAssistant(id: string, nextAssistant: CaptionAssistantState) {
+    if (!filesRef.current.some((entry) => entry.id === id)) return;
     commitFile(id, { captionAssistant: nextAssistant });
   }
 
@@ -459,6 +469,24 @@ export function SmartUploadClient() {
 
   const destinationsJson = JSON.stringify(destinations);
   const prevDestinationsJsonRef = useRef(destinationsJson);
+
+  function resetSmartUploadWorkspace(successMessage: string | null) {
+    const formDefaults = defaultSmartUploadClientFormState();
+    filesRef.current = [];
+    setFiles([]);
+    setWeeklyPlanId(formDefaults.weeklyPlanId);
+    setCampaignId(formDefaults.campaignId);
+    setBookId(formDefaults.bookId);
+    setDestinations(formDefaults.destinations);
+    prevDestinationsJsonRef.current = JSON.stringify(formDefaults.destinations);
+    setBatchId(createNextSmartUploadSessionBatchId());
+    captionGenerationSeqRef.current.clear();
+    setPreviewGeneratingEntryId(null);
+    setGeneratingCaptionFileId(null);
+    setSessionMessage(null);
+    setSubmitSuccessMessage(successMessage);
+    if (inputRef.current) inputRef.current.value = "";
+  }
   useEffect(() => {
     if (prevDestinationsJsonRef.current === destinationsJson) return;
     prevDestinationsJsonRef.current = destinationsJson;
@@ -1143,6 +1171,7 @@ export function SmartUploadClient() {
 
   async function submitValid() {
     setSessionMessage(null);
+    setSubmitSuccessMessage(null);
     if (!batchId) {
       setSessionMessage("Session is still starting. Try again in a moment.");
       return;
@@ -1179,6 +1208,13 @@ export function SmartUploadClient() {
       }
     }
     setBusy(false);
+
+    const afterSubmit = filesRef.current.map((item) => ({ id: item.id, status: item.status }));
+    const submitSnapshot = snapshot.map((item) => ({ id: item.id, status: item.status }));
+    if (shouldAutoResetSmartUploadAfterSubmitValid(submitSnapshot, afterSubmit)) {
+      const submittedCount = countSmartUploadSubmitTargets(submitSnapshot);
+      resetSmartUploadWorkspace(formatSmartUploadSubmitSuccessMessage(submittedCount));
+    }
   }
 
   const submittableCount = files.filter(
@@ -1281,8 +1317,10 @@ export function SmartUploadClient() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
+            if (busy) return;
             addFiles(e.dataTransfer.files);
           }}
+          aria-busy={busy}
         >
           <p className="text-sm font-bold text-brand-navy">Drop images here or choose files</p>
           <p className="mt-1 text-xs text-brand-charcoal/60">
@@ -1294,6 +1332,7 @@ export function SmartUploadClient() {
             accept="image/jpeg,image/png,image/webp"
             multiple
             className="sr-only"
+            disabled={busy}
             onChange={(e) => {
               addFiles(e.target.files);
               e.target.value = "";
@@ -1301,7 +1340,8 @@ export function SmartUploadClient() {
           />
           <button
             type="button"
-            className="mt-4 inline-flex h-10 items-center rounded-xl border border-brand-brown/25 bg-white px-4 text-sm font-bold text-brand-blue-deep hover:bg-cream"
+            disabled={busy}
+            className="mt-4 inline-flex h-10 items-center rounded-xl border border-brand-brown/25 bg-white px-4 text-sm font-bold text-brand-blue-deep hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => inputRef.current?.click()}
           >
             Choose images
@@ -1634,6 +1674,15 @@ export function SmartUploadClient() {
           <p className="mt-3 text-xs text-brand-charcoal/60">
             Submitted {summary.submitted} · Needs attention {summary.needs_attention} · Failed{" "}
             {summary.failed} · Ready {summary.ready}
+          </p>
+        ) : null}
+        {submitSuccessMessage ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-2 text-sm font-semibold text-brand-green-deep"
+          >
+            {submitSuccessMessage}
           </p>
         ) : null}
         {sessionMessage ? (
