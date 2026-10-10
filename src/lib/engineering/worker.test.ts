@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
-import { actOnTask as storeActOnTask, createTask, prepareInitialAttempt, recordRunEvidence, taskHistory } from "./store";
+import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, prepareInitialAttempt, recordRunEvidence, taskHistory } from "./store";
 import { commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits } from "./worker-policy";
 import { context, edits, extractResponsesOutputText, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
@@ -17,21 +17,21 @@ import { ValidationPreparationError } from "./validation-diagnostics";
 
 function gitFixture(root:string,...args:string[]){execFileSync("git",["-C",root,...args],{stdio:"ignore",windowsHide:true});}
 async function commitGitFixture(root:string){gitFixture(root,"add","-A");gitFixture(root,"-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","--allow-empty","-qm","fixture");}
-const plan = { summary: "Small isolated change", files: ["src/demo.ts"], operations: [], validations: ["test","test:engineering","lint","typecheck","build","security:check"] };
+const plan = { summary: "Small isolated change", files: ["README.md"], operations: [], validations: ["test","test:engineering","lint","typecheck","build","security:check"] };
 const revision = "a".repeat(40);
 const testTargetSha = "c".repeat(40);
 const testSourceRevision = async () => revision;
 const readTestPreimages = async (_sha: string, paths: readonly string[]) => Object.fromEntries(paths.map(path => [path,"d".repeat(64)]));
-const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database,async()=>testTargetSha,readTestPreimages,testSourceRevision);
+const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database);
 const richSource = "Original documentation paragraph provides deterministic replacement context with enough distinct words for a safe exact literal anchor during worker tests.";
-const anchorFor = (source=richSource) => buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"src/demo.ts":source}}).anchors[0]!;
+const anchorFor = (source=richSource) => buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"README.md":source}}).anchors[0]!;
 function proposalFor(body:Record<string,unknown>, replacementText="updated") {
   const request=JSON.parse(String(body.input)) as {repository:string};
   const repo=JSON.parse(request.repository) as {replacementAnchors:Array<{id:string}>};
   return JSON.stringify({replacements:[{anchorId:repo.replacementAnchors[0].id,replacementText}]});
 }
 const reservation = (key: string, input = 100, output = 100, model = "gpt-6-luna") => ({ key, hash: "b".repeat(64), inputBound: input, outputBound: output, tokens: input+output, micros: quote(input, output, defaultRates[model as keyof typeof defaultRates]), model, rates: defaultRates[model as keyof typeof defaultRates] });
-const proposalEvidence = (workspaceRevision=revision): ProposalEvidence => ({schemaVersion:1,approvedPaths:["src/demo.ts"],replacementCount:1,files:[{path:"src/demo.ts",beforeSha256:"c".repeat(64),afterSha256:"d".repeat(64),beforeBytes:8,afterBytes:7,removedLines:1,addedLines:1}],replacements:[{path:"src/demo.ts",expectedSha256:"e".repeat(64),replacementSha256:"f".repeat(64),changeSha256:"1".repeat(64)}],workspaceRevision});
+const proposalEvidence = (workspaceRevision=revision): ProposalEvidence => ({schemaVersion:1,approvedPaths:["README.md"],replacementCount:1,files:[{path:"README.md",beforeSha256:"c".repeat(64),afterSha256:"d".repeat(64),beforeBytes:8,afterBytes:7,removedLines:1,addedLines:1}],replacements:[{path:"README.md",expectedSha256:"e".repeat(64),replacementSha256:"f".repeat(64),changeSha256:"1".repeat(64)}],workspaceRevision});
 async function fixture() {
   process.env.ENGINEERING_CONTROL_PLANE_ENABLED="true";
   process.env.ENGINEERING_WORKER_ENABLED="true";
@@ -43,15 +43,20 @@ async function fixture() {
   await db.exec(await readFile(new URL("../../../sql/engineering-initial-attempt-preparation.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url),"utf8"));
   const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => (await db.query(strings.reduce((s,p,i)=>s+(i?`$${i}`:"")+p,""),values)).rows) as unknown as ReturnType<typeof getSql>;
   let task=await createTask("Synthetic 2B fixture","human","a8888888-8888-4888-8888-888888888888",sql);
   task=await actOnTask(task.id,task.version,"transition","analyzing","human",sql);
-  task=await actOnTask(task.id,task.version,"plan",plan,"human",sql);
+  const approvalPlan={summary:"Bounded README proof",files:["README.md"],operations:[],validations:["test","lint","typecheck","build","security:check","test:engineering"]};
+  task=await actOnTask(task.id,task.version,"plan",approvalPlan,"human",sql);
   await prepareInitialAttempt(task.id,task.version,randomUUID(),"human",sql,async()=>testTargetSha,readTestPreimages,testSourceRevision);
   task=(await taskHistory(task.id,sql)).task!;
-  task=await actOnTask(task.id,task.version,"approve",null,"human",sql);
+  const prepared=(await sql`SELECT attempt_id FROM engineering_prepared_attempts WHERE task_id=${task.id}::uuid`)[0] as {attempt_id:string};
+  await approvePreparedAttempt(task.id,task.version,prepared.attempt_id,"human",sql,async()=>testTargetSha,readTestPreimages,testSourceRevision);
+  await authorizePreparedExecution(task.id,task.version,prepared.attempt_id,"human",sql,async()=>testTargetSha,readTestPreimages,testSourceRevision);
   const run=String((await taskHistory(task.id,sql)).runs[0].id);
   const ingress: Ingress=async(op,owner,epoch,data={})=>(await db.query<{result: Record<string,unknown>}>("SELECT engineering_worker($1::uuid,$2,$3,$4,$5::jsonb) result",[run,op,owner,epoch,JSON.stringify(op==="claim"?{preflightRevision:revision,...data}:data)])).rows[0].result;
+  task=(await taskHistory(task.id,sql)).task!;
   return {db,sql,task,run,ingress,close:async()=>{await db.close();delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED;delete process.env.ENGINEERING_WORKER_ENABLED;}};
 }
 test("fresh export mismatch is safely diagnosed before claim with no lease, reservation, or call", async()=>{
@@ -88,8 +93,8 @@ test("worker policy denies protected scope, missing validation, tools, unsafe ra
   assert.throws(()=>commandArgs("lint && curl evil"));
   assert.throws(()=>pricing("gpt-6-astra" as never));
   assert.throws(()=>pricing("gpt-6-luna",{...defaultRates,"gpt-6-luna":{...defaultRates["gpt-6-luna"],input:0}}));
-  assert.throws(()=>context(plan,{revision,changedFiles:["src/extra.ts"],files:{"src/demo.ts":""}}));
-  assert.ok(Buffer.byteLength(context(plan,{revision,changedFiles:[],files:{"src/demo.ts":"x".repeat(24001)}}).text)<workerLimits.contextBytes);
+  assert.throws(()=>context(plan,{revision,changedFiles:["src/extra.ts"],files:{"README.md":""}}));
+  assert.ok(Buffer.byteLength(context(plan,{revision,changedFiles:[],files:{"README.md":"x".repeat(24001)}}).text)<workerLimits.contextBytes);
   const anchor=anchorFor();
   assert.throws(()=>edits(plan,JSON.stringify({replacements:[{anchorId:anchor.id,expectedText:anchor.content,replacementText:"new"}]}),[anchor],revision),error=>error instanceof WorkerFailure&&error.diagnostic.shapeCategory==="unexpected_field");
   assert.throws(()=>edits(plan,JSON.stringify({replacements:[{anchorId:anchor.id,replacementText:"x".repeat(8001)}]}),[anchor],revision),error=>error instanceof WorkerFailure&&error.diagnostic.code==="proposal_invalid_content");
@@ -115,7 +120,7 @@ test("lineage ingress is read-only and claim rejects missing or mismatched prove
       else if(tamper==="missing-plan") await f.db.query("DELETE FROM engineering_plan_lineage WHERE task_id=$1::uuid",[f.task.id]);
       else await f.db.query("UPDATE engineering_plan_lineage SET target_base_sha=$2 WHERE task_id=$1::uuid",[f.task.id,"d".repeat(40)]);
       let providerCalls=0;
-      const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>({revision,outcome:"passed"})};
+      const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>({revision,outcome:"passed"})};
       await assert.rejects(runWorker(f.ingress,workspace,async()=>{providerCalls++;return{id:"never",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:1,output_tokens:1},text:"{}"};}));
       assert.equal(providerCalls,0);
       const unchanged=(await f.db.query("SELECT lease_owner,preflight_revision,model_calls FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0] as Record<string,unknown>;
@@ -131,12 +136,12 @@ test("canonical strict proposal schema is bounded, closed, and sent only for imp
   assert.deepEqual(replacementProposalSchema.required,["replacements"]);assert.equal(replacementProposalSchema.additionalProperties,false);
   assert.equal(replacementProposalSchema.properties.replacements.minItems,1);assert.equal(replacementProposalSchema.properties.replacements.maxItems,8);
   const f=await fixture();try{
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>({revision,outcome:"passed"})};const bodies:Record<string,unknown>[]=[],reservations:Record<string,unknown>[]=[];
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>({revision,outcome:"passed"})};const bodies:Record<string,unknown>[]=[],reservations:Record<string,unknown>[]=[];
     const ingress:Ingress=async(op,owner,epoch,data={})=>{if(op==="reserve")reservations.push(data);return f.ingress(op,owner,epoch,data);};
     await runWorker(ingress,workspace,async(body)=>{bodies.push(body);return{id:`schema-${bodies.length}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:bodies.length===1?proposalFor(body):'{"passed":true}'};});
     const sentFormat=(bodies[0].text as {format:unknown}).format;
     assert.equal(JSON.stringify(sentFormat).includes("expectedText"),false);
-    assert.deepEqual((sentFormat as {schema:{properties:{replacements:{items:{properties:{anchorId:{enum:string[]}}}}}}}).schema.properties.replacements.items.properties.anchorId.enum,buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"src/demo.ts":richSource}}).anchors.map(item=>item.id));
+    assert.deepEqual((sentFormat as {schema:{properties:{replacements:{items:{properties:{anchorId:{enum:string[]}}}}}}}).schema.properties.replacements.items.properties.anchorId.enum,buildBoundedReplacementContext(plan,{revision,changedFiles:[],files:{"README.md":richSource}}).anchors.map(item=>item.id));
     assert.equal(bodies[1].text,undefined);
     assert.ok(Number(reservations[0].inputBound)>Buffer.byteLength(JSON.stringify(sentFormat))+1024);
   }finally{await f.close();}
@@ -144,7 +149,7 @@ test("canonical strict proposal schema is bounded, closed, and sent only for imp
 test("worker fails closed before reservation or provider dispatch when no useful unique anchor exists",async()=>{
   const f=await fixture();try{
     let calls=0;
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":"too short"}}),apply:async()=>assert.fail("No proposal can be applied without an issued anchor"),validate:async()=>assert.fail("No validation can run without an applied proposal")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":"too short"}}),apply:async()=>assert.fail("No proposal can be applied without an issued anchor"),validate:async()=>assert.fail("No validation can run without an applied proposal")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>{calls++;throw new Error("provider must not be called");}),/bounded diagnostics/);
     assert.equal(calls,0);
     const run=(await f.db.query<{model_calls:number;cost_usd:string;reserved_tokens:number}>("SELECT * FROM engineering_runs")).rows[0];
@@ -266,7 +271,7 @@ test("trusted revision evidence, replay, three repairs, protected operations, st
 test("real orchestrator with fake provider reaches awaiting_merge with two calls, no live AI",async()=>{
   const f=await fixture();try {
     let current=revision,content=richSource;
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"src/demo.ts":content}}),apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},validate:async(args,rev)=>{assert.equal(args[0],"npm");return{revision:rev,outcome:"passed"};}};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},validate:async(args,rev)=>{assert.equal(args[0],"npm");return{revision:rev,outcome:"passed"};}};
     let calls=0;
     const result=await runWorker(f.ingress,workspace,async(body)=>{calls++;assert.equal(body.model,"gpt-6-luna");assert.deepEqual(body.tools,[]);return{id:`fake-${calls}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:calls===1?proposalFor(body):'{"passed":true}'};});
     assert.equal(result.status,"awaiting_merge");assert.equal(calls,2);
@@ -280,7 +285,7 @@ test("real orchestrator with fake provider reaches awaiting_merge with two calls
 test("post-apply preparation failures persist their bounded category and never start a gate",async()=>{
   const f=await fixture();try{
     let current=revision,calls=0,gateCalls=0;
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"src/demo.ts":richSource}}),apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},prepareValidationEnvironment:async()=>{throw new ValidationPreparationError("validation_overlay_prepare_failed","next_env_overlay");},validate:async()=>{gateCalls++;return{revision:current,outcome:"passed"};}};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"README.md":richSource}}),apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},prepareValidationEnvironment:async()=>{throw new ValidationPreparationError("validation_overlay_prepare_failed","next_env_overlay");},validate:async()=>{gateCalls++;return{revision:current,outcome:"passed"};}};
     await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:"prep-failure",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)};}),/bounded diagnostics/);
     assert.equal(calls,1);assert.equal(gateCalls,0);
     const block=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows[0].details.diagnostic as Record<string,unknown>;
@@ -297,7 +302,7 @@ test("failed validation diagnostics are durably bounded and supplied to the auth
     const repairedSource="Revised documentation paragraph provides deterministic replacement context with enough distinct words for a safe exact literal anchor during worker tests.";
     const finalSource="Final documentation paragraph provides deterministic replacement context with enough distinct words for a safe exact literal anchor during worker tests.";
     const workspace:IsolatedWorkspace={
-      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"src/demo.ts":content}}),
+      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),
       apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current=String.fromCharCode(98+current.charCodeAt(0)-97).repeat(40);return proposalEvidence(current);},
       validate:async(args,rev,_signal,cycle)=>({revision:rev,command:args[2]!,outcome:cycle===0&&["build","test:engineering"].includes(args[2]!)?"failed":"passed",exitCode:cycle===0&&["build","test:engineering"].includes(args[2]!)?70:0,signal:cycle===0&&args[2]==="build"?"SIGSEGV":null,timedOut:false,category:cycle===0&&args[2]==="build"?"process_signaled":cycle===0&&args[2]==="test:engineering"?"command_failed":null,excerpt:args[2]==="build"?["Next.js 16.2.4"]:[],failedTests:args[2]==="test:engineering"?["offline scratch preflight fixture"]:[],failedTestFiles:args[2]==="test:engineering"?["src/lib/engineering/worker-initialization.test.ts"]:[],cycle:cycle??0}),
     };
@@ -305,11 +310,11 @@ test("failed validation diagnostics are durably bounded and supplied to the auth
     const result=await runWorker(f.ingress,workspace,async(body)=>{calls++;bodies.push(body);return{id:`repair-evidence-${calls}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:calls===1?proposalFor(body,repairedSource):calls===2?proposalFor(body,finalSource):'{"passed":true}'};});
     assert.equal(result.status,"awaiting_merge");assert.equal(calls,3);
     const repairInput=JSON.parse(String(bodies[1].input)) as {validationFailures:Array<{command:string;category:string;signal:string|null;failedTests:string[];failedTestFiles:string[]}>};
-    assert.deepEqual(repairInput.validationFailures.map(item=>item.command),["test:engineering","build"]);
-    assert.equal(repairInput.validationFailures[1].category,"process_signaled");
-    assert.equal(repairInput.validationFailures[1].signal,"SIGSEGV");
-    assert.deepEqual(repairInput.validationFailures[0].failedTestFiles,["src/lib/engineering/worker-initialization.test.ts"]);
-    assert.deepEqual(repairInput.validationFailures[0].failedTests,["offline scratch preflight fixture"]);
+    assert.deepEqual(repairInput.validationFailures.map(item=>item.command),["build","test:engineering"]);
+    assert.equal(repairInput.validationFailures[0].category,"process_signaled");
+    assert.equal(repairInput.validationFailures[0].signal,"SIGSEGV");
+    assert.deepEqual(repairInput.validationFailures[1].failedTestFiles,["src/lib/engineering/worker-initialization.test.ts"]);
+    assert.deepEqual(repairInput.validationFailures[1].failedTests,["offline scratch preflight fixture"]);
     const stored=(await f.db.query<{summary:string;cycle:number;command:string}>("SELECT summary,cycle,command FROM engineering_validations WHERE run_id=$1::uuid AND outcome='failed' ORDER BY command",[f.run])).rows;
     assert.equal(stored.length,2);
     for(const row of stored){const evidence=JSON.parse(row.summary) as Record<string,unknown>;assert.equal(evidence.revision,"b".repeat(40));assert.equal(evidence.cycle,0);assert.equal(evidence.command,row.command);assert.equal(evidence.outcome,"failed");}
@@ -323,7 +328,7 @@ test("applied proposal is durable before cleanup and cleanup failures persist on
   const f=await fixture();try{
     let current=revision,content=richSource;let calls=0;
     const workspace:IsolatedWorkspace={
-      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"src/demo.ts":content}}),
+      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),
       apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},
       validate:async()=>({revision:current,outcome:"passed"}),
       dispose:async()=>{throw new DockerCleanupError([{resourceType:"source-volume",category:"resource_in_use"}]);},
@@ -365,7 +370,7 @@ test("unexpected authoritative usage exceeds reservation, is preserved, and bloc
 test("provider transport failure makes one attempt, retains reservation and blocks execution",async()=>{
   const f=await fixture();try{
     let calls=0;
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail("No edits after failed call"),validate:async()=>assert.fail("No validation after failed call")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("No edits after failed call"),validate:async()=>assert.fail("No validation after failed call")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>{calls++;throw new Error("private transport detail");}),/outcome uncertain/);
     assert.equal(calls,1);
     const call=(await f.db.query<{state:string;reserved_tokens:number}>("SELECT * FROM engineering_worker_calls")).rows[0];
@@ -377,7 +382,7 @@ test("stale preflight revision blocks before provider dispatch",async()=>{
   const f=await fixture();try{
     let calls=0,blocked=false;
     const ingress:Ingress=async(op,owner,epoch,data={})=>{if(op==="claim")return{...await f.ingress(op,owner,epoch,data),preflight_revision:"f".repeat(40)};if(op==="block")blocked=true;return f.ingress(op,owner,epoch,data);};
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail()};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail()};
     await assert.rejects(runWorker(ingress,workspace,async()=>{calls++;throw new Error("should not dispatch");}),/binding mismatch/);
     assert.equal(calls,0);assert.equal(blocked,true);
   }finally{await f.close();}
@@ -386,7 +391,7 @@ test("a previously bound run cannot dispatch through a second worker invocation"
   const f=await fixture();try{
     let calls=0,blocked=false;
     const ingress:Ingress=async(op,owner,epoch,data={})=>{if(op==="claim")return{...await f.ingress(op,owner,epoch,data),preflight_bound_now:false};if(op==="block")blocked=true;return f.ingress(op,owner,epoch,data);};
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail()};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail()};
     await assert.rejects(runWorker(ingress,workspace,async()=>{calls++;throw new Error("should not dispatch");}),/second worker invocation/);
     assert.equal(calls,0);assert.equal(blocked,true);
   }finally{await f.close();}
@@ -411,8 +416,8 @@ test("unexpected provider tier retains reservation and raw usage for operator re
 });
 test("incomplete provider response is reconciled and leaves bounded diagnostic evidence",async()=>{
   const f=await fixture();try{
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail("Incomplete output must not be applied"),validate:async()=>assert.fail("Incomplete output must not be validated")};
-    await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:4888,output_tokens:2048},text:'{"src/demo.ts":"partial',status:"incomplete",incomplete_reason:"max_output_tokens"})),/bounded diagnostics/);
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Incomplete output must not be applied"),validate:async()=>assert.fail("Incomplete output must not be validated")};
+    await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:4888,output_tokens:2048},text:'{"README.md":"partial',status:"incomplete",incomplete_reason:"max_output_tokens"})),/bounded diagnostics/);
     const events=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows;
     assert.deepEqual(events[0].details.diagnostic,{stage:"implementation",code:"provider_incomplete",responseId:"resp_fixture",responseStatus:"incomplete",incompleteReason:"max_output_tokens",outputTokens:2048,outputLimit:8192});
     assert.equal((await f.db.query("SELECT * FROM engineering_worker_calls WHERE state='settled'")).rows.length,1);
@@ -421,7 +426,7 @@ test("incomplete provider response is reconciled and leaves bounded diagnostic e
 });
 test("malformed proposal is blocked with safe parser code and settled completion metadata",async()=>{
   const f=await fixture();try{
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail("Malformed output must not be applied"),validate:async()=>assert.fail("Malformed output must not be validated")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Malformed output must not be applied"),validate:async()=>assert.fail("Malformed output must not be validated")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:2048},text:"not-json",status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
     assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_json",responseId:"resp_fixture",responseStatus:"completed",outputTokens:2048,outputLimit:8192});
@@ -430,7 +435,7 @@ test("malformed proposal is blocked with safe parser code and settled completion
 });
 test("completed invalid proposal records only allow-listed shape metadata",async()=>{
   const f=await fixture();try{
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail("Invalid proposal must not be applied"),validate:async()=>assert.fail("Invalid proposal must not validate")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Invalid proposal must not be applied"),validate:async()=>assert.fail("Invalid proposal must not validate")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:'{"unexpected":"private-sentinel"}',status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
     assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_shape",shapeCategory:"unexpected_field",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
@@ -439,7 +444,7 @@ test("completed invalid proposal records only allow-listed shape metadata",async
 });
 test("application failure records safe diagnostic and never validates",async()=>{
   const f=await fixture();try{
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>{throw new Error("private filesystem detail")},validate:async()=>assert.fail("Rejected apply must not validate")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>{throw new Error("private filesystem detail")},validate:async()=>assert.fail("Rejected apply must not validate")};
     await assert.rejects(runWorker(f.ingress,workspace,async(body)=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body),status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
     assert.deepEqual(details.diagnostic,{stage:"implementation",code:"replacement_apply_failed",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
@@ -453,7 +458,7 @@ test("settled calls retain bounded response metadata when progress persistence f
       if(op==="call_progress"&&data.phase==="response_processed")throw new Error("private database host and password");
       return f.ingress(op,owner,epoch,data);
     };
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"src/demo.ts":richSource}}),apply:async()=>assert.fail("Response progress must persist before proposal processing"),validate:async()=>assert.fail("No validation without proposal processing")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Response progress must persist before proposal processing"),validate:async()=>assert.fail("No validation without proposal processing")};
     await assert.rejects(runWorker(ingress,workspace,async()=>{calls++;return{id:"resp_progress_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:60},text:'{"replacements":[]}',status:"completed"};}),/bounded diagnostics/);
     assert.equal(calls,1);
     const call=(await f.db.query<{state:string;processing_state:string;actual_input:number;actual_output:number}>("SELECT * FROM engineering_worker_calls")).rows[0];
@@ -471,7 +476,7 @@ test("proposal-evidence ingress failure receives its own bounded settled-call ca
       if(op==="proposal_evidence")throw new Error("private filesystem or database detail");
       return f.ingress(op,owner,epoch,data);
     };
-    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:content===richSource?[]:plan.files,files:{"src/demo.ts":content}}),apply:async(replacements)=>{content=replacements[0].replacement;return proposalEvidence();},validate:async()=>assert.fail("Rejected evidence persistence must not validate")};
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),apply:async(replacements)=>{content=replacements[0].replacement;return proposalEvidence();},validate:async()=>assert.fail("Rejected evidence persistence must not validate")};
     await assert.rejects(runWorker(ingress,workspace,async(body)=>{calls++;return{id:"resp_evidence_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:60},text:proposalFor(body),status:"completed"};}),/bounded diagnostics/);
     assert.equal(calls,1);
     const call=(await f.db.query<{state:string;processing_state:string}>("SELECT * FROM engineering_worker_calls")).rows[0];

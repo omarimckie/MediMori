@@ -17,7 +17,9 @@ test("risk classification fails conservatively for protected paths", () => {
 });
 test("lifecycle cannot skip approval or exit stopped tasks", () => {
   assertTransition("intake", "analyzing");
-  assertTransition("awaiting_approval", "implementing");
+  assertTransition("awaiting_approval", "awaiting_execution");
+  assertTransition("awaiting_execution", "implementing");
+  assert.throws(() => assertTransition("awaiting_approval", "implementing"));
   assert.throws(() => assertTransition("planned", "implementing"));
   assert.throws(() => assertTransition("validating", "awaiting_merge"));
   for (const status of ["blocked", "cancelled", "awaiting_merge", "merging", "completed", "escalated"] as const) assert.throws(() => assertTransition(status, "implementing"));

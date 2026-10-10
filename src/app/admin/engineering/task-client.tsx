@@ -38,7 +38,7 @@ export function EngineeringClient() {
     if (!response.ok) throw new Error(data.error);
     setTasks(data.tasks);
     setPolicy(data.policy);
-    const needsPlanBinding = data.tasks.some((task: TaskView) => task.status === "awaiting_approval");
+    const needsPlanBinding = data.tasks.some((task: TaskView) => task.status === "awaiting_approval" || task.status === "awaiting_execution");
     if (needsPlanBinding) {
       setTargetError("");
       const targetResponse = await fetch("/api/admin/engineering?targetBase=1", { cache: "no-store" });
@@ -115,6 +115,12 @@ export function EngineeringClient() {
         ? "Merge approval recorded for run " + task.mergeReview.runId + ". A separate merge-executor invocation is still required; opening this page did not run Git."
         : "Merge rejected for run " + task.mergeReview.runId + ". No Git operation was run.");
     }
+  }
+  async function authorizeExecution(task: TaskView) {
+    const subject = task.preparedAttempt;
+    if (!subject || !planTarget || planTarget.baseSha !== subject.targetBaseSha || subject.planVersion !== task.version) return;
+    if (!window.confirm(`Authorize execution for prepared Attempt #${subject.attemptNumber}? This creates one worker-enabled run; it does not merge or deploy.`)) return;
+    await act({ id: task.id, version: task.version, action: "authorize_execution", preparedAttemptId: subject.attemptId, targetBaseSha: subject.targetBaseSha });
   }
   async function submitCreation() {
     if (busy) return;
@@ -237,9 +243,23 @@ export function EngineeringClient() {
         {task.preparedAttempt && planTarget && planTarget.baseSha !== task.preparedAttempt.targetBaseSha && <p role="alert">The target has changed since preparation. This approval is blocked; prepare a fresh target-bound plan.</p>}
         {targetError && <p role="alert">Approval is blocked: {targetError}</p>}
         {!targetError && !planTarget && <p role="status">Loading the current target to confirm the prepared binding remains fresh.</p>}
-        <div className="flex gap-4"><button type="button" disabled={busy || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version} onClick={() => task.preparedAttempt && void act({ id: task.id, version: task.version, action: "approve", targetBaseSha: task.preparedAttempt.targetBaseSha })}>Approve this prepared plan, target, and source</button>
+        <div className="flex gap-4"><button type="button" disabled={busy || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version} onClick={() => task.preparedAttempt && void act({ id: task.id, version: task.version, action: "approve", preparedAttemptId: task.preparedAttempt.attemptId, targetBaseSha: task.preparedAttempt.targetBaseSha })}>Approve this prepared plan, target, and source</button>
           <button type="button" disabled={busy} onClick={() => void act({ id: task.id, version: task.version, action: "reject" })}>Reject this plan</button></div>
-        <p>Approval authorizes only this already-prepared plan, target revision, and implementation source revision. The worker must verify a fresh sanitized export matches the approved source before claim.</p>
+        <p>Approval records your decision for this exact prepared subject only. It does not create a run or start the worker. A separate explicit execution authorization is required. The worker must still verify a fresh sanitized export matches the approved source before claim.</p>
+      </section>}
+      {task.status === "awaiting_execution" && <section className="space-y-2 rounded border border-blue-300 bg-blue-50 p-3">
+        <h3 className="font-semibold">Plan approved — execution authorization required</h3>
+        <p role="status">Approval is recorded for this prepared subject. No run exists and no worker has started.</p>
+        <p>Prepared Attempt #{task.preparedAttempt?.attemptNumber ?? "unavailable"} · identity <code>{task.preparedAttempt?.attemptId ?? "unavailable"}</code> · plan version {task.preparedAttempt?.planVersion ?? "unavailable"} · {task.preparedAttempt?.risk ?? "unknown"} risk</p>
+        <p>Approved file scope: {task.plan?.files.join(", ") || "unavailable"} · required checks: {task.plan?.validations.join(", ") || "unavailable"} · protected operations: {task.plan?.operations.join(", ") || "None declared"}</p>
+        <p>Target — {task.preparedAttempt?.targetRepository ?? "unavailable"} · {task.preparedAttempt?.targetBranch ?? "unavailable"} · base SHA <code>{task.preparedAttempt?.targetBaseSha ?? "unavailable"}</code></p>
+        <p>Implementation source revision — <code>{task.preparedAttempt?.implementationSourceRevision ?? "unavailable"}</code> · source-selection policy {task.preparedAttempt?.sourceSelectionPolicyVersion ?? "unavailable"}</p>
+        <p>Current target SHA: <code>{planTarget?.baseSha ?? "loading"}</code></p>
+        {task.preparedAttempt && planTarget && planTarget.baseSha !== task.preparedAttempt.targetBaseSha && <p role="alert">Execution is blocked because the target changed after preparation.</p>}
+        {targetError && <p role="alert">Execution authorization is blocked: {targetError}</p>}
+        {!targetError && !planTarget && <p role="status">Loading the current target to confirm the approved binding remains fresh.</p>}
+        {policy?.workerEnabled !== true && <p role="status">Execution authorization is unavailable because the worker is disabled.</p>}
+        <button type="button" disabled={busy || policy?.workerEnabled !== true || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version || task.preparedAttempt.sourceSelectionPolicyVersion !== 2} onClick={() => void authorizeExecution(task)}>Authorize execution</button>
       </section>}
       <button type="button" className="underline" disabled={historyLoading === task.id} onClick={() => void showHistory(task.id)}>{historyLoading === task.id ? "Loading audit history…" : historyByTask[task.id] ? "Hide task audit history" : "Show task audit history"}</button>
       {historyByTask[task.id] && <TaskHistoryView data={historyByTask[task.id]!} />}

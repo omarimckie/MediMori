@@ -67,7 +67,8 @@ try {
   assert.equal((await post("[]")).status, 400);
   assert.equal((await post("x".repeat(16001))).status, 413);
   assert.equal((await post(JSON.stringify({ action: "approve", id: "bad-id", version: 1 }))).status, 400);
-  assert.equal((await post(JSON.stringify({ action: "approve", id: "b61b0dc7-d1ab-45ea-88c0-6480cda5029a", version: 0 }))).status, 400, "Plan approval without an immutable target SHA is rejected before storage access.");
+  assert.equal((await post(JSON.stringify({ action: "approve", id: "b61b0dc7-d1ab-45ea-88c0-6480cda5029a", version: 0 }))).status, 400, "Plan approval without an exact prepared subject and immutable target SHA is rejected before storage access.");
+  assert.equal((await post(JSON.stringify({ action: "authorize_execution", id: "b61b0dc7-d1ab-45ea-88c0-6480cda5029a", version: 0 }))).status, 400, "Execution authorization requires an explicit exact subject and target before storage access.");
   const missingInitialKey = await post(JSON.stringify({ action: "prepare_initial_attempt", id: "b61b0dc7-d1ab-45ea-88c0-6480cda5029a", version: 0 }));
   assert.equal(missingInitialKey.status, 400, "Initial preparation requires a bounded idempotency key before storage access.");
   const unavailableInitialPrepare = await post(JSON.stringify({ action: "prepare_initial_attempt", id: "b61b0dc7-d1ab-45ea-88c0-6480cda5029a", version: 0, attemptKey: "5cb8fb50-0b34-4c92-8839-6e7d9d52caf0" }));

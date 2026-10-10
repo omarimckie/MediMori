@@ -249,7 +249,159 @@ export async function prepareInitialAttempt(id: string, version: number, idempot
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 /** Optimistic version claim and evidence inserts occur in one SQL statement. */
-export async function actOnTask(id: string, version: number, action: string, value: unknown, actor: string, database = getSql(), targetReader = readWorkerTargetBaseSha, preimageReader = readTargetPreimagesAtSha, sourceReader = deriveImplementationSourceRevision) {
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function assertHumanActor(actor: string) {
+  if (typeof actor !== "string" || actor.length < 1 || actor.length > 120 || /[\u0000-\u001f\u007f]/.test(actor) || actor.startsWith("worker:")) {
+    throw new EngineeringInputError("A valid authenticated human identity is required.");
+  }
+}
+
+function assertMvpApprovalPlan(planValue: unknown, risk: string | null) {
+  const plan = executablePlan(planValue);
+  if (risk !== "low" || classifyRisk(plan) !== "low" || plan.files.length !== 1 || plan.files[0] !== "README.md" ||
+      plan.operations.length !== 0 || validationCommands.some(command => !plan.validations.includes(command))) {
+    throw new EngineeringInputError("This MVP execution path requires a low-risk README.md-only plan with all six validation gates and no protected operations.");
+  }
+  return plan;
+}
+
+async function verifyPreparedApprovalSubject(
+  id: string,
+  version: number,
+  preparedAttemptId: string,
+  requiredStatus: "awaiting_approval" | "awaiting_execution",
+  database: ReturnType<typeof getSql>,
+  targetReader: () => Promise<string>,
+  preimageReader: (sha: string, paths: readonly string[]) => Promise<Record<string, string | null>>,
+  sourceReader: () => Promise<string>,
+) {
+  if (!uuidPattern.test(id) || !uuidPattern.test(preparedAttemptId)) throw new EngineeringInputError("Task and prepared-subject IDs must be valid.");
+  const [taskRows, subjectRows] = await Promise.all([
+    database`SELECT * FROM engineering_tasks WHERE id=${id}::uuid`,
+    database`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${preparedAttemptId}::uuid AND task_id=${id}::uuid`,
+  ]);
+  const task = taskRows[0] as Task | undefined;
+  const subject = subjectRows[0] as Record<string, unknown> | undefined;
+  if (!task || task.version !== version || task.status !== requiredStatus) throw new EngineeringConflict("Task changed or is not at the required approval/execution state.");
+  if (!task.plan || !task.risk || !subject || Number(subject.plan_version) !== version || subject.request_snapshot !== task.request ||
+      stableJson(subject.plan_snapshot) !== stableJson(task.plan) || subject.risk !== task.risk ||
+      Number(subject.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION ||
+      subject.target_repository !== mergeTargetPolicy.repository || subject.target_branch !== mergeTargetPolicy.branch ||
+      typeof subject.target_base_sha !== "string" || !/^[a-f0-9]{40}$/.test(subject.target_base_sha) ||
+      typeof subject.implementation_source_revision !== "string" || !/^[a-f0-9]{40}$/.test(subject.implementation_source_revision)) {
+    throw new EngineeringInputError("The exact immutable plan, target, and source subject is missing, stale, or incompatible.");
+  }
+  const plan = assertMvpApprovalPlan(task.plan, task.risk);
+  const targetSha = await targetReader();
+  if (targetSha !== subject.target_base_sha) throw new EngineeringConflict("The target branch changed after preparation; prepare a fresh subject.");
+  const targetPreimages = subject.target_preimages as Record<string, string>;
+  const currentPreimages = await preimageReader(targetSha, plan.files);
+  if (Object.keys(targetPreimages).length !== plan.files.length || plan.files.some(path => !/^[a-f0-9]{64}$/.test(targetPreimages[path] ?? "") || targetPreimages[path] !== currentPreimages[path])) {
+    throw new EngineeringConflict("The prepared README preimage changed; prepare a fresh subject.");
+  }
+  if (await sourceReader() !== subject.implementation_source_revision) throw new EngineeringConflict("The implementation source changed after preparation; prepare a fresh subject.");
+  const runState = await database`SELECT
+    count(*)::integer AS run_count,
+    bool_or(finished_at IS NULL) AS has_active_run,
+    bool_or(id=${preparedAttemptId}::uuid) AS subject_run_exists
+    FROM engineering_runs WHERE task_id=${id}::uuid`;
+  const runCount = Number((runState[0] as { run_count: number }).run_count);
+  const hasActiveRun = Boolean((runState[0] as { has_active_run: boolean | null }).has_active_run);
+  const subjectRunExists = Boolean((runState[0] as { subject_run_exists: boolean | null }).subject_run_exists);
+  if (Number(subject.attempt_number) !== runCount + 1 || hasActiveRun || subjectRunExists) throw new EngineeringConflict("The prepared subject is superseded or execution is already active.");
+  return { task, subject, plan, targetSha };
+}
+
+/** Records human approval only. It never creates execution or worker eligibility. */
+export async function approvePreparedAttempt(
+  id: string, version: number, preparedAttemptId: string, actor: string, database = getSql(),
+  targetReader = readWorkerTargetBaseSha, preimageReader = readTargetPreimagesAtSha, sourceReader = deriveImplementationSourceRevision,
+) {
+  requireEngineeringEnabled();
+  assertHumanActor(actor);
+  const verified = await verifyPreparedApprovalSubject(id, version, preparedAttemptId, "awaiting_approval", database, targetReader, preimageReader, sourceReader);
+  const approvalId = randomUUID();
+  const eventId = randomUUID();
+  const result = await database`
+    WITH changed AS (
+      UPDATE engineering_tasks t SET status='awaiting_execution',updated_at=now()
+      WHERE t.id=${id}::uuid AND t.version=${version} AND t.status='awaiting_approval'
+        AND t.request=${verified.task.request} AND t.plan=${JSON.stringify(verified.plan)}::jsonb AND t.risk=${verified.task.risk}
+        AND EXISTS (SELECT 1 FROM engineering_prepared_attempts p WHERE p.attempt_id=${preparedAttemptId}::uuid AND p.task_id=t.id
+          AND p.plan_version=${version} AND p.request_snapshot=t.request AND p.plan_snapshot=t.plan AND p.risk=t.risk
+          AND p.target_repository=${mergeTargetPolicy.repository} AND p.target_branch=${mergeTargetPolicy.branch}
+          AND p.target_base_sha=${verified.targetSha} AND p.implementation_source_revision=${String(verified.subject.implementation_source_revision)}
+          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION})
+        AND NOT EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.task_id=t.id AND a.plan_version=${version} AND a.gate='plan' AND a.decision='approved')
+        AND NOT EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.prepared_attempt_id=${preparedAttemptId}::uuid AND a.gate='plan')
+        AND NOT EXISTS (SELECT 1 FROM engineering_runs r WHERE r.id=${preparedAttemptId}::uuid OR (r.task_id=t.id AND r.finished_at IS NULL))
+      RETURNING t.id,t.version,t.status
+    ), approval AS (
+      INSERT INTO engineering_approvals(id,task_id,plan_version,prepared_attempt_id,gate,decision,actor)
+      SELECT ${approvalId}::uuid,id,${version},${preparedAttemptId}::uuid,'plan','approved',${actor} FROM changed
+      RETURNING id,task_id,plan_version,prepared_attempt_id
+    ), event AS (
+      INSERT INTO engineering_events(id,task_id,actor,action,details)
+      SELECT ${eventId}::uuid,id,${actor},'plan_approval_created',${JSON.stringify({ preparedAttemptId, planVersion: version, targetRepository: mergeTargetPolicy.repository, targetBranch: mergeTargetPolicy.branch, targetBaseSha: verified.targetSha, implementationSourceRevision: String(verified.subject.implementation_source_revision), sourceSelectionPolicyVersion: SOURCE_SELECTION_POLICY_VERSION })}::jsonb FROM changed
+    ) SELECT changed.*,approval.id AS approval_id FROM changed JOIN approval ON approval.task_id=changed.id`;
+  if (!result[0]) throw new EngineeringConflict("Approval was stale, conflicting, or already recorded; reload the task.");
+  return result[0];
+}
+
+/** Separately authorizes exactly one worker-enabled run for an approved P+T+S subject. */
+export async function authorizePreparedExecution(
+  id: string, version: number, preparedAttemptId: string, actor: string, database = getSql(),
+  targetReader = readWorkerTargetBaseSha, preimageReader = readTargetPreimagesAtSha, sourceReader = deriveImplementationSourceRevision,
+) {
+  requireEngineeringEnabled();
+  assertHumanActor(actor);
+  if (process.env.ENGINEERING_WORKER_ENABLED !== "true") throw new EngineeringInputError("Worker execution is not enabled.");
+  const verified = await verifyPreparedApprovalSubject(id, version, preparedAttemptId, "awaiting_execution", database, targetReader, preimageReader, sourceReader);
+  const result = await database`
+    WITH changed AS (
+      UPDATE engineering_tasks t SET status='implementing',version=version+1,updated_at=now()
+      WHERE t.id=${id}::uuid AND t.version=${version} AND t.status='awaiting_execution'
+        AND t.request=${verified.task.request} AND t.plan=${JSON.stringify(verified.plan)}::jsonb AND t.risk=${verified.task.risk}
+        AND EXISTS (SELECT 1 FROM engineering_prepared_attempts p WHERE p.attempt_id=${preparedAttemptId}::uuid AND p.task_id=t.id
+          AND p.plan_version=${version} AND p.request_snapshot=t.request AND p.plan_snapshot=t.plan AND p.risk=t.risk
+          AND p.target_repository=${mergeTargetPolicy.repository} AND p.target_branch=${mergeTargetPolicy.branch}
+          AND p.target_base_sha=${verified.targetSha} AND p.implementation_source_revision=${String(verified.subject.implementation_source_revision)}
+          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION})
+        AND EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.prepared_attempt_id=${preparedAttemptId}::uuid
+          AND a.task_id=t.id AND a.plan_version=${version} AND a.gate='plan' AND a.decision='approved' AND a.actor NOT LIKE 'worker:%')
+        AND NOT EXISTS (SELECT 1 FROM engineering_runs r WHERE r.id=${preparedAttemptId}::uuid OR (r.task_id=t.id AND r.finished_at IS NULL))
+        AND (SELECT count(*) FROM engineering_runs r WHERE r.task_id=t.id)+1=(SELECT p.attempt_number FROM engineering_prepared_attempts p WHERE p.attempt_id=${preparedAttemptId}::uuid)
+      RETURNING t.id,t.version,t.status,t.plan
+    ), run AS (
+      INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition)
+      SELECT p.attempt_id,c.id,p.plan_version,true,p.attempt_number,p.plan_snapshot,'active'
+      FROM changed c JOIN engineering_prepared_attempts p ON p.attempt_id=${preparedAttemptId}::uuid AND p.task_id=c.id
+      RETURNING id,task_id,plan_version,attempt_number
+    ), lineage AS (
+      INSERT INTO engineering_run_lineage(run_id,task_id,attempt_number,plan_version,target_repository,target_branch,target_base_sha,
+        previous_run_id,preparation_key,implementation_source_revision,source_binding_version,source_selection_policy_version)
+      SELECT r.id,r.task_id,r.attempt_number,r.plan_version,p.target_repository,p.target_branch,p.target_base_sha,
+        p.previous_run_id,p.retry_preparation_key,p.implementation_source_revision,1,p.source_selection_policy_version
+      FROM run r JOIN engineering_prepared_attempts p ON p.attempt_id=r.id
+      RETURNING run_id
+    ), event AS (
+      INSERT INTO engineering_events(id,task_id,actor,action,details)
+      SELECT ${randomUUID()}::uuid,c.id,${actor},'execution_authorized',${JSON.stringify({ preparedAttemptId, planVersion: version, sourceSelectionPolicyVersion: SOURCE_SELECTION_POLICY_VERSION })}::jsonb
+      FROM changed c JOIN run r ON r.task_id=c.id JOIN lineage l ON l.run_id=r.id
+    ) SELECT c.*,r.id AS run_id,r.attempt_number FROM changed c JOIN run r ON r.task_id=c.id`;
+  if (!result[0]) throw new EngineeringConflict("Execution authorization was stale, unauthorized, or already consumed.");
+  return result[0];
+}
+
+export async function actOnTask(id: string, version: number, action: string, value: unknown, actor: string, database = getSql()) {
   requireEngineeringEnabled();
   const sql = database;
   const rows = await sql`SELECT * FROM engineering_tasks WHERE id=${id}::uuid`;
@@ -259,40 +411,21 @@ export async function actOnTask(id: string, version: number, action: string, val
   let plan = task.plan;
   let risk = task.risk;
   let decision: string | null = null;
-  let preparedSubject: Record<string, unknown> | undefined;
-  let approvedPlanVersion = version;
   if (action === "plan") {
     if (task.status !== "analyzing") throw new EngineeringInputError("Analyze the task before submitting a plan.");
     plan = parsePlan(value); risk = classifyRisk(plan); next = "planned";
-  } else if (action === "approve" || action === "reject") {
+  } else if (action === "approve") {
+    throw new EngineeringInputError("Approval and execution authorization are separate actions; use the prepared-subject approval operation.");
+  } else if (action === "reject") {
     if (task.status !== "awaiting_approval" || !plan) throw new EngineeringInputError("No plan awaiting approval.");
-    if (action === "approve" && process.env.ENGINEERING_WORKER_ENABLED === "true") executablePlan(plan);
-    decision = action === "approve" ? "approved" : "rejected";
-    next = action === "approve" ? "implementing" : "cancelled";
+    decision = "rejected";
+    next = "cancelled";
   } else if (action === "transition") {
     if (typeof value !== "string") throw new EngineeringInputError("Status is required.");
     if (!["analyzing", "awaiting_approval", "validating", "repairing", "reviewing", "awaiting_merge", "blocked", "cancelled", "escalated"].includes(value)) throw new EngineeringInputError("Unsupported transition.");
     next = value as Status;
   } else throw new EngineeringInputError("Unsupported action.");
   assertTransition(task.status, next);
-  const starting = decision === "approved";
-  let targetBaseSha: string | null = null;
-  if (starting) {
-    const liveTargetSha = await targetReader();
-    const runCountRows = await sql`SELECT count(*)::integer AS count FROM engineering_runs WHERE task_id=${id}::uuid`;
-    const expectedAttempt = Number((runCountRows[0] as { count: number }).count) + 1;
-    const subjects = await sql`SELECT * FROM engineering_prepared_attempts WHERE task_id=${id}::uuid AND attempt_number=${expectedAttempt} ORDER BY created_at DESC LIMIT 1`;
-    preparedSubject = subjects[0] as Record<string, unknown> | undefined;
-    if (!preparedSubject || Number(preparedSubject.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION || Number(preparedSubject.plan_version) !== version || preparedSubject.request_snapshot !== task.request || JSON.stringify(preparedSubject.plan_snapshot) !== JSON.stringify(plan) || preparedSubject.risk !== risk || preparedSubject.target_repository !== mergeTargetPolicy.repository || preparedSubject.target_branch !== mergeTargetPolicy.branch || preparedSubject.target_base_sha !== liveTargetSha) {
-      throw new EngineeringInputError("The exact plan, target, and implementation source must be prepared and current before approval.");
-    }
-    approvedPlanVersion = Number(preparedSubject.plan_version);
-    const hashes = preparedSubject.target_preimages as Record<string, string>;
-    const verified = await preimageReader(liveTargetSha, plan!.files);
-    if (plan!.files.some(path => hashes[path] !== verified[path])) throw new EngineeringInputError("A prepared target file changed; prepare a new target-bound plan before approval.");
-    if (Number(preparedSubject.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION || await sourceReader() !== preparedSubject.implementation_source_revision) throw new EngineeringInputError("The implementation source changed after preparation; prepare a fresh target-bound plan before approval.");
-    targetBaseSha = String(preparedSubject.target_base_sha);
-  }
   const finishing = ["blocked", "cancelled", "escalated", "awaiting_merge"].includes(next);
   // Reviewing/repairing require evidence recorded for the current validation cycle.
   const checking = next === "reviewing" || next === "repairing";
@@ -300,7 +433,7 @@ export async function actOnTask(id: string, version: number, action: string, val
     WITH changed AS (
       UPDATE engineering_tasks t SET status=${next},plan=${JSON.stringify(plan)}::jsonb,risk=${risk},version=version+1,updated_at=now()
       WHERE id=${id}::uuid AND version=${version}
-      AND (${(finishing && next !== 'awaiting_merge') || starting || next === 'analyzing' || next === 'planned' || next === 'awaiting_approval'} OR NOT EXISTS (SELECT 1 FROM engineering_runs wr WHERE wr.task_id=t.id AND wr.worker_enabled))
+      AND (${(finishing && next !== 'awaiting_merge') || next === 'analyzing' || next === 'planned' || next === 'awaiting_approval'} OR NOT EXISTS (SELECT 1 FROM engineering_runs wr WHERE wr.task_id=t.id AND wr.worker_enabled))
       AND (${!checking} OR EXISTS (
         SELECT 1 FROM engineering_runs r WHERE r.task_id=t.id AND r.finished_at IS NULL
         AND NOT r.worker_enabled AND r.started_at > now() - interval '30 minutes'
@@ -315,22 +448,11 @@ export async function actOnTask(id: string, version: number, action: string, val
       RETURNING *
     ), approval AS (
       INSERT INTO engineering_approvals(id,task_id,plan_version,gate,decision,actor)
-      SELECT ${randomUUID()}::uuid,id,${starting ? approvedPlanVersion : version},'plan',${decision},${actor} FROM changed WHERE ${decision !== null}
-    ), run AS (
-      INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition)
-      SELECT ${preparedSubject ? String(preparedSubject.attempt_id) : randomUUID()}::uuid,id,${starting ? approvedPlanVersion : version},${process.env.ENGINEERING_WORKER_ENABLED === "true"},
-        ${preparedSubject ? Number(preparedSubject.attempt_number) : 1},${JSON.stringify(plan)}::jsonb,'active'
-      FROM changed WHERE ${starting} RETURNING id,task_id,plan_version,attempt_number
-    ), lineage AS (
-      INSERT INTO engineering_run_lineage(run_id,task_id,attempt_number,plan_version,target_repository,target_branch,target_base_sha,previous_run_id,preparation_key,implementation_source_revision,source_binding_version,source_selection_policy_version)
-      SELECT run.id,run.task_id,run.attempt_number,run.plan_version,${mergeTargetPolicy.repository},${mergeTargetPolicy.branch},${targetBaseSha},
-        ${preparedSubject ? preparedSubject.previous_run_id ?? null : null}::uuid,${preparedSubject ? preparedSubject.retry_preparation_key ?? null : null}::uuid,
-        ${preparedSubject ? String(preparedSubject.implementation_source_revision) : ""},1,${preparedSubject ? Number(preparedSubject.source_selection_policy_version) : 0}
-      FROM run
+      SELECT ${randomUUID()}::uuid,id,${version},'plan',${decision},${actor} FROM changed WHERE ${decision !== null}
     ), run_update AS (
       UPDATE engineering_runs SET repairs=repairs+${next === "repairing" ? 1 : 0},finished_at=CASE WHEN ${finishing} THEN now() ELSE finished_at END,
         disposition=CASE WHEN NOT ${finishing} THEN disposition WHEN ${next === "awaiting_merge"} THEN 'succeeded' WHEN ${next === "cancelled"} THEN 'cancelled' ELSE 'blocked' END
-      WHERE task_id IN (SELECT id FROM changed) AND finished_at IS NULL AND ${!starting}
+      WHERE task_id IN (SELECT id FROM changed) AND finished_at IS NULL
     ), event AS (
       INSERT INTO engineering_events(id,task_id,actor,action,details)
       SELECT ${randomUUID()}::uuid,id,${actor},${action},${JSON.stringify({ from: task.status, to: next, version })}::jsonb FROM changed
