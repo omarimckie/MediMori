@@ -19,6 +19,8 @@ test("buildSmartUploadCaptionPromptContext includes brand and approved claims", 
     mode: "shared",
   });
   assert.match(ctx.systemPolicy, /descriptive context only/i);
+  assert.match(ctx.systemPolicy, /must exactly match one APPROVED_CLAIMS body/i);
+  assert.match(ctx.systemPolicy, /Do not infer diagnoses/i);
   assert.match(ctx.approvedContextBlock, /Twilight Feather/);
   assert.match(ctx.approvedContextBlock, /Sickle Cell/);
   assert.match(ctx.userGuidanceBlock, /Keep it warm/);

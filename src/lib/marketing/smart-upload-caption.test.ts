@@ -15,6 +15,7 @@ import {
 } from "./smart-upload-intent";
 
 import { generateSmartUploadCaptions } from "./smart-upload-caption";
+import { APPROVED_CLAIMS } from "./brain";
 import { defaultBookContextCta } from "./smart-upload-caption-cta";
 
 import { setSmartUploadCaptionBufferReaderForTests } from "./smart-upload-caption-image";
@@ -47,15 +48,58 @@ const originalSecret = process.env.ADMIN_SESSION_SECRET;
 
 
 
-function testProvider(
+const SICKLE_STORY_CLAIM = APPROVED_CLAIMS.find((claim) => claim.id === "sickle-cell-story")!.body;
+
+function normalizeCaptionModelPayload(
   payload: Omit<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription"> &
     Partial<Pick<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription">>,
-): AIProvider {
-  const normalized: SmartUploadCaptionModelPayload = {
+): SmartUploadCaptionModelPayload {
+  return {
     ...payload,
     pinterestTitle: payload.pinterestTitle ?? "Story pin",
     pinterestDescription: payload.pinterestDescription ?? "Discover our children's book.",
   };
+}
+
+function sequentialMultimodalProvider(
+  payloads: Array<
+    Omit<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription"> &
+      Partial<Pick<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription">>
+  >,
+) {
+  const recorder = { callCount: 0, userTexts: [] as string[] };
+  const provider: AIProvider = {
+    id: "test-seq",
+    async generateText() {
+      return "";
+    },
+    async generateStructuredOutput({ fallback }) {
+      return fallback;
+    },
+    async generateMultimodalStructuredOutput<T>(input: { userText: string }) {
+      recorder.callCount += 1;
+      recorder.userTexts.push(input.userText);
+      const payload = payloads[recorder.callCount - 1];
+      if (!payload) {
+        throw new Error("Unexpected extra multimodal generation call.");
+      }
+      return normalizeCaptionModelPayload(payload) as T;
+    },
+    async classify() {
+      return "";
+    },
+    async analyze() {
+      return "";
+    },
+  };
+  return { provider, recorder };
+}
+
+function testProvider(
+  payload: Omit<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription"> &
+    Partial<Pick<SmartUploadCaptionModelPayload, "pinterestTitle" | "pinterestDescription">>,
+): AIProvider {
+  const normalized = normalizeCaptionModelPayload(payload);
 
   return {
 
@@ -973,4 +1017,210 @@ test("unsafe clinical hashtag rejected at generation", async () => {
       }),
     SmartUploadCaptionGroundingError,
   );
+});
+
+test("grounding retry: first success uses exactly one multimodal call", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const { provider, recorder } = sequentialMultimodalProvider([
+    payloadWithClaims({
+      mode: "shared",
+      sharedBody: "A cozy reading moment for families tonight.",
+      instagramHashtags: ["TwilightFeather"],
+    }),
+  ]);
+
+  const result = await generateSmartUploadCaptions(store, {
+    actorUsername: "owner",
+    mode: "shared",
+    instructions: null,
+    explicitCta: null,
+    bookId: "book-one",
+    campaignId: null,
+    original: stagedRef(uploadIntent),
+    acceptedDerivative: null,
+    provider,
+  });
+
+  assert.equal(recorder.callCount, 1);
+  assert.equal(result.shared?.body, "A cozy reading moment for families tonight.");
+});
+
+test("grounding retry: second attempt succeeds after paraphrased medical copy", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const { provider, recorder } = sequentialMultimodalProvider([
+    payloadWithClaims({
+      mode: "shared",
+      sharedBody: "Sickle cell disease can cause organ damage over time.",
+      instagramHashtags: [],
+    }),
+    payloadWithClaims({
+      mode: "shared",
+      sharedBody: SICKLE_STORY_CLAIM,
+      usedMedicalClaims: [{ claimId: "sickle-cell-story", text: SICKLE_STORY_CLAIM }],
+      instagramHashtags: ["TwilightFeather"],
+    }),
+  ]);
+
+  const result = await generateSmartUploadCaptions(store, {
+    actorUsername: "owner",
+    mode: "shared",
+    instructions: null,
+    explicitCta: null,
+    bookId: "book-one",
+    campaignId: null,
+    original: stagedRef(uploadIntent),
+    acceptedDerivative: null,
+    provider,
+  });
+
+  assert.equal(recorder.callCount, 2);
+  const retryUserText = recorder.userTexts[1] ?? "";
+  assert.match(retryUserText, /CAPTION_GROUNDING_RETRY_INSTRUCTIONS/);
+  assert.match(retryUserText, /Validation detail:/);
+  assert.match(retryUserText, /exact approved claim/i);
+  assert.match(retryUserText, /prior JSON response failed medical grounding validation/i);
+  assert.equal(result.shared?.body, SICKLE_STORY_CLAIM);
+});
+
+test("grounding retry: both attempts fail with grounding error", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const bad = payloadWithClaims({
+    mode: "shared",
+    sharedBody: "Sickle cell disease can cause organ damage over time.",
+    instagramHashtags: [],
+  });
+  const { provider, recorder } = sequentialMultimodalProvider([bad, bad]);
+
+  await assert.rejects(
+    () =>
+      generateSmartUploadCaptions(store, {
+        actorUsername: "owner",
+        mode: "shared",
+        instructions: null,
+        explicitCta: null,
+        bookId: "book-one",
+        campaignId: null,
+        original: stagedRef(uploadIntent),
+        acceptedDerivative: null,
+        provider,
+      }),
+    SmartUploadCaptionGroundingError,
+  );
+  assert.equal(recorder.callCount, 2);
+});
+
+test("grounding retry: provider errors are not retried", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  let callCount = 0;
+  const provider: AIProvider = {
+    id: "test-provider-fail",
+    async generateText() {
+      return "";
+    },
+    async generateStructuredOutput({ fallback }) {
+      return fallback;
+    },
+    async generateMultimodalStructuredOutput() {
+      callCount += 1;
+      throw new SmartUploadCaptionProviderError("Caption model response field sharedBody must be a string.");
+    },
+    async classify() {
+      return "";
+    },
+    async analyze() {
+      return "";
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      generateSmartUploadCaptions(store, {
+        actorUsername: "owner",
+        mode: "shared",
+        instructions: null,
+        explicitCta: null,
+        bookId: null,
+        campaignId: null,
+        original: stagedRef(uploadIntent),
+        acceptedDerivative: null,
+        provider,
+      }),
+    SmartUploadCaptionProviderError,
+  );
+  assert.equal(callCount, 1);
+});
+
+test("grounding retry: per_platform mode passes validation on second attempt", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const { provider, recorder } = sequentialMultimodalProvider([
+    payloadWithClaims({
+      mode: "per_platform",
+      instagramBody: "Children may experience painful crises and fatigue.",
+      facebookBody: "Warm reading time with your family.",
+      instagramHashtags: [],
+    }),
+    payloadWithClaims({
+      mode: "per_platform",
+      instagramBody: SICKLE_STORY_CLAIM,
+      facebookBody: "What stories help your family connect tonight?",
+      usedMedicalClaims: [{ claimId: "sickle-cell-story", text: SICKLE_STORY_CLAIM }],
+      instagramHashtags: ["TwilightFeather"],
+      pinterestDescription: "Save this pin for a gentle sickle cell story moment.",
+    }),
+  ]);
+
+  const result = await generateSmartUploadCaptions(store, {
+    actorUsername: "owner",
+    mode: "per_platform",
+    instructions: null,
+    explicitCta: null,
+    bookId: "book-one",
+    campaignId: null,
+    original: stagedRef(uploadIntent),
+    acceptedDerivative: null,
+    provider,
+  });
+
+  assert.equal(recorder.callCount, 2);
+  assert.equal(result.mode, "per_platform");
+  assert.equal(result.instagram?.body, SICKLE_STORY_CLAIM);
+});
+
+test("grounding retry: pinterest medical paraphrase fails then succeeds with safe pin copy", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const { provider, recorder } = sequentialMultimodalProvider([
+    payloadWithClaims({
+      mode: "shared",
+      sharedBody: "A cozy reading nook moment for families.",
+      pinterestDescription: "Sickle cell disease can cause organ damage over time.",
+      instagramHashtags: [],
+    }),
+    payloadWithClaims({
+      mode: "shared",
+      sharedBody: "A cozy reading nook moment for families.",
+      pinterestDescription: "Save this pin for a gentle story about courage and family reading time.",
+      instagramHashtags: ["TwilightFeather"],
+    }),
+  ]);
+
+  const result = await generateSmartUploadCaptions(store, {
+    actorUsername: "owner",
+    mode: "shared",
+    instructions: null,
+    explicitCta: null,
+    bookId: "book-one",
+    campaignId: null,
+    original: stagedRef(uploadIntent),
+    acceptedDerivative: null,
+    provider,
+  });
+
+  assert.equal(recorder.callCount, 2);
+  assert.match(result.pinterest?.description ?? "", /gentle story/i);
 });

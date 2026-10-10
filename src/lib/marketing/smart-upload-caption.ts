@@ -10,7 +10,7 @@ import { scanMarketingText } from "./safety";
 
 import type { MarketingStore } from "./store";
 
-import type { AudienceId, ContentCategory } from "./types";
+import type { AudienceId, ContentCategory, MarketingCampaign } from "./types";
 
 import { AUDIENCES, CONTENT_CATEGORIES } from "./types";
 
@@ -54,7 +54,10 @@ import type {
 
 import { logMarketing } from "./logger";
 
-import { SmartUploadCaptionProviderError } from "./smart-upload-caption-errors";
+import {
+  SmartUploadCaptionGroundingError,
+  SmartUploadCaptionProviderError,
+} from "./smart-upload-caption-errors";
 import { observeSmartUploadCaptionFailure } from "./smart-upload-incidents/observe";
 
 import {
@@ -72,6 +75,7 @@ import {
 } from "./smart-upload-caption-security";
 
 import { parseAndValidateModelPayload } from "./smart-upload-caption-validate";
+import type { SmartUploadCaptionModelPayload } from "./smart-upload-caption-types";
 
 import type { SmartUploadFixStrategy, SmartUploadFixTargetRatio } from "./smart-upload-fix";
 
@@ -237,7 +241,35 @@ function modelRequestSchema(mode: SmartUploadCaptionMode): string {
 
 }
 
+export function buildSmartUploadCaptionGroundingRetryUserAppendix(groundingMessage: string): string {
+  return [
+    "CAPTION_GROUNDING_RETRY_INSTRUCTIONS:",
+    "The prior JSON response failed medical grounding validation and must be discarded.",
+    `Validation detail: ${groundingMessage}`,
+    "Regenerate JSON from scratch. Every scrutinized medical sentence in sharedBody, instagramBody, facebookBody, sharedCta, instagramCta, facebookCta, pinterestTitle, and pinterestDescription must exactly match an approved claim sentence from APPROVED_CONTEXT.",
+    "Do not prepend or append text in the same sentence as an approved claim. Do not paraphrase claims. If medical facts are unnecessary, use non-medical conversational copy and usedMedicalClaims: [].",
+  ].join("\n");
+}
 
+function buildSmartUploadCaptionUserText(
+  promptContext: ReturnType<typeof buildSmartUploadCaptionPromptContext>,
+  mode: SmartUploadCaptionMode,
+  groundingRetryMessage: string | null,
+): string {
+  const parts = [
+    promptContext.userGuidanceBlock,
+    "",
+    "APPROVED_CONTEXT:",
+    promptContext.approvedContextBlock,
+    "",
+    "Respond with JSON matching this schema:",
+    modelRequestSchema(mode),
+  ];
+  if (groundingRetryMessage) {
+    parts.push("", buildSmartUploadCaptionGroundingRetryUserAppendix(groundingRetryMessage));
+  }
+  return parts.join("\n");
+}
 
 export async function generateSmartUploadCaptions(
 
@@ -259,7 +291,7 @@ export async function generateSmartUploadCaptions(
 
 
 
-  let campaign = null;
+  let campaign: MarketingCampaign | null = null;
 
   const campaignId = input.campaignId?.trim() || null;
 
@@ -355,241 +387,162 @@ export async function generateSmartUploadCaptions(
 
 
 
-  const userText = [
-
-    promptContext.userGuidanceBlock,
-
-    "",
-
-    "APPROVED_CONTEXT:",
-
-    promptContext.approvedContextBlock,
-
-    "",
-
-    "Respond with JSON matching this schema:",
-
-    modelRequestSchema(mode),
-
-  ].join("\n");
-
-
-
   const started = Date.now();
-
-  let validated;
-
-  try {
-
-    const rawUnknown = await provider.generateMultimodalStructuredOutput<Record<string, unknown>>({
-
-      task: "smart_upload_generate_captions",
-
-      systemPrompt: promptContext.systemPolicy,
-
-      userText,
-
-      image: { mimeType: modelImage.mimeType, base64: modelImage.base64 },
-
-      fallback,
-
-    });
-
-    validated = parseAndValidateModelPayload(rawUnknown, mode);
-
-  } catch (error) {
-
-    logMarketing({
-
-      operation: "smart_upload_generate_captions",
-
-      provider: provider.id,
-
-      success: false,
-
-      durationMs: Date.now() - started,
-
-      error: error instanceof Error ? error.message : "generation_failed",
-
-    });
-
-    await observeSmartUploadCaptionFailure(
-      {
-        finalizeKey: input.finalizeKey,
-        mode: input.mode,
-        sourceOperation: "smart_upload_generate_captions",
-      },
-      error,
-    );
-
-    if (error instanceof SmartUploadCaptionProviderError) throw error;
-
-    throw error;
-
-  }
-
-
-
-  const declaredClaims = validateDeclaredUsedMedicalClaims(validated.usedMedicalClaims, bookId);
-
-  assertClinicalHashtagsSafe(validated.instagramHashtags ?? []);
-
-  const ctaBase: SmartUploadCaptionCtaPrecedenceInput = {
-
-    explicitCta: input.explicitCta,
-
-    campaign,
-
-    bookId,
-
-    modelSharedCta: validated.sharedCta ?? null,
-
-    modelInstagramCta: validated.instagramCta ?? null,
-
-    modelFacebookCta: validated.facebookCta ?? null,
-
-  };
-
   const modelName = mock ? undefined : getAiComplexModel();
 
-  if (mode === "shared") {
+  function finalizeFromValidated(
+    validated: SmartUploadCaptionModelPayload,
+  ): SmartUploadCaptionGenerationResult {
+    const declaredClaims = validateDeclaredUsedMedicalClaims(validated.usedMedicalClaims, bookId);
+    assertClinicalHashtagsSafe(validated.instagramHashtags ?? []);
 
-    const body = validated.sharedBody!;
+    const ctaBase: SmartUploadCaptionCtaPrecedenceInput = {
+      explicitCta: input.explicitCta,
+      campaign,
+      bookId,
+      modelSharedCta: validated.sharedCta ?? null,
+      modelInstagramCta: validated.instagramCta ?? null,
+      modelFacebookCta: validated.facebookCta ?? null,
+    };
 
-    const cta = sharedModeCta(ctaBase);
+    if (mode === "shared") {
+      const body = validated.sharedBody!;
+      const cta = sharedModeCta(ctaBase);
+      assertCaptionFieldsMedicalPolicy([body, cta], declaredClaims, bookId);
+      const instagramHashtags = normalizeInstagramHashtags(validated.instagramHashtags ?? []);
+      const pinterestTitle = validated.pinterestTitle;
+      const pinterestDescription = validated.pinterestDescription;
+      assertCaptionFieldsMedicalPolicy(
+        [body, cta, pinterestTitle, pinterestDescription],
+        declaredClaims,
+        bookId,
+      );
+      const warnings = collectSafetyWarnings([body, cta ?? "", pinterestTitle, pinterestDescription]);
+      return {
+        mode: "shared",
+        shared: { body, cta, instagramHashtags },
+        pinterest: { title: pinterestTitle, description: pinterestDescription },
+        warnings,
+        imagePathname: imageRef.pathname,
+        provider: provider.id,
+        model: modelName,
+        mock,
+      };
+    }
 
-    assertCaptionFieldsMedicalPolicy([body, cta], declaredClaims, bookId);
-
-    const instagramHashtags = normalizeInstagramHashtags(validated.instagramHashtags ?? []);
-
-    logMarketing({
-
-      operation: "smart_upload_generate_captions",
-
-      provider: provider.id,
-
-      success: true,
-
-      durationMs: Date.now() - started,
-
-    });
-
+    const instagramBody = validated.instagramBody!;
+    const facebookBody = validated.facebookBody!;
+    const instagramCta = resolveSmartUploadCaptionCta(ctaBase, "instagram");
+    const facebookCta = resolveSmartUploadCaptionCta(ctaBase, "facebook");
     const pinterestTitle = validated.pinterestTitle;
     const pinterestDescription = validated.pinterestDescription;
     assertCaptionFieldsMedicalPolicy(
-      [body, cta, pinterestTitle, pinterestDescription],
+      [instagramBody, facebookBody, instagramCta, facebookCta, pinterestTitle, pinterestDescription],
       declaredClaims,
       bookId,
     );
-
-    const warnings = collectSafetyWarnings([body, cta ?? "", pinterestTitle, pinterestDescription]);
-
+    const instagramHashtags = normalizeInstagramHashtags(validated.instagramHashtags ?? []);
+    const warnings = collectSafetyWarnings([
+      instagramBody,
+      facebookBody,
+      instagramCta ?? "",
+      facebookCta ?? "",
+      pinterestTitle,
+      pinterestDescription,
+    ]);
     return {
-
-      mode: "shared",
-
-      shared: { body, cta, instagramHashtags },
-
+      mode: "per_platform",
+      instagram: {
+        body: instagramBody,
+        cta: instagramCta,
+        hashtags: instagramHashtags,
+      },
+      facebook: {
+        body: facebookBody,
+        cta: facebookCta,
+      },
       pinterest: { title: pinterestTitle, description: pinterestDescription },
-
       warnings,
-
       imagePathname: imageRef.pathname,
-
       provider: provider.id,
-
       model: modelName,
-
       mock,
-
     };
-
   }
 
+  let groundingRetryMessage: string | null = null;
 
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const operation =
+      attempt === 0 ? "smart_upload_generate_captions" : "smart_upload_generate_captions_grounding_retry";
+    const userText = buildSmartUploadCaptionUserText(promptContext, mode, groundingRetryMessage);
 
-  const instagramBody = validated.instagramBody!;
+    let rawUnknown: Record<string, unknown>;
+    try {
+      rawUnknown = await provider.generateMultimodalStructuredOutput<Record<string, unknown>>({
+        task: operation,
+        systemPrompt: promptContext.systemPolicy,
+        userText,
+        image: { mimeType: modelImage.mimeType, base64: modelImage.base64 },
+        fallback,
+      });
+    } catch (error) {
+      logMarketing({
+        operation,
+        provider: provider.id,
+        success: false,
+        durationMs: Date.now() - started,
+        error: error instanceof Error ? error.message : "generation_failed",
+      });
+      await observeSmartUploadCaptionFailure(
+        {
+          finalizeKey: input.finalizeKey,
+          mode: input.mode,
+          sourceOperation: operation,
+        },
+        error,
+      );
+      if (error instanceof SmartUploadCaptionProviderError) throw error;
+      throw error;
+    }
 
-  const facebookBody = validated.facebookBody!;
+    try {
+      const validated = parseAndValidateModelPayload(rawUnknown, mode);
+      const result = finalizeFromValidated(validated);
+      logMarketing({
+        operation,
+        provider: provider.id,
+        success: true,
+        durationMs: Date.now() - started,
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof SmartUploadCaptionGroundingError && attempt === 0) {
+        groundingRetryMessage = error.message;
+        continue;
+      }
+      logMarketing({
+        operation,
+        provider: provider.id,
+        success: false,
+        durationMs: Date.now() - started,
+        error: error instanceof Error ? error.message : "generation_failed",
+      });
+      if (error instanceof SmartUploadCaptionGroundingError) {
+        await observeSmartUploadCaptionFailure(
+          {
+            finalizeKey: input.finalizeKey,
+            mode: input.mode,
+            sourceOperation: operation,
+          },
+          error,
+        );
+      }
+      throw error;
+    }
+  }
 
-  const instagramCta = resolveSmartUploadCaptionCta(ctaBase, "instagram");
-
-  const facebookCta = resolveSmartUploadCaptionCta(ctaBase, "facebook");
-
-  const pinterestTitle = validated.pinterestTitle;
-  const pinterestDescription = validated.pinterestDescription;
-  assertCaptionFieldsMedicalPolicy(
-    [instagramBody, facebookBody, instagramCta, facebookCta, pinterestTitle, pinterestDescription],
-    declaredClaims,
-    bookId,
+  throw new SmartUploadCaptionGroundingError(
+    "Caption medical factual content must appear as an exact approved claim sentence.",
   );
-
-  const instagramHashtags = normalizeInstagramHashtags(validated.instagramHashtags ?? []);
-
-  logMarketing({
-
-    operation: "smart_upload_generate_captions",
-
-    provider: provider.id,
-
-    success: true,
-
-    durationMs: Date.now() - started,
-
-  });
-
-  const warnings = collectSafetyWarnings([
-
-    instagramBody,
-
-    facebookBody,
-
-    instagramCta ?? "",
-
-    facebookCta ?? "",
-
-    pinterestTitle,
-
-    pinterestDescription,
-
-  ]);
-
-
-
-  return {
-
-    mode: "per_platform",
-
-    instagram: {
-
-      body: instagramBody,
-
-      cta: instagramCta,
-
-      hashtags: instagramHashtags,
-
-    },
-
-    facebook: {
-
-      body: facebookBody,
-
-      cta: facebookCta,
-
-    },
-
-    pinterest: { title: pinterestTitle, description: pinterestDescription },
-
-    warnings,
-
-    imagePathname: imageRef.pathname,
-
-    provider: provider.id,
-
-    model: modelName,
-
-    mock,
-
-  };
-
 }

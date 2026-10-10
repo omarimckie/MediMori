@@ -89,7 +89,7 @@ test("non-smart-upload items sort newest first between groups", () => {
   const manualNew = row({
     id: "manual-new",
     platform: "email",
-    format: "newsletter",
+    format: "email",
     createdAt: "2026-10-09T12:00:00.000Z",
   });
   const sorted = sortMarketingContentForAdminList([manualOld, manualNew]);
