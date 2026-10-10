@@ -1,7 +1,7 @@
 import { getAuthenticatedAdminUsername } from "@/lib/admin-auth";
 import { EngineeringInputError, limits, modelPolicy, protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { workerLimits } from "@/lib/engineering/worker-policy";
-import { actOnTask, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
+import { actOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
 import { getSql } from "@/lib/db";
 import { readApprovedTargetBaseSha, readWorkerTargetBaseSha } from "@/lib/engineering/merge-target";
 
@@ -12,12 +12,12 @@ function safeEventDetails(action: unknown, details: unknown) {
   if (!details || typeof details !== "object" || Array.isArray(details)) return {};
   const value = details as Record<string, unknown>;
   const safe: Record<string, unknown> = {};
-  const stringFields = ["kind", "from", "to", "runId", "attemptId", "command", "outcome", "revision", "implementationSourceRevision", "expectedSourceRevision", "actualSourceRevision", "phase", "failureCode", "code", "previousRunId", "previousDisposition", "approvalId", "executionId", "baseSha", "commitSha", "targetBranch", "targetRepository", "targetBaseSha"];
+  const stringFields = ["kind", "from", "to", "runId", "attemptId", "preparedAttemptId", "command", "outcome", "revision", "implementationSourceRevision", "expectedSourceRevision", "actualSourceRevision", "phase", "failureCode", "code", "previousRunId", "previousDisposition", "approvalId", "executionId", "baseSha", "commitSha", "targetBranch", "targetRepository", "targetBaseSha"];
   for (const key of stringFields) {
     const item = value[key];
     if (typeof item === "string" && item.length <= 240 && /^[\w./:-]*$/.test(item)) safe[key] = item;
   }
-  for (const key of ["version", "planVersion", "cycle", "tokens", "previousAttemptNumber", "preimageCount"]) {
+  for (const key of ["version", "planVersion", "sourceSelectionPolicyVersion", "cycle", "tokens", "previousAttemptNumber", "preimageCount"]) {
     const item = value[key];
     if (typeof item === "number" && Number.isSafeInteger(item) && item >= 0) safe[key] = item;
   }
@@ -249,10 +249,17 @@ export async function POST(request: Request) {
     }
     if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 || typeof body.action !== "string") throw new EngineeringInputError("Task ID, version and action are required.");
     if (body.action === "approve") {
-      if (typeof body.targetBaseSha !== "string" || !/^[a-f0-9]{40}$/.test(body.targetBaseSha)) throw new EngineeringInputError("The reviewed target base SHA is required for plan approval.");
+      if (typeof body.preparedAttemptId !== "string" || !uuid.test(body.preparedAttemptId) || typeof body.targetBaseSha !== "string" || !/^[a-f0-9]{40}$/.test(body.targetBaseSha)) throw new EngineeringInputError("The exact prepared subject and reviewed target base SHA are required for plan approval.");
       const currentTargetSha = await readWorkerTargetBaseSha();
       if (body.targetBaseSha !== currentTargetSha) throw new EngineeringConflict("The target branch changed. Refresh the plan review before approving.");
-      const task = await actOnTask(body.id, Number(body.version), body.action, body.value, actor, undefined, async () => currentTargetSha);
+      const task = await approvePreparedAttempt(body.id, Number(body.version), body.preparedAttemptId, actor, getSql(), async () => currentTargetSha);
+      return Response.json({ task }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (body.action === "authorize_execution") {
+      if (typeof body.preparedAttemptId !== "string" || !uuid.test(body.preparedAttemptId) || typeof body.targetBaseSha !== "string" || !/^[a-f0-9]{40}$/.test(body.targetBaseSha)) throw new EngineeringInputError("The exact approved subject and current target base SHA are required to authorize execution.");
+      const currentTargetSha = await readWorkerTargetBaseSha();
+      if (body.targetBaseSha !== currentTargetSha) throw new EngineeringConflict("The target branch changed. Refresh the approved subject before authorizing execution.");
+      const task = await authorizePreparedExecution(body.id, Number(body.version), body.preparedAttemptId, actor, getSql(), async () => currentTargetSha);
       return Response.json({ task }, { headers: { "Cache-Control": "no-store" } });
     }
     if (body.action === "evidence") {

@@ -1,5 +1,5 @@
 export class EngineeringInputError extends Error {}
-export const statuses = ["intake", "analyzing", "planned", "awaiting_approval", "implementing", "validating", "repairing", "reviewing", "awaiting_merge", "merging", "completed", "blocked", "cancelled", "escalated"] as const;
+export const statuses = ["intake", "analyzing", "planned", "awaiting_approval", "awaiting_execution", "implementing", "validating", "repairing", "reviewing", "awaiting_merge", "merging", "completed", "blocked", "cancelled", "escalated"] as const;
 export type Status = typeof statuses[number];
 export const protectedOperations = ["merge_main", "production_deploy", "production_secrets", "destructive_database", "auth_security", "external_publish", "payments", "production_infrastructure"] as const;
 export type ProtectedOperation = typeof protectedOperations[number];
@@ -26,7 +26,7 @@ export function classifyRisk(plan: Plan): "low" | "medium" | "high" {
 
 const transitions: Partial<Record<Status, Status[]>> = {
   intake: ["analyzing"], analyzing: ["planned"], planned: ["awaiting_approval"],
-  awaiting_approval: ["implementing"], implementing: ["validating"],
+  awaiting_approval: ["awaiting_execution"], awaiting_execution: ["implementing"], implementing: ["validating"],
   validating: ["reviewing", "repairing"], repairing: ["validating"], reviewing: ["awaiting_merge"],
 };
 export function assertTransition(from: Status, to: Status) {

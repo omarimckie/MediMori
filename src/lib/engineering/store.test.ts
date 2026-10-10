@@ -4,19 +4,28 @@ import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
-import { actOnTask as storeActOnTask, createTask, listTasks, prepareFreshAttempt as storePrepareFreshAttempt, prepareInitialAttempt as storePrepareInitialAttempt, prepareRetryAttemptSubject as storePrepareRetryAttemptSubject, recordRunEvidence, taskHistory } from "./store";
+import { validationCommands } from "./policy";
+import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution as storeAuthorizePreparedExecution, createTask, listTasks, prepareFreshAttempt as storePrepareFreshAttempt, prepareInitialAttempt as storePrepareInitialAttempt, prepareRetryAttemptSubject as storePrepareRetryAttemptSubject, recordRunEvidence, taskHistory } from "./store";
 
 const testTargetSha = "c".repeat(40);
 const testSourceRevision = async () => "e".repeat(40);
 const readTestTargetSha = async () => testTargetSha;
 const readTestPreimages = async (_sha: string, paths: readonly string[]) => Object.fromEntries(paths.map(path => [path, "d".repeat(64)]));
-const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database,readTestTargetSha,readTestPreimages,testSourceRevision);
+const actOnTask = (id: string, version: number, action: string, value: unknown, actor: string, database: ReturnType<typeof getSql>) => storeActOnTask(id,version,action,value,actor,database);
+type PreparedSubjectResult = { attemptId: string; attemptNumber: number; planVersion: number; targetRepository?: string; targetBranch?: string; targetBaseSha?: string; implementationSourceRevision?: string; replayed?: boolean; ok?: boolean };
+const prepareInitialSubject = (...args: Parameters<typeof storePrepareInitialAttempt>) => storePrepareInitialAttempt(...args) as Promise<PreparedSubjectResult>;
+async function authorizePreparedExecution(...args: Parameters<typeof storeAuthorizePreparedExecution>) {
+  const previous = process.env.ENGINEERING_WORKER_ENABLED;
+  process.env.ENGINEERING_WORKER_ENABLED = "true";
+  try { return await storeAuthorizePreparedExecution(...args); }
+  finally { if (previous === undefined) delete process.env.ENGINEERING_WORKER_ENABLED; else process.env.ENGINEERING_WORKER_ENABLED = previous; }
+}
 const prepareFreshAttempt = (id: string, version: number, key: string, actor: string, database: ReturnType<typeof getSql>) => storePrepareFreshAttempt(id,version,key,actor,database,readTestTargetSha);
 const prepareInitialAttempt = async (id: string, version: number, actor: string, database: ReturnType<typeof getSql>) => {
-  await storePrepareInitialAttempt(id,version,randomUUID(),actor,database,readTestTargetSha,readTestPreimages,testSourceRevision);
+  await prepareInitialSubject(id,version,randomUUID(),actor,database,readTestTargetSha,readTestPreimages,testSourceRevision);
   return (await taskHistory(id,database)).task!;
 };
-const prepareRetryAttemptSubject = (id: string, version: number, key: string, actor: string, database: ReturnType<typeof getSql>, sourceReader = testSourceRevision) => storePrepareRetryAttemptSubject(id,version,key,actor,database,readTestTargetSha,readTestPreimages,sourceReader);
+const prepareRetryAttemptSubject = (id: string, version: number, key: string, actor: string, database: ReturnType<typeof getSql>, sourceReader = testSourceRevision) => storePrepareRetryAttemptSubject(id,version,key,actor,database,readTestTargetSha,readTestPreimages,sourceReader) as Promise<PreparedSubjectResult & { replayed: boolean }>;
 
 async function createTestSql() {
   const db = new PGlite();
@@ -29,9 +38,135 @@ async function createTestSql() {
   await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
   const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
   return { db, sql };
 }
+
+async function approveAndAuthorize(id: string, taskVersion: number, actor: string, database: ReturnType<typeof getSql>, workerEnabled = true) {
+  const subject = (await database`SELECT attempt_id FROM engineering_prepared_attempts WHERE task_id=${id}::uuid ORDER BY created_at DESC LIMIT 1`)[0] as { attempt_id: string } | undefined;
+  assert.ok(subject, "prepared subject exists");
+  await approvePreparedAttempt(id, taskVersion, subject.attempt_id, actor, database, readTestTargetSha, readTestPreimages, testSourceRevision);
+  await authorizePreparedExecution(id, taskVersion, subject.attempt_id, actor, database, readTestTargetSha, readTestPreimages, testSourceRevision);
+  if (!workerEnabled) await database`UPDATE engineering_runs SET worker_enabled=false WHERE id=${subject.attempt_id}::uuid`;
+  return (await taskHistory(id, database)).task!;
+}
+
+test("approval records the exact P+T+S subject without a run; separate authorization creates one source-bound run", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  process.env.ENGINEERING_WORKER_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const plan = { summary: "Clarify README source path", files: ["README.md"], validations: [...validationCommands], operations: [] };
+    let task = await createTask("README-only proof", "owner", randomUUID(), sql);
+    task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
+    task = await actOnTask(task.id, task.version, "plan", plan, "owner", sql);
+    const planVersion = task.version;
+    const prepared = await prepareInitialSubject(task.id, task.version, randomUUID(), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+    const attemptId = String(prepared.attemptId);
+    await assert.rejects(authorizePreparedExecution(task.id, planVersion, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /required approval\/execution state/);
+    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "owner", sql), /separate actions/);
+    await assert.rejects(storeActOnTask(task.id, task.version, "transition", "implementing", "owner", sql), /Unsupported transition/);
+    await assert.rejects(approvePreparedAttempt(task.id, planVersion, attemptId, "worker:forged", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /authenticated human identity/);
+    await assert.rejects(approvePreparedAttempt(task.id, planVersion, randomUUID(), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /immutable plan, target, and source subject/);
+
+    const approvals = await Promise.allSettled([
+      approvePreparedAttempt(task.id, planVersion, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+      approvePreparedAttempt(task.id, planVersion, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+    ]);
+    assert.equal(approvals.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(approvals.filter(result => result.status === "rejected").length, 1);
+    task = (await taskHistory(task.id, sql)).task!;
+    assert.equal(task.status, "awaiting_execution");
+    assert.equal(task.version, planVersion);
+    const approval = (await sql`SELECT task_id,plan_version,prepared_attempt_id,gate,decision,actor FROM engineering_approvals WHERE task_id=${task.id}::uuid`)[0];
+    assert.deepEqual(approval, { task_id: task.id, plan_version: planVersion, prepared_attempt_id: attemptId, gate: "plan", decision: "approved", actor: "owner" });
+    assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_run_lineage WHERE task_id=${task.id}::uuid`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_costs`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_worker_calls`).length, 0);
+    const approvalEvent = (await sql`SELECT action,details FROM engineering_events WHERE task_id=${task.id}::uuid AND action='plan_approval_created'`)[0] as { action: string; details: Record<string, unknown> };
+    assert.equal(approvalEvent.details.preparedAttemptId, attemptId);
+    assert.equal(approvalEvent.details.planVersion, planVersion);
+    const lineagePrivileges = (await sql`SELECT
+      has_function_privilege('medimori_engineering_worker','engineering_run_lineage_valid(uuid)','EXECUTE') AS worker_group,
+      has_function_privilege('medimori_engineering_2c_worker','engineering_run_lineage_valid(uuid)','EXECUTE') AS worker_login,
+      has_function_privilege('medimori_engineering_merge_executor','engineering_run_lineage_valid(uuid)','EXECUTE') AS merge_executor,
+      EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.oid='engineering_run_lineage_valid(uuid)'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE') AS public,
+      EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='engineering_run_lineage_valid(uuid)'::regprocedure AND p.prosecdef AND 'search_path=public, pg_temp'=ANY(p.proconfig)) AS secure_definer`)[0];
+    assert.deepEqual(lineagePrivileges, { worker_group: false, worker_login: false, merge_executor: false, public: false, secure_definer: true });
+
+    process.env.ENGINEERING_WORKER_ENABLED = "false";
+    await assert.rejects(storeAuthorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /Worker execution is not enabled/);
+    assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0, "disabled worker cannot receive a run");
+    process.env.ENGINEERING_WORKER_ENABLED = "true";
+
+    await assert.rejects(authorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, async () => "f".repeat(40), readTestPreimages, testSourceRevision), /target branch changed/);
+    await assert.rejects(authorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40)), /implementation source changed/);
+    await sql`UPDATE engineering_tasks SET plan=${JSON.stringify({ ...plan, summary: "stale P" })}::jsonb WHERE id=${task.id}::uuid`;
+    await assert.rejects(authorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /immutable plan, target, and source subject/);
+    await sql`UPDATE engineering_tasks SET plan=${JSON.stringify(plan)}::jsonb WHERE id=${task.id}::uuid`;
+
+    const executions = await Promise.allSettled([
+      authorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+      authorizePreparedExecution(task.id, task.version, attemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+    ]);
+    assert.equal(executions.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(executions.filter(result => result.status === "rejected").length, 1);
+    task = (await taskHistory(task.id, sql)).task!;
+    assert.equal(task.status, "implementing");
+    assert.equal(task.version, planVersion + 1);
+    const run = (await sql`SELECT id,task_id,plan_version,attempt_number,worker_enabled FROM engineering_runs WHERE task_id=${task.id}::uuid`)[0];
+    assert.deepEqual(run, { id: attemptId, task_id: task.id, plan_version: planVersion, attempt_number: 1, worker_enabled: true });
+    const lineage = (await sql`SELECT run_id,task_id,attempt_number,plan_version,implementation_source_revision,source_binding_version,source_selection_policy_version FROM engineering_run_lineage WHERE run_id=${attemptId}::uuid`)[0];
+    assert.deepEqual(lineage, { run_id: attemptId, task_id: task.id, attempt_number: 1, plan_version: planVersion, implementation_source_revision: "e".repeat(40), source_binding_version: 1, source_selection_policy_version: 2 });
+    assert.equal((await sql`SELECT engineering_run_lineage_valid(${attemptId}::uuid) AS valid`)[0].valid, true);
+    await sql`UPDATE engineering_approvals SET prepared_attempt_id=NULL WHERE task_id=${task.id}::uuid AND prepared_attempt_id=${attemptId}::uuid`;
+    assert.equal((await sql`SELECT engineering_run_lineage_valid(${attemptId}::uuid) AS valid`)[0].valid, false, "policy-v2 lineage requires approval bound to the exact prepared subject");
+    await sql`UPDATE engineering_approvals SET prepared_attempt_id=${attemptId}::uuid WHERE task_id=${task.id}::uuid AND plan_version=${planVersion} AND gate='plan'`;
+    assert.equal((await sql`SELECT engineering_run_lineage_valid(${attemptId}::uuid) AS valid`)[0].valid, true);
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_events WHERE task_id=${task.id}::uuid AND action='execution_authorized'`)[0].count, 1);
+  } finally {
+    await db.close();
+    delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED;
+    delete process.env.ENGINEERING_WORKER_ENABLED;
+  }
+});
+
+test("approval fails closed for incomplete gates, non-README scope, wrong binding, and execution without an exact subject approval", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  process.env.ENGINEERING_WORKER_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const invalidPlans = [
+      { summary: "missing gate", files: ["README.md"], validations: ["lint", "typecheck", "security:check"], operations: [] },
+      { summary: "wrong scope", files: ["docs/engineering-agent.md"], validations: [...validationCommands], operations: [] },
+      { summary: "protected operation", files: ["README.md"], validations: [...validationCommands], operations: ["external_publish"] },
+    ];
+    for (const [index, plan] of invalidPlans.entries()) {
+      let task = await createTask("Rejected plan fixture", "owner", randomUUID(), sql);
+      task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
+      task = await actOnTask(task.id, task.version, "plan", plan, "owner", sql);
+      const prepared = await prepareInitialSubject(task.id, task.version, randomUUID(), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+      await assert.rejects(approvePreparedAttempt(task.id, task.version, String(prepared.attemptId), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision));
+      assert.equal((await sql`SELECT * FROM engineering_approvals WHERE task_id=${task.id}::uuid`).length, 0, `invalid plan ${index} creates no approval`);
+      assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0, `invalid plan ${index} creates no run`);
+    }
+
+    let task = await createTask("Unapproved execution fixture", "owner", randomUUID(), sql);
+    task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "README proof", files: ["README.md"], validations: [...validationCommands], operations: [] }, "owner", sql);
+    const prepared = await prepareInitialSubject(task.id, task.version, randomUUID(), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+    await sql`UPDATE engineering_tasks SET status='awaiting_execution' WHERE id=${task.id}::uuid`;
+    await assert.rejects(authorizePreparedExecution(task.id, task.version, String(prepared.attemptId), "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /Execution authorization was stale, unauthorized, or already consumed/);
+    assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_approvals WHERE task_id=${task.id}::uuid`).length, 0);
+  } finally {
+    await db.close();
+    delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED;
+    delete process.env.ENGINEERING_WORKER_ENABLED;
+  }
+});
 
 test("task creation is idempotent per key, including concurrent replay, with one intake event", async () => {
   process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
@@ -58,12 +193,12 @@ test("initial attempt is immutably target-bound before approval and same-key pre
   try {
     let task = await createTask("Initial target binding", "human", "a1234567-1234-4234-8234-123456789abc", sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "human", sql);
-    task = await actOnTask(task.id, task.version, "plan", { summary: "One bounded edit", files: ["docs/engineering-agent.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "human", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "One bounded edit", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "human", sql);
     const planVersion = task.version;
     const key = "a2345678-1234-4234-8234-123456789abc";
     const [prepared, replay] = await Promise.all([
-      storePrepareInitialAttempt(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
-      storePrepareInitialAttempt(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+      prepareInitialSubject(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+      prepareInitialSubject(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
     ]);
     assert.equal(prepared.ok, true);
     assert.equal(prepared.planVersion, planVersion);
@@ -82,16 +217,16 @@ test("initial attempt is immutably target-bound before approval and same-key pre
     assert.equal(Number(persisted.plan_version), planVersion);
     assert.equal(persisted.implementation_source_revision, "e".repeat(40));
     assert.notEqual(persisted.target_base_sha, persisted.implementation_source_revision);
-    await assert.rejects(storePrepareInitialAttempt(task.id, planVersion, key, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40)), /different subject/);
+    await assert.rejects(prepareInitialSubject(task.id, planVersion, key, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40)), /different subject/);
     const preparationEvent = (await sql`SELECT details FROM engineering_events WHERE task_id=${task.id}::uuid AND action='prepare_initial_attempt'`)[0] as { details: Record<string,unknown> };
     assert.equal((await sql`SELECT * FROM engineering_events WHERE task_id=${task.id}::uuid AND action='prepare_initial_attempt'`).length, 1);
     assert.equal(preparationEvent.details.implementationSourceRevision, "e".repeat(40));
     await assert.rejects(sql`UPDATE engineering_prepared_attempts SET target_base_sha=${"f".repeat(40)} WHERE attempt_id=${prepared.attemptId}::uuid`);
-    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "human", sql, async () => "f".repeat(40), readTestPreimages, testSourceRevision), /exact plan, target/);
-    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "human", sql, readTestTargetSha, async (_sha, paths) => Object.fromEntries(paths.map(path => [path, "f".repeat(64)])), testSourceRevision), /prepared target file changed/);
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, async () => "f".repeat(40), readTestPreimages, testSourceRevision), /target branch changed/);
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, async (_sha, paths) => Object.fromEntries(paths.map(path => [path, "f".repeat(64)])), testSourceRevision), /README preimage changed/);
     const originalPlan = task.plan;
     await sql`UPDATE engineering_tasks SET plan=${JSON.stringify({ ...originalPlan!, summary: "drifted after preparation" })}::jsonb WHERE id=${task.id}::uuid`;
-    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /exact plan, target/);
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /immutable plan, target, and source subject/);
     await sql`UPDATE engineering_tasks SET plan=${JSON.stringify(originalPlan)}::jsonb WHERE id=${task.id}::uuid`;
     const privileges = await sql`SELECT
       has_function_privilege('medimori_engineering_worker','engineering_prepare_initial_attempt(uuid,integer,uuid,uuid,text,text,text,text,jsonb,text)','EXECUTE') AS worker_execute,
@@ -111,15 +246,25 @@ test("initial attempt is immutably target-bound before approval and same-key pre
     task = (await taskHistory(task.id, sql)).task!;
     assert.equal(task.status, "awaiting_approval");
     assert.equal(task.version, planVersion);
-    await assert.rejects(storePrepareInitialAttempt(task.id, task.version - 1, "a3456789-1234-4234-8234-123456789abc", "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision));
-    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40)), /implementation source changed/);
+    await assert.rejects(prepareInitialSubject(task.id, task.version - 1, "a3456789-1234-4234-8234-123456789abc", "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision));
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40)), /implementation source changed/);
     assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0);
-    task = await actOnTask(task.id, task.version, "approve", null, "human", sql);
+    const approved = await approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+    task = (await taskHistory(task.id, sql)).task!;
+    assert.equal(approved.status, "awaiting_execution");
+    assert.equal(task.version, planVersion, "approval preserves plan version");
+    assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_run_lineage WHERE task_id=${task.id}::uuid`).length, 0);
+    await assert.rejects(db.query("SELECT engineering_worker($1::uuid,'claim','synthetic-worker',0,$2::jsonb)", [prepared.attemptId, JSON.stringify({ preflightRevision: "e".repeat(40) })]));
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision), /required approval\/execution state/);
+    await authorizePreparedExecution(task.id, task.version, prepared.attemptId, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+    task = (await taskHistory(task.id, sql)).task!;
     const run = (await taskHistory(task.id, sql)).runs[0];
     assert.equal(run.id, prepared.attemptId);
     assert.equal(Number(run.attempt_number), 1);
     assert.equal(Number(run.plan_version), planVersion);
-    assert.equal((await sql`SELECT * FROM engineering_approvals WHERE task_id=${task.id}::uuid AND plan_version=${planVersion} AND decision='approved'`).length, 1);
+    const approval = (await sql`SELECT prepared_attempt_id FROM engineering_approvals WHERE task_id=${task.id}::uuid AND plan_version=${planVersion} AND decision='approved'`)[0];
+    assert.deepEqual(approval, { prepared_attempt_id: prepared.attemptId });
     assert.equal(task.status, "implementing");
     const lineageCheck = await sql`SELECT engineering_run_lineage_valid(${prepared.attemptId}::uuid) AS valid`;
     assert.equal(lineageCheck[0].valid, true, "prepared first-attempt lineage must validate after approval");
@@ -138,7 +283,7 @@ test("approval cannot create initial target lineage or a run when preparation is
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "human", sql);
     task = await actOnTask(task.id, task.version, "plan", { summary: "Bounded edit", files: ["docs/engineering-agent.md"], validations: ["test"], operations: [] }, "human", sql);
     task = await actOnTask(task.id, task.version, "transition", "awaiting_approval", "human", sql);
-    await assert.rejects(actOnTask(task.id, task.version, "approve", null, "human", sql), /exact plan, target, and implementation source/);
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, randomUUID(), "human", sql), /immutable plan, target, and source subject/);
     assert.equal((await sql`SELECT * FROM engineering_prepared_attempts WHERE task_id=${task.id}::uuid`).length, 0);
     assert.equal((await sql`SELECT * FROM engineering_plan_lineage WHERE task_id=${task.id}::uuid`).length, 0);
     assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${task.id}::uuid`).length, 0);
@@ -152,9 +297,9 @@ test("different-key concurrent initial preparation creates only one logical Atte
   try {
     let task = await createTask("Concurrent source-bound preparation", "human", randomUUID(), sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "human", sql);
-    task = await actOnTask(task.id, task.version, "plan", { summary: "One bounded edit", files: ["docs/engineering-agent.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "human", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "One bounded edit", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "human", sql);
     const keys = [randomUUID(), randomUUID()];
-    const results = await Promise.allSettled(keys.map(key => storePrepareInitialAttempt(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision)));
+    const results = await Promise.allSettled(keys.map(key => prepareInitialSubject(task.id, task.version, key, "human", sql, readTestTargetSha, readTestPreimages, testSourceRevision)));
     assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
     assert.equal(results.filter(result => result.status === "rejected").length, 1);
     assert.equal((await sql`SELECT * FROM engineering_prepared_attempts WHERE task_id=${task.id}::uuid`).length, 1);
@@ -201,12 +346,12 @@ test("retry closure refuses a finished blocked run with unresolved provider rese
   process.env.ENGINEERING_WORKER_ENABLED = "true";
   const { db, sql } = await createTestSql();
   try {
-    const plan = { summary: "One bounded edit", files: ["docs/engineering-agent.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] };
+    const plan = { summary: "One bounded edit", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] };
     let task = await createTask("Blocked run reservation guard", "human", randomUUID(), sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "human", sql);
     task = await actOnTask(task.id, task.version, "plan", plan, "human", sql);
     task = await prepareInitialAttempt(task.id, task.version, "human", sql);
-    task = await actOnTask(task.id, task.version, "approve", null, "human", sql);
+    task = await approveAndAuthorize(task.id, task.version, "human", sql);
     const runId = (await sql`SELECT id FROM engineering_runs WHERE task_id=${task.id}::uuid`)[0].id as string;
     await sql`UPDATE engineering_runs SET finished_at=now(),disposition='blocked',reserved_tokens=1,reserved_micros=10 WHERE id=${runId}::uuid`;
     await sql`UPDATE engineering_tasks SET status='blocked',version=version+1 WHERE id=${task.id}::uuid`;
@@ -254,6 +399,7 @@ test("Postgres control plane enforces approval, versions, evidence cycles, and c
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
+     await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
     const adapter = async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
       return (await db.query(query, values)).rows;
@@ -262,21 +408,34 @@ test("Postgres control plane enforces approval, versions, evidence cycles, and c
     let task = await createTask("Fix isolated feature", "owner", "a5555555-5555-4555-8555-555555555555", sql);
     await assert.rejects(actOnTask(task.id, task.version, "transition", "implementing", "owner", sql));
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
-    task = await actOnTask(task.id, task.version, "plan", { summary: "Bounded fix", files: ["src/lib/demo.ts"], validations: ["typecheck", "lint"], operations: [] }, "owner", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "Bounded fix", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "owner", sql);
     task = await prepareInitialAttempt(task.id, task.version, "owner", sql);
     const approvalVersion = task.version;
+    const prepared = (await sql`SELECT attempt_id FROM engineering_prepared_attempts WHERE task_id=${task.id}::uuid`)[0] as { attempt_id: string };
     const approvals = await Promise.allSettled([
-      actOnTask(task.id, task.version, "approve", null, "owner", sql),
-      actOnTask(task.id, task.version, "approve", null, "owner", sql),
+      approvePreparedAttempt(task.id, task.version, prepared.attempt_id, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+      approvePreparedAttempt(task.id, task.version, prepared.attempt_id, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
     ]);
     assert.equal(approvals.filter(a => a.status === "fulfilled").length, 1);
     assert.equal(approvals.filter(a => a.status === "rejected").length, 1);
     task = (await taskHistory(task.id, sql)).task!;
-    await assert.rejects(actOnTask(task.id, approvalVersion, "approve", null, "owner", sql));
+    await assert.rejects(storeActOnTask(task.id, approvalVersion, "approve", null, "owner", sql), /separate actions/);
     let history = await taskHistory(task.id, sql);
     assert.equal(history.approvals.length, 1);
-    assert.equal(history.runs.length, 1);
+    assert.equal(history.runs.length, 0);
+    assert.equal(history.task!.status, "awaiting_execution");
+    assert.equal(history.task!.version, approvalVersion);
     assert.equal(history.events.length, 5);
+    assert.equal((await sql`SELECT * FROM engineering_run_lineage WHERE task_id=${task.id}::uuid`).length, 0);
+    await assert.rejects(db.query("SELECT engineering_worker($1::uuid,'claim','synthetic-worker',0,$2::jsonb)", [prepared.attempt_id, JSON.stringify({ preflightRevision: "e".repeat(40) })]));
+    await authorizePreparedExecution(task.id, approvalVersion, prepared.attempt_id, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision);
+    await sql`UPDATE engineering_runs SET worker_enabled=false WHERE id=${prepared.attempt_id}::uuid`;
+    task = (await taskHistory(task.id, sql)).task!;
+    assert.equal(task.status, "implementing");
+    assert.equal(task.version, approvalVersion + 1);
+    history = await taskHistory(task.id, sql);
+    assert.equal(history.runs.length, 1);
+    assert.equal(history.events.length, 6);
     task = await actOnTask(task.id, task.version, "transition", "validating", "owner", sql);
     await assert.rejects(actOnTask(task.id, task.version, "transition", "reviewing", "owner", sql));
     const evidence = { kind: "validation", command: "lint", outcome: "failed", revision: "a".repeat(40), summary: "Lint failure" };
@@ -318,12 +477,13 @@ test("successful validation can reach review, with no merge transition", async (
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
+     await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Small fix", "owner", "a6666666-6666-4666-8666-666666666666", sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
-    task = await actOnTask(task.id, task.version, "plan", { summary: "Fix", files: ["src/a.ts"], validations: ["lint"], operations: [] }, "owner", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "Fix", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "owner", sql);
     task = await prepareInitialAttempt(task.id, task.version, "owner", sql);
-    task = await actOnTask(task.id, task.version, "approve", null, "owner", sql);
+    task = await approveAndAuthorize(task.id, task.version, "owner", sql, false);
     const cost = { kind: "cost", provider: "test", model: "efficient", operation: "triage", tokens: 0, estimatedCostUsd: 0 };
     await assert.rejects(recordRunEvidence(task.id, task.version, { ...cost, tokens: 60001 }, "owner", sql));
     for (let call = 0; call < 12; call++) {
@@ -353,12 +513,13 @@ test("evidence audit events contain only allowlisted metadata, with detailed rec
     await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
+     await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Audit isolation", "owner", "a7777777-7777-4777-8777-777777777777", sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
-    task = await actOnTask(task.id, task.version, "plan", { summary: "Fix", files: ["src/a.ts"], validations: ["lint"], operations: [] }, "owner", sql);
+    task = await actOnTask(task.id, task.version, "plan", { summary: "Fix", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] }, "owner", sql);
     task = await prepareInitialAttempt(task.id, task.version, "owner", sql);
-    task = await actOnTask(task.id, task.version, "approve", null, "owner", sql);
+    task = await approveAndAuthorize(task.id, task.version, "owner", sql, false);
     task = await actOnTask(task.id, task.version, "transition", "validating", "owner", sql);
     const validationVersion = task.version;
     const unexpected = { secret: "unexpected-secret", nested: { privateData: "private" }, runId: "forged", cycle: 999, version: 999 };
@@ -386,21 +547,21 @@ test("expired execution is preserved and a same-request retry requires a fresh p
     const originalRequest = "Synthetic lifecycle request";
     const submissionKey = "a8888888-8888-4888-8888-888888888888";
     const prepareKey = "a9999999-9999-4999-8999-999999999999";
-    const plan = { summary: "A small documentation change", files: ["docs/engineering-agent.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] };
+    const plan = { summary: "A small documentation change", files: ["README.md"], validations: ["test", "lint", "typecheck", "build", "security:check", "test:engineering"], operations: [] };
     let task = await createTask(originalRequest, "human", submissionKey, sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "human", sql);
     task = await actOnTask(task.id, task.version, "plan", plan, "human", sql);
     const initialPlanVersion = task.version;
     task = await prepareInitialAttempt(task.id, task.version, "human", sql);
     const oldPlanVersion = initialPlanVersion;
-    task = await actOnTask(task.id, task.version, "approve", null, "human", sql);
+    task = await approveAndAuthorize(task.id, task.version, "human", sql);
     const firstHistory = await taskHistory(task.id, sql);
     const firstRun = firstHistory.runs[0];
     const firstRunId = String(firstRun.id);
     assert.equal(task.status, "implementing");
     assert.equal(task.version, 3);
 
-    await assert.rejects(prepareFreshAttempt(task.id, task.version, "a9999999-9999-4999-8999-999999999998", "human", sql), /not safely closed/);
+    await assert.rejects(prepareFreshAttempt(task.id, task.version, "a9999999-9999-4999-8999-999999999998", "human", sql), /not safely closed|not available for this request state/);
     assert.equal((await sql`SELECT finished_at FROM engineering_runs WHERE id=${String(firstHistory.runs[0].id)}::uuid`)[0].finished_at, null);
 
     await sql`UPDATE engineering_runs SET started_at=now()-interval '31 minutes',lease_owner='synthetic-worker',lease_epoch=7,lease_until=now()-interval '1 minute',preflight_revision=${"e".repeat(40)},worker_revision=${"b".repeat(40)},model_calls=1,tokens=23,cost_usd=0.001 WHERE id=${firstRunId}::uuid`;
@@ -462,8 +623,10 @@ test("expired execution is preserved and a same-request retry requires a fresh p
     assert.equal(retryReplay.replayed, true);
     assert.equal(retryReplay.attemptId, retrySubject.attemptId);
     await assert.rejects(prepareRetryAttemptSubject(task.id, task.version, retryKeys[winnerIndex], "human", sql, async () => "b".repeat(40)), /Task changed|different request|retry subject/i);
-    await assert.rejects(storeActOnTask(task.id, task.version, "approve", null, "human", sql, readTestTargetSha, readTestPreimages, async () => "b".repeat(40)), /implementation source changed/);
-    task = await storeActOnTask(task.id, task.version, "approve", null, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40));
+    await assert.rejects(approvePreparedAttempt(task.id, task.version, retrySubject.attemptId, "human", sql, readTestTargetSha, readTestPreimages, async () => "b".repeat(40)), /implementation source changed/);
+    await approvePreparedAttempt(task.id, task.version, retrySubject.attemptId, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40));
+    await authorizePreparedExecution(task.id, task.version, retrySubject.attemptId, "human", sql, readTestTargetSha, readTestPreimages, async () => "f".repeat(40));
+    task = (await taskHistory(task.id, sql)).task!;
     const history = await taskHistory(task.id, sql);
     assert.equal(history.task!.request, originalRequest);
     assert.equal(task.status, "implementing");
