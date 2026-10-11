@@ -57,7 +57,11 @@ export function MarketingNotificationBell() {
         ) : null}
       </button>
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-brand-brown/15 bg-white p-3 shadow-xl">
+        <div
+          className="fixed inset-x-3 top-[5.5rem] z-50 w-auto max-w-none rounded-2xl border border-brand-brown/15 bg-white p-3 shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(24rem,calc(100vw-2rem))]"
+          role="dialog"
+          aria-label="Recent notifications"
+        >
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-xs font-bold uppercase tracking-wide text-brand-green-deep">
               Recent
@@ -70,7 +74,7 @@ export function MarketingNotificationBell() {
               Settings
             </Link>
           </div>
-          <ul className="max-h-80 space-y-2 overflow-y-auto">
+          <ul className="max-h-[min(20rem,60vh)] space-y-2 overflow-y-auto overflow-x-hidden overscroll-contain sm:max-h-80">
             {items.length ? (
               items.slice(0, 8).map((item) => (
                 <li
@@ -79,13 +83,13 @@ export function MarketingNotificationBell() {
                     item.readAt ? "border-brand-brown/10" : "border-brand-gold/40 bg-brand-gold/10"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-bold text-brand-navy">{item.title}</p>
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1 break-words font-bold text-brand-navy">{item.title}</p>
                     <span className="text-[10px] font-bold uppercase text-brand-charcoal/50">
                       {item.severity}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-brand-charcoal/75 line-clamp-2">{item.body}</p>
+                  <p className="mt-1 break-words text-xs text-brand-charcoal/75 line-clamp-2">{item.body}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Link
                       href={item.destination}

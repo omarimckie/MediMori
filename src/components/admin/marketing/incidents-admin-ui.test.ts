@@ -65,6 +65,13 @@ describe("Phase III-A3 incident admin UI", () => {
     assert.ok(incidentsIndex < notificationsIndex);
   });
 
+  it("notification bell panel uses viewport-safe positioning on small screens", () => {
+    const bell = readComponent("src/components/admin/marketing/MarketingNotificationBell.tsx");
+    assert.match(bell, /fixed inset-x-3/);
+    assert.match(bell, /sm:absolute sm:inset-x-auto sm:right-0/);
+    assert.match(bell, /overflow-x-hidden/);
+  });
+
   it("notifications UI links View incident when relatedIncidentId is present", () => {
     const client = readComponent("src/components/admin/marketing/NotificationsClient.tsx");
     const bell = readComponent("src/components/admin/marketing/MarketingNotificationBell.tsx");
