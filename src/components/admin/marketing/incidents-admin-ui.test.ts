@@ -72,6 +72,13 @@ describe("Phase III-A3 incident admin UI", () => {
     assert.match(bell, /overflow-x-hidden/);
   });
 
+  it("notification bell dismisses on outside interaction and Escape", () => {
+    const bell = readComponent("src/components/admin/marketing/MarketingNotificationBell.tsx");
+    assert.match(bell, /bindMarketingNotificationBellDismissListeners/);
+    assert.match(bell, /shouldDismissNotificationPanel/);
+    assert.match(bell, /aria-haspopup="dialog"/);
+  });
+
   it("notifications UI links View incident when relatedIncidentId is present", () => {
     const client = readComponent("src/components/admin/marketing/NotificationsClient.tsx");
     const bell = readComponent("src/components/admin/marketing/MarketingNotificationBell.tsx");

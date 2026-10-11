@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type NotificationRow = {
   id: string;
@@ -14,10 +14,54 @@ type NotificationRow = {
   relatedIncidentId: string | null;
 };
 
+function isDomNode(target: EventTarget | null): target is Node {
+  return (
+    target !== null &&
+    typeof target === "object" &&
+    "nodeType" in target &&
+    typeof (target as Node).nodeType === "number"
+  );
+}
+
+export function shouldDismissNotificationPanel(
+  root: HTMLElement,
+  target: EventTarget | null,
+): boolean {
+  if (!isDomNode(target)) {
+    return false;
+  }
+  return !root.contains(target);
+}
+
+export function bindMarketingNotificationBellDismissListeners(
+  root: HTMLElement,
+  onDismiss: () => void,
+): () => void {
+  const handlePointerDown = (event: PointerEvent) => {
+    if (shouldDismissNotificationPanel(root, event.target)) {
+      onDismiss();
+    }
+  };
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onDismiss();
+    }
+  };
+  document.addEventListener("pointerdown", handlePointerDown, true);
+  document.addEventListener("keydown", handleKeyDown);
+  return () => {
+    document.removeEventListener("pointerdown", handlePointerDown, true);
+    document.removeEventListener("keydown", handleKeyDown);
+  };
+}
+
 export function MarketingNotificationBell() {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<NotificationRow[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const closePanel = useCallback(() => setOpen(false), []);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/marketing/notifications");
@@ -36,17 +80,25 @@ export function MarketingNotificationBell() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (!open) return;
+    const root = rootRef.current;
+    if (!root) return;
+    return bindMarketingNotificationBellDismissListeners(root, closePanel);
+  }, [open, closePanel]);
+
   async function markRead(id: string) {
     await fetch(`/api/admin/marketing/notifications/${id}/read`, { method: "POST" });
     await load();
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
         type="button"
         className="relative inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-3 text-sm font-bold text-brand-charcoal hover:bg-cream-deep"
         aria-expanded={open}
+        aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
       >
         Notifications
