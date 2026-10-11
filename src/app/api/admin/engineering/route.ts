@@ -1,7 +1,7 @@
 import { getAuthenticatedAdminUsername } from "@/lib/admin-auth";
 import { EngineeringInputError, limits, modelPolicy, protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { workerLimits } from "@/lib/engineering/worker-policy";
-import { actOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
+import { actOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, supersedeStalePreparedAttempt, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
 import { getSql } from "@/lib/db";
 import { readApprovedTargetBaseSha, readWorkerTargetBaseSha } from "@/lib/engineering/merge-target";
 
@@ -81,11 +81,12 @@ function safeTask(task: Record<string, unknown>) {
     preparedAttempt: preparedAttempt
       && typeof preparedAttempt.attemptId === "string" && uuid.test(preparedAttempt.attemptId)
       && Number.isSafeInteger(preparedAttempt.attemptNumber) && Number(preparedAttempt.attemptNumber) > 0
+      && Number.isSafeInteger(preparedAttempt.subjectGeneration) && Number(preparedAttempt.subjectGeneration) > 0
       && Number.isSafeInteger(preparedAttempt.planVersion) && Number(preparedAttempt.planVersion) >= 0
       && preparedAttempt.targetRepository === "omarimckie/MediMori" && preparedAttempt.targetBranch === "main"
       && typeof preparedAttempt.targetBaseSha === "string" && /^[a-f0-9]{40}$/.test(preparedAttempt.targetBaseSha)
       && typeof preparedAttempt.implementationSourceRevision === "string" && /^[a-f0-9]{40}$/.test(preparedAttempt.implementationSourceRevision) ? {
-        attemptId: preparedAttempt.attemptId, attemptNumber: preparedAttempt.attemptNumber, planVersion: preparedAttempt.planVersion,
+        attemptId: preparedAttempt.attemptId, attemptNumber: preparedAttempt.attemptNumber, subjectGeneration: preparedAttempt.subjectGeneration, planVersion: preparedAttempt.planVersion,
         risk: typeof preparedAttempt.risk === "string" ? preparedAttempt.risk : "unknown",
         targetRepository: preparedAttempt.targetRepository, targetBranch: preparedAttempt.targetBranch,
         targetBaseSha: preparedAttempt.targetBaseSha, implementationSourceRevision: preparedAttempt.implementationSourceRevision,
@@ -214,6 +215,14 @@ export async function POST(request: Request) {
       if (typeof body.submissionKey !== "string" || body.submissionKey.length > 36 || !taskSubmissionKeyPattern.test(body.submissionKey)) throw new EngineeringInputError("A valid task submission key is required.");
       const task = await createTask(body.request, actor, body.submissionKey);
       return Response.json({ task }, { status: 200, headers: { "Cache-Control": "no-store" } });
+    }
+    if (body.action === "supersede_prepared_subject") {
+      if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 ||
+          typeof body.stalePreparedSubjectId !== "string" || !uuid.test(body.stalePreparedSubjectId) ||
+          typeof body.idempotencyKey !== "string" || body.idempotencyKey.length > 36 || !taskSubmissionKeyPattern.test(body.idempotencyKey)) {
+        throw new EngineeringInputError("Task version, stale prepared-subject ID, and valid idempotency key are required.");
+      }
+      return Response.json({ supersession: await supersedeStalePreparedAttempt(body.id, Number(body.version), body.stalePreparedSubjectId, body.idempotencyKey, actor) }, { headers: { "Cache-Control": "no-store" } });
     }
     if (body.action === "prepare_attempt") {
       if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 || typeof body.attemptKey !== "string" || !taskSubmissionKeyPattern.test(body.attemptKey)) {

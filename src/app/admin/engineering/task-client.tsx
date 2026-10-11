@@ -31,6 +31,7 @@ export function EngineeringClient() {
   const submission = useRef(new TaskSubmissionController<Task>());
   const prepareKeys = useRef(new Map<string, string>());
   const mergeDecisionKeys = useRef(new Map<string, string>());
+  const supersessionKeys = useRef(new Map<string, string>());
   const actionInFlight = useRef(false);
   async function load() {
     const response = await fetch("/api/admin/engineering", { cache: "no-store" });
@@ -99,6 +100,20 @@ export function EngineeringClient() {
     if (success) {
       prepareKeys.current.delete(slot);
       setPreparationNotice(`Attempt #${attemptNumber} is bound to its fresh plan, target, and implementation source. Review the complete subject before approving execution.`);
+    }
+    setPreparingTaskId("");
+  }
+  async function supersedePreparedSubject(task: Task) {
+    const subject = task.preparedAttempt;
+    if (!subject || actionInFlight.current) return;
+    const slot = `${task.id}:${task.version}:${subject.attemptId}`;
+    const idempotencyKey = supersessionKeys.current.get(slot) ?? crypto.randomUUID();
+    supersessionKeys.current.set(slot, idempotencyKey);
+    setPreparationNotice(""); setPreparingTaskId(task.id);
+    const success = await act({ id: task.id, version: task.version, action: "supersede_prepared_subject", stalePreparedSubjectId: subject.attemptId, idempotencyKey });
+    if (success) {
+      supersessionKeys.current.delete(slot);
+      setPreparationNotice(`The stale Attempt #${subject.attemptNumber} subject is preserved as history. A fresh generation is awaiting approval; no approval or execution was created.`);
     }
     setPreparingTaskId("");
   }
@@ -239,8 +254,9 @@ export function EngineeringClient() {
         <h3 className="font-semibold">Human plan approval required</h3>
         <p>Request <code>{task.id}</code> · task version {task.version} · {task.risk} risk · files {task.plan?.files.join(", ")}</p>
         {!task.preparedAttempt && <p role="alert">No complete plan, target, and implementation-source binding exists. Approval is blocked until the attempt is prepared.</p>}
-        {task.preparedAttempt && <><p>Prepared Attempt #{task.preparedAttempt.attemptNumber} · identity <code>{task.preparedAttempt.attemptId}</code> · bound plan version {task.preparedAttempt.planVersion} · {task.preparedAttempt.risk} risk</p><p>Target revision — {task.preparedAttempt.targetRepository} · {task.preparedAttempt.targetBranch} · base SHA <code>{task.preparedAttempt.targetBaseSha}</code></p><p>Implementation source revision — <code>{task.preparedAttempt.implementationSourceRevision}</code></p><p>Current target SHA: <code>{planTarget?.baseSha ?? "loading"}</code></p></>}
+        {task.preparedAttempt && <><p>Prepared Attempt #{task.preparedAttempt.attemptNumber} · generation {task.preparedAttempt.subjectGeneration} · identity <code>{task.preparedAttempt.attemptId}</code> · bound plan version {task.preparedAttempt.planVersion} · {task.preparedAttempt.risk} risk</p><p>Target revision — {task.preparedAttempt.targetRepository} · {task.preparedAttempt.targetBranch} · base SHA <code>{task.preparedAttempt.targetBaseSha}</code></p><p>Implementation source revision — <code>{task.preparedAttempt.implementationSourceRevision}</code></p><p>Current target SHA: <code>{planTarget?.baseSha ?? "loading"}</code></p></>}
         {task.preparedAttempt && planTarget && planTarget.baseSha !== task.preparedAttempt.targetBaseSha && <p role="alert">The target has changed since preparation. This approval is blocked; prepare a fresh target-bound plan.</p>}
+        {task.preparedAttempt && planTarget && planTarget.baseSha !== task.preparedAttempt.targetBaseSha && task.preparedAttempt.attemptNumber === 2 && task.preparedAttempt.subjectGeneration === 1 && <div className="space-y-1"><p>The current target differs from this unapproved Attempt #2 subject. Superseding preserves its immutable history and prepares a fresh target/source binding for plan version {task.version + 1}; this will not approve or execute it.</p><button type="button" disabled={busy || preparingTaskId === task.id} onClick={() => void supersedePreparedSubject(task)}>{preparingTaskId === task.id ? "Preparing fresh subject…" : "Prepare fresh Attempt #2 subject"}</button></div>}
         {targetError && <p role="alert">Approval is blocked: {targetError}</p>}
         {!targetError && !planTarget && <p role="status">Loading the current target to confirm the prepared binding remains fresh.</p>}
         <div className="flex gap-4"><button type="button" disabled={busy || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version} onClick={() => task.preparedAttempt && void act({ id: task.id, version: task.version, action: "approve", preparedAttemptId: task.preparedAttempt.attemptId, targetBaseSha: task.preparedAttempt.targetBaseSha })}>Approve this prepared plan, target, and source</button>
@@ -250,7 +266,7 @@ export function EngineeringClient() {
       {task.status === "awaiting_execution" && <section className="space-y-2 rounded border border-blue-300 bg-blue-50 p-3">
         <h3 className="font-semibold">Plan approved — execution authorization required</h3>
         <p role="status">Approval is recorded for this prepared subject. No run exists and no worker has started.</p>
-        <p>Prepared Attempt #{task.preparedAttempt?.attemptNumber ?? "unavailable"} · identity <code>{task.preparedAttempt?.attemptId ?? "unavailable"}</code> · plan version {task.preparedAttempt?.planVersion ?? "unavailable"} · {task.preparedAttempt?.risk ?? "unknown"} risk</p>
+        <p>Prepared Attempt #{task.preparedAttempt?.attemptNumber ?? "unavailable"} · generation {task.preparedAttempt?.subjectGeneration ?? "unavailable"} · identity <code>{task.preparedAttempt?.attemptId ?? "unavailable"}</code> · plan version {task.preparedAttempt?.planVersion ?? "unavailable"} · {task.preparedAttempt?.risk ?? "unknown"} risk</p>
         <p>Approved file scope: {task.plan?.files.join(", ") || "unavailable"} · required checks: {task.plan?.validations.join(", ") || "unavailable"} · protected operations: {task.plan?.operations.join(", ") || "None declared"}</p>
         <p>Target — {task.preparedAttempt?.targetRepository ?? "unavailable"} · {task.preparedAttempt?.targetBranch ?? "unavailable"} · base SHA <code>{task.preparedAttempt?.targetBaseSha ?? "unavailable"}</code></p>
         <p>Implementation source revision — <code>{task.preparedAttempt?.implementationSourceRevision ?? "unavailable"}</code> · source-selection policy {task.preparedAttempt?.sourceSelectionPolicyVersion ?? "unavailable"}</p>

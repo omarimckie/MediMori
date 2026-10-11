@@ -7,7 +7,7 @@ import { readApprovedTargetBaseSha, readTargetPreimagesAtSha, readWorkerTargetBa
 import { deriveImplementationSourceRevision, SOURCE_SELECTION_POLICY_VERSION } from "./source-binding";
 
 export type MergeReview = { runId: string; attemptNumber: number; planVersion: number; resultingRevision: string; files: Array<{ path: string; beforeSha256: string; afterSha256: string }>; validations: string[]; passedValidations: string[]; passedValidationCount: number; selfReviewPassed: boolean; targetRepository: string; targetBranch: string; targetBaseSha: string | null; approvalId: string | null; approvalStatus: string };
-export type PreparedAttempt = { attemptId: string; attemptNumber: number; planVersion: number; risk: string; targetRepository: string; targetBranch: string; targetBaseSha: string; implementationSourceRevision: string; sourceSelectionPolicyVersion: number; createdAt?: string };
+export type PreparedAttempt = { attemptId: string; attemptNumber: number; subjectGeneration: number; planVersion: number; risk: string; targetRepository: string; targetBranch: string; targetBaseSha: string; implementationSourceRevision: string; sourceSelectionPolicyVersion: number; createdAt?: string };
 export type Task = { id: string; request: string; status: Status; plan: Plan | null; risk: string | null; version: number; created_by: string; attempts?: ExecutionAttempt[]; latestPreparation?: { previousAttemptNumber: number; toVersion: number } | null; preparedAttempt?: PreparedAttempt | null; mergeReview?: MergeReview | null };
 export type ExecutionAttempt = { id: string; attemptNumber: number; planVersion: number; startedAt: string; finishedAt: string | null; disposition: string; modelCalls: number; tokens: number; costUsd: string };
 export type AttemptPreparation = { idempotency_key: string; previous_run_id: string; previous_attempt_number: number; previous_disposition: string; from_version: number; to_version: number; created_at: string };
@@ -22,7 +22,7 @@ export async function listTasks(database = getSql()) {
     COALESCE((SELECT json_agg(json_build_object('id',a.id,'attemptNumber',a.attempt_number_display,'planVersion',a.plan_version,'startedAt',a.started_at,'finishedAt',a.finished_at,'disposition',CASE WHEN a.finished_at IS NULL AND a.started_at<=now()-interval '30 minutes' AND COALESCE(a.disposition,'active')='active' THEN 'expired' WHEN a.disposition IS NOT NULL THEN a.disposition WHEN a.finished_at IS NULL THEN 'active' WHEN t.status IN ('blocked','cancelled') THEN t.status ELSE 'closed_legacy' END,'modelCalls',a.model_calls,'tokens',a.tokens,'costUsd',a.cost_usd) ORDER BY a.attempt_number_display DESC)
       FROM (SELECT r.*,COALESCE(r.attempt_number,row_number() OVER (PARTITION BY r.task_id ORDER BY r.started_at,r.id)::integer) AS attempt_number_display FROM engineering_runs r WHERE r.task_id=t.id) a),'[]'::json) AS attempts,
     (SELECT json_build_object('previousAttemptNumber',p.previous_attempt_number,'toVersion',p.to_version) FROM engineering_attempt_preparations p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS "latestPreparation",
-    (SELECT json_build_object('attemptId',p.attempt_id,'attemptNumber',p.attempt_number,'planVersion',p.plan_version,'risk',p.risk,'targetRepository',p.target_repository,'targetBranch',p.target_branch,'targetBaseSha',p.target_base_sha,'implementationSourceRevision',p.implementation_source_revision,'sourceSelectionPolicyVersion',p.source_selection_policy_version,'createdAt',p.created_at) FROM engineering_prepared_attempts p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS "preparedAttempt"
+    (SELECT json_build_object('attemptId',p.attempt_id,'attemptNumber',p.attempt_number,'subjectGeneration',p.subject_generation,'planVersion',p.plan_version,'risk',p.risk,'targetRepository',p.target_repository,'targetBranch',p.target_branch,'targetBaseSha',p.target_base_sha,'implementationSourceRevision',p.implementation_source_revision,'sourceSelectionPolicyVersion',p.source_selection_policy_version,'createdAt',p.created_at) FROM engineering_prepared_attempts p JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.state='active' WHERE p.task_id=t.id ORDER BY p.attempt_number DESC,p.subject_generation DESC LIMIT 1) AS "preparedAttempt"
     FROM engineering_tasks t ORDER BY t.created_at DESC LIMIT 100` as Task[];
   const mergeCandidates = tasks.filter(task => ["awaiting_merge", "merging", "completed"].includes(task.status));
   if (!mergeCandidates.length) return tasks;
@@ -188,7 +188,7 @@ export async function prepareRetryAttemptSubject(id: string, version: number, id
   if (!uuidPattern.test(id) || !Number.isSafeInteger(version) || version < 0 || !taskSubmissionKeyPattern.test(idempotencyKey) || !actor.trim() || actor.length > 120) throw new EngineeringInputError("A valid task version and retry-subject key are required.");
   const history = await taskHistory(id, database);
   const task = history.task;
-  const existing = await database`SELECT * FROM engineering_prepared_attempts WHERE idempotency_key=${idempotencyKey}::uuid`;
+  const existing = await database`SELECT p.* FROM engineering_prepared_attempts p JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.state='active' WHERE p.idempotency_key=${idempotencyKey}::uuid`;
   const replay = existing[0] as Record<string, unknown> | undefined;
   if (!task || !task.plan || !task.risk || (replay
     ? task.version < version || Number(replay.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION || Number(replay.plan_version) !== version || replay.request_snapshot !== task.request || JSON.stringify(replay.plan_snapshot) !== JSON.stringify(task.plan) || replay.risk !== task.risk
@@ -213,6 +213,86 @@ export async function prepareRetryAttemptSubject(id: string, version: number, id
   return result;
 }
 
+/** Replaces only an unapproved stale Attempt #2 subject with a fresh immutable generation. */
+export async function supersedeStalePreparedAttempt(
+  id: string, version: number, staleAttemptId: string, idempotencyKey: string, actor: string,
+  database = getSql(), targetReader = readWorkerTargetBaseSha, preimageReader = readTargetPreimagesAtSha,
+  sourceReader = deriveImplementationSourceRevision,
+) {
+  requireEngineeringEnabled();
+  assertHumanActor(actor);
+  if (!uuidPattern.test(id) || !uuidPattern.test(staleAttemptId) || !Number.isSafeInteger(version) || version < 0 ||
+      !taskSubmissionKeyPattern.test(idempotencyKey)) throw new EngineeringInputError("A valid task version, stale subject ID, and bounded idempotency key are required.");
+
+  const prior = await database`SELECT s.task_id,s.expected_task_version,s.stale_attempt_id,s.actor,p.attempt_id,p.attempt_number,p.subject_generation,p.plan_version,
+      p.target_repository,p.target_branch,p.target_base_sha,p.implementation_source_revision,p.source_selection_policy_version
+    FROM engineering_prepared_subject_supersessions s JOIN engineering_prepared_attempts p ON p.attempt_id=s.replacement_attempt_id
+    WHERE s.idempotency_key=${idempotencyKey}::uuid`;
+  const replay = prior[0] as Record<string, unknown> | undefined;
+  if (replay) {
+    if (replay.task_id !== id || Number(replay.expected_task_version) !== version || replay.stale_attempt_id !== staleAttemptId || replay.actor !== actor) {
+      throw new EngineeringConflict("This supersession key is already bound to a different request.");
+    }
+    return { ok: true, replayed: true, attemptId: String(replay.attempt_id), attemptNumber: Number(replay.attempt_number),
+      subjectGeneration: Number(replay.subject_generation), planVersion: Number(replay.plan_version), targetRepository: String(replay.target_repository),
+      targetBranch: String(replay.target_branch), targetBaseSha: String(replay.target_base_sha),
+      implementationSourceRevision: String(replay.implementation_source_revision),
+      sourceSelectionPolicyVersion: Number(replay.source_selection_policy_version) };
+  }
+
+  const history = await taskHistory(id, database);
+  const task = history.task;
+  if (!task || task.version !== version || task.status !== "awaiting_approval" || !task.plan || !task.risk) {
+    throw new EngineeringConflict("The task changed or is not awaiting approval for this prepared subject.");
+  }
+  const plan = assertMvpApprovalPlan(task.plan, task.risk);
+  const subjects = await database`SELECT p.*,g.state AS generation_state FROM engineering_prepared_attempts p
+    JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.task_id=p.task_id
+      AND g.attempt_number=p.attempt_number AND g.subject_generation=p.subject_generation
+    WHERE p.attempt_id=${staleAttemptId}::uuid AND p.task_id=${id}::uuid`;
+  const stale = subjects[0] as Record<string, unknown> | undefined;
+  if (!stale || stale.generation_state !== "active" || Number(stale.attempt_number) !== 2 || Number(stale.subject_generation) !== 1 ||
+      Number(stale.plan_version) !== version || stableJson(stale.plan_snapshot) !== stableJson(plan) || stale.risk !== task.risk ||
+      stale.request_snapshot !== task.request || Number(stale.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION) {
+    throw new EngineeringConflict("The specified stale Attempt #2 subject is not the current active generation.");
+  }
+  if (history.approvals.some(row => row.prepared_attempt_id === staleAttemptId && row.gate === "plan") ||
+      history.runs.some(row => Number(row.attempt_number) === 2 || row.id === staleAttemptId)) {
+    throw new EngineeringConflict("An approved or executed subject cannot be superseded.");
+  }
+
+  // Resolve and repeat the external snapshots immediately before mutation. Neon
+  // cannot lock GitHub or the source checkout; later approval/execution checks
+  // independently revalidate both exact bindings.
+  const firstTarget = await targetReader();
+  const firstSource = await sourceReader();
+  const targetBaseSha = await targetReader();
+  const implementationSourceRevision = await sourceReader();
+  if (!/^[a-f0-9]{40}$/.test(targetBaseSha) || firstTarget !== targetBaseSha ||
+      !/^[a-f0-9]{40}$/.test(implementationSourceRevision) || firstSource !== implementationSourceRevision ||
+      stale.target_base_sha === targetBaseSha) {
+    throw new EngineeringConflict("The stale target or implementation-source snapshot changed during preparation; no replacement was recorded.");
+  }
+  const targetPreimages = await preimageReader(targetBaseSha, plan.files);
+  if (Object.keys(targetPreimages).length !== 1 || !/^[a-f0-9]{64}$/.test(targetPreimages["README.md"] ?? "")) {
+    throw new EngineeringInputError("The current README preimage could not be verified.");
+  }
+  const replacementAttemptId = randomUUID();
+  const rows = await database`SELECT engineering_prepare_subject_supersession(
+    ${id}::uuid,${version},${staleAttemptId}::uuid,${replacementAttemptId}::uuid,${idempotencyKey}::uuid,${actor},
+    ${mergeTargetPolicy.repository},${mergeTargetPolicy.branch},${targetBaseSha},${JSON.stringify(targetPreimages)}::jsonb,
+    ${implementationSourceRevision},${SOURCE_SELECTION_POLICY_VERSION}::smallint) AS result`;
+  const result = rows[0]?.result as Record<string, unknown> | undefined;
+  if (result?.ok !== true) {
+    const code = typeof result?.code === "string" ? result.code : "supersession_failed";
+    if (["stale_version","stale_subject_mismatch","subject_not_supersedable","execution_activity_exists","idempotency_conflict","target_is_not_stale"].includes(code)) {
+      throw new EngineeringConflict("Prepared subject could not be superseded because its state or binding changed.");
+    }
+    throw new EngineeringInputError("Prepared-subject supersession is not available for this request state.");
+  }
+  return result;
+}
+
 /** Binds attempt #1 to the exact plan and target before the human approval decision. */
 export async function prepareInitialAttempt(id: string, version: number, idempotencyKey: string, actor: string, database = getSql(), targetReader = readWorkerTargetBaseSha, preimageReader = readTargetPreimagesAtSha, sourceReader = deriveImplementationSourceRevision) {
   requireEngineeringEnabled();
@@ -221,7 +301,7 @@ export async function prepareInitialAttempt(id: string, version: number, idempot
   }
   const history = await taskHistory(id, database);
   const task = history.task;
-  const prior = await database`SELECT attempt_id,task_id,attempt_number,plan_version,actor,request_snapshot,plan_snapshot,risk,target_repository,target_branch,target_base_sha,target_preimages,implementation_source_revision,source_selection_policy_version FROM engineering_prepared_attempts WHERE idempotency_key=${idempotencyKey}::uuid`;
+  const prior = await database`SELECT p.attempt_id,p.task_id,p.attempt_number,p.plan_version,p.actor,p.request_snapshot,p.plan_snapshot,p.risk,p.target_repository,p.target_branch,p.target_base_sha,p.target_preimages,p.implementation_source_revision,p.source_selection_policy_version FROM engineering_prepared_attempts p JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.state='active' WHERE p.idempotency_key=${idempotencyKey}::uuid`;
   const priorRow = (prior[0] as Record<string, unknown> | undefined);
   if (!task || !task.plan || !task.risk || (priorRow ? task.version < version : task.version !== version || !["planned", "awaiting_approval"].includes(task.status))) throw new EngineeringConflict("Task changed or is not ready for initial-attempt preparation.");
   if (!priorRow && (history.runs.length || history.approvals.some(row => row.gate === "plan" && row.decision === "approved"))) throw new EngineeringInputError("Initial-attempt preparation is only available before the first run and approval.");
@@ -286,12 +366,12 @@ async function verifyPreparedApprovalSubject(
   if (!uuidPattern.test(id) || !uuidPattern.test(preparedAttemptId)) throw new EngineeringInputError("Task and prepared-subject IDs must be valid.");
   const [taskRows, subjectRows] = await Promise.all([
     database`SELECT * FROM engineering_tasks WHERE id=${id}::uuid`,
-    database`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${preparedAttemptId}::uuid AND task_id=${id}::uuid`,
+    database`SELECT p.*,g.state AS generation_state FROM engineering_prepared_attempts p JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.task_id=p.task_id AND g.attempt_number=p.attempt_number AND g.subject_generation=p.subject_generation WHERE p.attempt_id=${preparedAttemptId}::uuid AND p.task_id=${id}::uuid`,
   ]);
   const task = taskRows[0] as Task | undefined;
   const subject = subjectRows[0] as Record<string, unknown> | undefined;
   if (!task || task.version !== version || task.status !== requiredStatus) throw new EngineeringConflict("Task changed or is not at the required approval/execution state.");
-  if (!task.plan || !task.risk || !subject || Number(subject.plan_version) !== version || subject.request_snapshot !== task.request ||
+  if (!task.plan || !task.risk || !subject || subject.generation_state !== "active" || Number(subject.plan_version) !== version || subject.request_snapshot !== task.request ||
       stableJson(subject.plan_snapshot) !== stableJson(task.plan) || subject.risk !== task.risk ||
       Number(subject.source_selection_policy_version) !== SOURCE_SELECTION_POLICY_VERSION ||
       subject.target_repository !== mergeTargetPolicy.repository || subject.target_branch !== mergeTargetPolicy.branch ||
@@ -339,7 +419,8 @@ export async function approvePreparedAttempt(
           AND p.plan_version=${version} AND p.request_snapshot=t.request AND p.plan_snapshot=t.plan AND p.risk=t.risk
           AND p.target_repository=${mergeTargetPolicy.repository} AND p.target_branch=${mergeTargetPolicy.branch}
           AND p.target_base_sha=${verified.targetSha} AND p.implementation_source_revision=${String(verified.subject.implementation_source_revision)}
-          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION})
+          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION}
+          AND EXISTS (SELECT 1 FROM engineering_prepared_subject_generations g WHERE g.attempt_id=p.attempt_id AND g.task_id=p.task_id AND g.attempt_number=p.attempt_number AND g.subject_generation=p.subject_generation AND g.state='active'))
         AND NOT EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.task_id=t.id AND a.plan_version=${version} AND a.gate='plan' AND a.decision='approved')
         AND NOT EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.prepared_attempt_id=${preparedAttemptId}::uuid AND a.gate='plan')
         AND NOT EXISTS (SELECT 1 FROM engineering_runs r WHERE r.id=${preparedAttemptId}::uuid OR (r.task_id=t.id AND r.finished_at IS NULL))
@@ -374,7 +455,8 @@ export async function authorizePreparedExecution(
           AND p.plan_version=${version} AND p.request_snapshot=t.request AND p.plan_snapshot=t.plan AND p.risk=t.risk
           AND p.target_repository=${mergeTargetPolicy.repository} AND p.target_branch=${mergeTargetPolicy.branch}
           AND p.target_base_sha=${verified.targetSha} AND p.implementation_source_revision=${String(verified.subject.implementation_source_revision)}
-          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION})
+          AND p.source_selection_policy_version=${SOURCE_SELECTION_POLICY_VERSION}
+          AND EXISTS (SELECT 1 FROM engineering_prepared_subject_generations g WHERE g.attempt_id=p.attempt_id AND g.task_id=p.task_id AND g.attempt_number=p.attempt_number AND g.subject_generation=p.subject_generation AND g.state='active'))
         AND EXISTS (SELECT 1 FROM engineering_approvals a WHERE a.prepared_attempt_id=${preparedAttemptId}::uuid
           AND a.task_id=t.id AND a.plan_version=${version} AND a.gate='plan' AND a.decision='approved' AND a.actor NOT LIKE 'worker:%')
         AND NOT EXISTS (SELECT 1 FROM engineering_runs r WHERE r.id=${preparedAttemptId}::uuid OR (r.task_id=t.id AND r.finished_at IS NULL))

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
 import { validationCommands } from "./policy";
-import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution as storeAuthorizePreparedExecution, createTask, listTasks, prepareFreshAttempt as storePrepareFreshAttempt, prepareInitialAttempt as storePrepareInitialAttempt, prepareRetryAttemptSubject as storePrepareRetryAttemptSubject, recordRunEvidence, taskHistory } from "./store";
+import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution as storeAuthorizePreparedExecution, createTask, listTasks, prepareFreshAttempt as storePrepareFreshAttempt, prepareInitialAttempt as storePrepareInitialAttempt, prepareRetryAttemptSubject as storePrepareRetryAttemptSubject, supersedeStalePreparedAttempt, recordRunEvidence, taskHistory } from "./store";
 
 const testTargetSha = "c".repeat(40);
 const testSourceRevision = async () => "e".repeat(40);
@@ -39,6 +39,7 @@ async function createTestSql() {
   await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-prepared-subject-supersession.sql", import.meta.url), "utf8"));
   const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
   return { db, sql };
 }
@@ -400,6 +401,7 @@ test("Postgres control plane enforces approval, versions, evidence cycles, and c
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
      await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-prepared-subject-supersession.sql", import.meta.url), "utf8"));
     const adapter = async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
       return (await db.query(query, values)).rows;
@@ -478,6 +480,7 @@ test("successful validation can reach review, with no merge transition", async (
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
      await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-prepared-subject-supersession.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Small fix", "owner", "a6666666-6666-4666-8666-666666666666", sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
@@ -514,6 +517,7 @@ test("evidence audit events contain only allowlisted metadata, with detailed rec
     await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url), "utf8"));
     await db.exec(await readFile(new URL("../../../sql/engineering-merge.sql", import.meta.url), "utf8"));
      await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-prepared-subject-supersession.sql", import.meta.url), "utf8"));
     const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, ""), values)).rows) as unknown as ReturnType<typeof getSql>;
     let task = await createTask("Audit isolation", "owner", "a7777777-7777-4777-8777-777777777777", sql);
     task = await actOnTask(task.id, task.version, "transition", "analyzing", "owner", sql);
@@ -675,4 +679,165 @@ test("attempt preparation stays human-only and preserves the restricted worker d
     `);
     assert.deepEqual(result.rows[0], { preparation_public: false, preparation_worker: false, worker_ingress_worker: true, task_update: false, approval_update: false });
   } finally { await db.close(); }
+});
+
+
+async function createSupersessionFixture(sql: ReturnType<typeof getSql>) {
+  const plan = { summary: "Clarify README source path", files: ["README.md"], validations: [...validationCommands], operations: [] };
+  const task = await createTask("Clarify README page source", "owner", randomUUID(), sql);
+  await sql`UPDATE engineering_tasks SET status='awaiting_approval',version=5,plan=${JSON.stringify(plan)}::jsonb,risk='low' WHERE id=${task.id}::uuid`;
+  const previousRunId = randomUUID();
+  const preparationKey = randomUUID();
+  const staleAttemptId = randomUUID();
+  const staleTarget = "a".repeat(40);
+  await sql`INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition,started_at,finished_at,reserved_tokens,reserved_micros)
+    VALUES(${previousRunId}::uuid,${task.id}::uuid,3,false,1,${JSON.stringify(plan)}::jsonb,'expired',now()-interval '2 hours',now()-interval '90 minutes',0,0)`;
+  await sql`INSERT INTO engineering_attempt_preparations(idempotency_key,task_id,previous_run_id,actor,from_version,to_version,previous_attempt_number,previous_disposition,previous_plan,previous_risk)
+    VALUES(${preparationKey}::uuid,${task.id}::uuid,${previousRunId}::uuid,'owner',3,4,1,'expired',${JSON.stringify(plan)}::jsonb,'low')`;
+  await sql`INSERT INTO engineering_prepared_attempts(attempt_id,task_id,attempt_number,subject_generation,plan_version,idempotency_key,actor,request_snapshot,plan_snapshot,risk,
+      target_repository,target_branch,target_base_sha,target_preimages,implementation_source_revision,source_selection_policy_version,previous_run_id,retry_preparation_key)
+    VALUES(${staleAttemptId}::uuid,${task.id}::uuid,2,1,5,${randomUUID()}::uuid,'owner','Clarify README page source',${JSON.stringify(plan)}::jsonb,'low',
+      'omarimckie/MediMori','main',${staleTarget},${JSON.stringify({ "README.md": "b".repeat(64) })}::jsonb,${"c".repeat(40)},2,${previousRunId}::uuid,${preparationKey}::uuid)`;
+  await sql`INSERT INTO engineering_plan_lineage(task_id,plan_version,target_repository,target_branch,target_base_sha)
+    VALUES(${task.id}::uuid,5,'omarimckie/MediMori','main',${staleTarget})`;
+  return { taskId: task.id, staleAttemptId, previousRunId, plan, staleTarget };
+}
+
+const readFreshSupersessionTarget = async () => "d".repeat(40);
+const readFreshSupersessionPreimages = async (_sha: string, paths: readonly string[]) => Object.fromEntries(paths.map(path => [path, "e".repeat(64)]));
+const readFreshSupersessionSource = async () => "f".repeat(40);
+
+test("stale unapproved Attempt #2 is superseded atomically by generation 2 without changing its immutable subject", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const fixture = await createSupersessionFixture(sql);
+    const oldBefore = (await sql`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${fixture.staleAttemptId}::uuid`)[0];
+    const key = "a5555555-5555-4555-8555-555555555555";
+    const [first, concurrentReplay] = await Promise.all([
+      supersedeStalePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, key, "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource),
+      supersedeStalePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, key, "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource),
+    ]);
+    assert.equal(first.attemptNumber, 2);
+    assert.equal(first.subjectGeneration, 2);
+    assert.equal(first.planVersion, 6);
+    assert.equal(first.replayed || concurrentReplay.replayed, true);
+    assert.equal(first.attemptId, concurrentReplay.attemptId);
+    const task = (await taskHistory(fixture.taskId, sql)).task!;
+    assert.equal(task.status, "awaiting_approval");
+    assert.equal(task.version, 6);
+    assert.deepEqual(task.plan, fixture.plan);
+    const oldAfter = (await sql`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${fixture.staleAttemptId}::uuid`)[0];
+    assert.deepEqual(oldAfter, oldBefore, "old P+T+S row remains byte-for-byte unchanged");
+    const generations = await sql`SELECT attempt_id,subject_generation,state,superseded_by_attempt_id,supersedes_attempt_id FROM engineering_prepared_subject_generations WHERE task_id=${fixture.taskId}::uuid AND attempt_number=2 ORDER BY subject_generation`;
+    assert.equal(generations.length, 2);
+    assert.equal(generations.filter(row => row.state === "active").length, 1);
+    assert.deepEqual(generations.map(row => row.state), ["superseded", "active"]);
+    assert.equal(generations[0].superseded_by_attempt_id, first.attemptId);
+    assert.equal(generations[1].supersedes_attempt_id, fixture.staleAttemptId);
+    const supersessions = await sql`SELECT * FROM engineering_prepared_subject_supersessions WHERE task_id=${fixture.taskId}::uuid`;
+    assert.equal(supersessions.length, 1, "same-key replay adds no duplicate supersession record");
+    assert.equal((await sql`SELECT * FROM engineering_events WHERE task_id=${fixture.taskId}::uuid AND action='prepared_subject_superseded'`).length, 1);
+    assert.equal((await sql`SELECT * FROM engineering_runs WHERE task_id=${fixture.taskId}::uuid AND attempt_number=2`).length, 0);
+    assert.equal((await sql`SELECT * FROM engineering_approvals WHERE task_id=${fixture.taskId}::uuid AND plan_version=6`).length, 0);
+    assert.equal((await sql`SELECT target_base_sha FROM engineering_plan_lineage WHERE task_id=${fixture.taskId}::uuid AND plan_version=6`)[0].target_base_sha, "d".repeat(40));
+    const listed = (await listTasks(sql)).find(item => item.id === fixture.taskId)!;
+    assert.equal(listed.preparedAttempt?.attemptId, first.attemptId, "UI lookup exposes active generation only");
+    assert.equal(listed.preparedAttempt?.subjectGeneration, 2);
+
+    await assert.rejects(approvePreparedAttempt(fixture.taskId, 6, fixture.staleAttemptId, "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    await assert.rejects(supersedeStalePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, key, "other-owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource), /different request/);
+    await assert.rejects(supersedeStalePreparedAttempt(fixture.taskId, 5, randomUUID(), "a6666666-6666-4666-8666-666666666666", "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    await assert.rejects(supersedeStalePreparedAttempt(fixture.taskId, 4, fixture.staleAttemptId, "a7777777-7777-4777-8777-777777777777", "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+
+    const replacement = (await sql`SELECT * FROM engineering_prepared_attempts WHERE attempt_id=${first.attemptId}::uuid`)[0];
+    assert.equal(replacement.plan_version, 6);
+    assert.equal(replacement.attempt_number, 2);
+    assert.equal(replacement.subject_generation, 2);
+    assert.deepEqual(replacement.plan_snapshot, fixture.plan);
+    assert.equal(replacement.target_base_sha, "d".repeat(40));
+    assert.equal(replacement.implementation_source_revision, "f".repeat(40));
+
+    await approvePreparedAttempt(fixture.taskId, 6, String(first.attemptId), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource);
+    await authorizePreparedExecution(fixture.taskId, 6, String(first.attemptId), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource);
+    assert.equal((await sql`SELECT id,attempt_number,plan_version FROM engineering_runs WHERE task_id=${fixture.taskId}::uuid AND attempt_number=2`)[0].id, first.attemptId);
+    assert.equal((await sql`SELECT engineering_run_lineage_valid(${first.attemptId}::uuid) AS valid`)[0].valid, true, "generation 2 approval and run lineage are valid");
+  } finally { await db.close(); delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED; }
+});
+
+test("supersession rejects approved or executed stale subjects and rolls back a late lineage constraint failure", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const approved = await createSupersessionFixture(sql);
+    await sql`INSERT INTO engineering_approvals(id,task_id,plan_version,prepared_attempt_id,gate,decision,actor)
+      VALUES(${randomUUID()}::uuid,${approved.taskId}::uuid,5,${approved.staleAttemptId}::uuid,'plan','rejected','owner')`;
+    await assert.rejects(supersedeStalePreparedAttempt(approved.taskId, 5, approved.staleAttemptId, randomUUID(), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    assert.equal((await sql`SELECT state FROM engineering_prepared_subject_generations WHERE attempt_id=${approved.staleAttemptId}::uuid`)[0].state, "active");
+
+    const executed = await createSupersessionFixture(sql);
+    await sql`INSERT INTO engineering_runs(id,task_id,plan_version,worker_enabled,attempt_number,plan_snapshot,disposition,started_at,reserved_tokens,reserved_micros)
+      VALUES(${randomUUID()}::uuid,${executed.taskId}::uuid,5,true,2,${JSON.stringify(executed.plan)}::jsonb,'active',now(),0,0)`;
+    await assert.rejects(supersedeStalePreparedAttempt(executed.taskId, 5, executed.staleAttemptId, randomUUID(), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_prepared_attempts WHERE task_id=${executed.taskId}::uuid AND subject_generation=2`)[0].count, 0);
+
+    const rollback = await createSupersessionFixture(sql);
+    await sql`INSERT INTO engineering_plan_lineage(task_id,plan_version,target_repository,target_branch,target_base_sha)
+      VALUES(${rollback.taskId}::uuid,6,'omarimckie/MediMori','main',${"9".repeat(40)})`;
+    await assert.rejects(supersedeStalePreparedAttempt(rollback.taskId, 5, rollback.staleAttemptId, randomUUID(), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    assert.equal((await sql`SELECT version,status FROM engineering_tasks WHERE id=${rollback.taskId}::uuid`)[0].version, 5);
+    assert.equal((await sql`SELECT state FROM engineering_prepared_subject_generations WHERE attempt_id=${rollback.staleAttemptId}::uuid`)[0].state, "active");
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_prepared_attempts WHERE task_id=${rollback.taskId}::uuid AND subject_generation=2`)[0].count, 0);
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_events WHERE task_id=${rollback.taskId}::uuid AND action='prepared_subject_superseded'`)[0].count, 0);
+  } finally { await db.close(); delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED; }
+});
+
+test("prepared-subject migration enforces one active generation and denies worker/public lifecycle mutation", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const fixture = await createSupersessionFixture(sql);
+    const privileges = await sql`SELECT
+      has_function_privilege('medimori_engineering_2c_worker','engineering_prepare_subject_supersession(uuid,integer,uuid,uuid,uuid,text,text,text,text,jsonb,text,smallint)','EXECUTE') AS worker_execute,
+      has_function_privilege('medimori_engineering_merge_executor','engineering_prepare_subject_supersession(uuid,integer,uuid,uuid,uuid,text,text,text,text,jsonb,text,smallint)','EXECUTE') AS merge_execute,
+      EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid='engineering_prepare_subject_supersession(uuid,integer,uuid,uuid,uuid,text,text,text,text,jsonb,text,smallint)'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute,
+      has_table_privilege('medimori_engineering_2c_worker','engineering_prepared_subject_generations','UPDATE') AS worker_metadata_update,
+      has_table_privilege('medimori_engineering_merge_executor','engineering_prepared_subject_generations','UPDATE') AS merge_metadata_update`;
+    assert.deepEqual(privileges[0], { worker_execute: false, merge_execute: false, public_execute: false, worker_metadata_update: false, merge_metadata_update: false });
+    await assert.rejects(sql`INSERT INTO engineering_prepared_subject_generations(attempt_id,task_id,attempt_number,subject_generation,state)
+      VALUES(${randomUUID()}::uuid,${fixture.taskId}::uuid,2,1,'active')`);
+    await assert.rejects(sql`UPDATE engineering_prepared_attempts SET target_base_sha=${"9".repeat(40)} WHERE attempt_id=${fixture.staleAttemptId}::uuid`);
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_runs WHERE task_id=${fixture.taskId}::uuid AND attempt_number=2`)[0].count, 0);
+  } finally { await db.close(); delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED; }
+});
+
+
+test("supersession and approval serialize on the task version so only one subject outcome wins", async () => {
+  process.env.ENGINEERING_CONTROL_PLANE_ENABLED = "true";
+  const { db, sql } = await createTestSql();
+  try {
+    const fixture = await createSupersessionFixture(sql);
+    const results = await Promise.allSettled([
+      supersedeStalePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, randomUUID(), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource),
+      approvePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, "owner", sql, readTestTargetSha, readTestPreimages, testSourceRevision),
+    ]);
+    assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(results.filter(result => result.status === "rejected").length, 1);
+    const task = (await taskHistory(fixture.taskId, sql)).task!;
+    const active = (await sql`SELECT p.attempt_id,p.plan_version,p.subject_generation,g.state FROM engineering_prepared_attempts p
+      JOIN engineering_prepared_subject_generations g ON g.attempt_id=p.attempt_id AND g.state='active' WHERE p.task_id=${fixture.taskId}::uuid AND p.attempt_number=2`);
+    assert.equal(active.length, 1);
+    if (task.version === 6) {
+      assert.equal(task.status, "awaiting_approval");
+      assert.equal(Number(active[0].subject_generation), 2);
+      assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_approvals WHERE task_id=${fixture.taskId}::uuid AND plan_version=5 AND gate='plan'`)[0].count, 0);
+    } else {
+      assert.equal(task.version, 5);
+      assert.equal(task.status, "awaiting_execution");
+      assert.equal(active[0].attempt_id, fixture.staleAttemptId);
+      assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_approvals WHERE task_id=${fixture.taskId}::uuid AND prepared_attempt_id=${fixture.staleAttemptId}::uuid AND decision='approved'`)[0].count, 1);
+      await assert.rejects(supersedeStalePreparedAttempt(fixture.taskId, 5, fixture.staleAttemptId, randomUUID(), "owner", sql, readFreshSupersessionTarget, readFreshSupersessionPreimages, readFreshSupersessionSource));
+    }
+    assert.equal((await sql`SELECT count(*)::integer AS count FROM engineering_runs WHERE task_id=${fixture.taskId}::uuid AND attempt_number=2`)[0].count, 0);
+  } finally { await db.close(); delete process.env.ENGINEERING_CONTROL_PLANE_ENABLED; }
 });
