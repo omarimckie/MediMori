@@ -69,7 +69,7 @@ export type MorningBriefPreferences = {
 
 export const DEFAULT_MORNING_BRIEF_PREFERENCES: MorningBriefPreferences = {
   morningBriefEnabled: false,
-  morningBriefTime: "07:00",
+  morningBriefTime: "08:00",
   timezone: "America/New_York",
 };
 

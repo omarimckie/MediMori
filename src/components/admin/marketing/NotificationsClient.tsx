@@ -221,9 +221,9 @@ export function NotificationsClient() {
       <Card>
         <h2 className="text-lg font-extrabold">Morning Brief (foundation)</h2>
         <p className="mt-2 text-sm text-brand-charcoal/75">
-          Default delivery: 7:00 AM America/New_York. Automatic sending is{" "}
-          <strong>not enabled</strong> until a separate scheduler is added after tonight&apos;s
-          publishing validation.
+          Default delivery: 8:00 AM America/New_York (when enabled). Automatic sending runs on
+          the authenticated marketing publish dispatcher clock after deployment and schema
+          migration.
         </p>
         {prefs ? (
           <div className="mt-4 space-y-3 text-sm">

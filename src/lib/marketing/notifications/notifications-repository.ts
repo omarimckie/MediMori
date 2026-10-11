@@ -124,9 +124,22 @@ export async function listEnabledPushSubscriptionsForAdmin(
   return rows.map((row) => mapSubscription(row as Record<string, unknown>));
 }
 
+let listAllEnabledPushSubscriptionsForTests:
+  | (() => Promise<MarketingPushSubscriptionRecord[]>)
+  | null = null;
+
+export function setListAllEnabledPushSubscriptionsForTests(
+  handler: (() => Promise<MarketingPushSubscriptionRecord[]>) | null,
+): void {
+  listAllEnabledPushSubscriptionsForTests = handler;
+}
+
 export async function listAllEnabledPushSubscriptions(): Promise<
   MarketingPushSubscriptionRecord[]
 > {
+  if (listAllEnabledPushSubscriptionsForTests) {
+    return listAllEnabledPushSubscriptionsForTests();
+  }
   const sql = getSql();
   const rows = await sql`
     SELECT * FROM marketing_push_subscriptions

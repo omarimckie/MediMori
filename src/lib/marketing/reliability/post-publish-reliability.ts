@@ -8,10 +8,12 @@ import {
 import { runMarketingReliabilitySweep, type ReliabilitySweepResult } from "./sweep";
 import { runCredentialMonitoringDailyIfEnabled } from "../credential-health/daily";
 import { runtimeCredentialProbeFetch } from "../credential-health/probes";
+import { runMorningBriefDeliveryIfDue } from "../notifications/morning-brief-delivery";
 
 export type RunReliabilityAfterMarketingPublishDeps = {
   runSweep?: () => Promise<ReliabilitySweepResult>;
   runCredentialDaily?: typeof runCredentialMonitoringDailyIfEnabled;
+  runMorningBrief?: typeof runMorningBriefDeliveryIfDue;
 };
 
 /**
@@ -59,6 +61,17 @@ export async function runReliabilityAfterMarketingPublish(
       operation: "credential_health_daily",
       success: false,
       error: error instanceof Error ? error.message : "credential_daily_failed",
+    });
+  }
+
+  const runMorningBrief = deps.runMorningBrief ?? runMorningBriefDeliveryIfDue;
+  try {
+    await runMorningBrief({ store });
+  } catch (error) {
+    logMarketing({
+      operation: "morning_brief_delivery",
+      success: false,
+      error: error instanceof Error ? error.message : "morning_brief_delivery_failed",
     });
   }
 

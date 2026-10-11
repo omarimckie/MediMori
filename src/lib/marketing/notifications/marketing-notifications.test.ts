@@ -30,10 +30,10 @@ test("parsePushSubscriptionBody validates subscription shape", () => {
   assert.equal(ok?.endpoint, "https://push.example/abc");
 });
 
-test("morning brief preferences default to 7:00 AM America/New_York", () => {
+test("morning brief preferences default to 8:00 AM America/New_York", () => {
   const prefs = parseMorningBriefPreferences(null);
   assert.deepEqual(prefs, DEFAULT_MORNING_BRIEF_PREFERENCES);
-  assert.equal(prefs.morningBriefTime, "07:00");
+  assert.equal(prefs.morningBriefTime, "08:00");
   assert.equal(prefs.timezone, "America/New_York");
 });
 
