@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { sanitizedInitializationDiagnostic, WorkerInitializationError } from "./worker-initialization";
-import { verifyWorkerDatabaseIdentityQuery } from "./worker-database";
+import { verifyPreparedSubjectGenerationIndexQuery, verifyWorkerDatabaseIdentityQuery } from "./worker-database";
 
 function validIdentityRow() {
   return {
@@ -26,6 +26,7 @@ function validIdentityRow() {
     public_execute: false,
     worker_call_progress_ready: true,
     worker_lineage_ready: true,
+    prepared_subject_generations_ready: true,
     source_binding_ready: true,
     source_selection_policy_ready: true,
     source_mismatch_execute: true,
@@ -36,8 +37,65 @@ function validIdentityRow() {
 }
 
 function queryReturning(row: unknown) {
-  return (async () => [row]) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  return (async (strings: TemplateStringsArray) => strings.join("").includes("WITH named_index AS") ? [{ structure_ready: true, predicate: "(state = 'active'::text)" }] : [row]) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
 }
+
+async function preparedGenerationIndexReady(indexSql: string): Promise<boolean> {
+  const db = new PGlite();
+  try {
+    await db.exec(`CREATE TABLE public.engineering_prepared_subject_generations (
+      task_id uuid NOT NULL, attempt_number integer NOT NULL, state text NOT NULL, extra text
+    );
+    CREATE TABLE public.other_generations (
+      task_id uuid NOT NULL, attempt_number integer NOT NULL, state text NOT NULL, extra text
+    );
+    ${indexSql}`);
+    const query = (async (strings: TemplateStringsArray) => (await db.query(strings.join(""))).rows) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+    return await verifyPreparedSubjectGenerationIndexQuery(query);
+  } finally {
+    await db.close();
+  }
+}
+
+test("prepared-subject readiness accepts only the intended active-generation key", async () => {
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='active';`), true);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,state) WHERE state='active';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number,extra) WHERE state='active';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='active';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='superseded';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='act ive';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='active' OR state='superseded';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
+    ON public.other_generations(task_id,attempt_number) WHERE state='active';`), false);
+
+  assert.equal(await preparedGenerationIndexReady(`CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt_wrong_name
+    ON public.engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='active';`), false);
+});
+
+test("prepared-subject readiness requires valid and ready index catalog flags", async () => {
+  let sql = "";
+  const query = (async (strings: TemplateStringsArray) => {
+    sql = strings.join("");
+    return [{ structure_ready: false, predicate: "(state = 'active'::text)" }];
+  }) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  assert.equal(await verifyPreparedSubjectGenerationIndexQuery(query), false);
+  assert.match(sql, /i\.indisvalid/);
+  assert.match(sql, /i\.indisready/);
+});
 
 test("read-only identity query accepts the intended disposable restricted role", async () => {
   const query = queryReturning(validIdentityRow());
@@ -73,7 +131,7 @@ for (const change of [{ role_superuser: true }, { task_mutation: true }, { appro
 });
 
 test("identity query fails closed before claim when call-progress or lineage schema is missing", async () => {
-for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }, { source_binding_ready: false }, { source_selection_policy_ready: false }, { preclaim_diagnostic_ready: false }]) {
+for (const change of [{ worker_call_progress_ready: false }, { worker_lineage_ready: false }, { prepared_subject_generations_ready: false }, { source_binding_ready: false }, { source_selection_policy_ready: false }, { preclaim_diagnostic_ready: false }]) {
     await assert.rejects(
       verifyWorkerDatabaseIdentityQuery(queryReturning({ ...validIdentityRow(), ...change })),
       error => error instanceof WorkerInitializationError && error.code === "worker_database_schema_mismatch",

@@ -44,6 +44,7 @@ async function fixture() {
   await db.exec(await readFile(new URL("../../../sql/engineering-source-binding.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-source-selection-policy.sql", import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../../../sql/engineering-approval-execution-separation.sql", import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../../../sql/engineering-prepared-subject-supersession.sql", import.meta.url),"utf8"));
   const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => (await db.query(strings.reduce((s,p,i)=>s+(i?`$${i}`:"")+p,""),values)).rows) as unknown as ReturnType<typeof getSql>;
   let task=await createTask("Synthetic 2B fixture","human","a8888888-8888-4888-8888-888888888888",sql);
   task=await actOnTask(task.id,task.version,"transition","analyzing","human",sql);
