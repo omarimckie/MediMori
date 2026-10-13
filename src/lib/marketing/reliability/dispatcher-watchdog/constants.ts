@@ -8,3 +8,6 @@ export const OBSERVATION_SLOT_SECONDS = 15 * 60;
 export const WATCHDOG_ADVISORY_LOCK_KEY = "marketing_dispatcher_watchdog";
 
 export const WATCHDOG_STATE_ID = "primary";
+
+export const DISPATCHER_WATCHDOG_INCIDENT_DEDUPE_PREFIX =
+  "dispatcher_watchdog:primary_qstash_stale:v1";

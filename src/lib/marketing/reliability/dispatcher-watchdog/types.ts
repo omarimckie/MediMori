@@ -46,6 +46,12 @@ export type PrimaryHeartbeatSnapshot = {
   lastSeenAt: string | null;
 };
 
+export type WatchdogPrimaryActivationEvidence = {
+  verificationKind: "qstash_signature_verified";
+  verifiedAt: string;
+  attestationId?: string;
+};
+
 export type CommitObservationInput = {
   now: Date;
   primaryLastSeenAt: string | null;
