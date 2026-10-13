@@ -38,10 +38,11 @@ CREATE TABLE engineering_prepared_subject_generations (
       OR (state='superseded' AND superseded_by_attempt_id IS NOT NULL AND superseded_at IS NOT NULL)),
   CHECK (supersedes_attempt_id IS NULL OR supersedes_attempt_id<>attempt_id)
 );
-INSERT INTO engineering_prepared_subject_generations(attempt_id,task_id,attempt_number,subject_generation,state,created_at)
-SELECT attempt_id,task_id,attempt_number,subject_generation,'active',created_at FROM engineering_prepared_attempts;
 CREATE UNIQUE INDEX engineering_prepared_subject_one_active_per_attempt
   ON engineering_prepared_subject_generations(task_id,attempt_number) WHERE state='active';
+
+INSERT INTO engineering_prepared_subject_generations(attempt_id,task_id,attempt_number,subject_generation,state,created_at)
+SELECT attempt_id,task_id,attempt_number,subject_generation,'active',created_at FROM engineering_prepared_attempts;
 
 CREATE TABLE engineering_prepared_subject_supersessions (
   idempotency_key uuid PRIMARY KEY,
