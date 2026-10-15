@@ -1,3 +1,5 @@
+import { open } from "node:fs/promises";
+import { join } from "node:path";
 import { getAuthenticatedAdminUsername } from "@/lib/admin-auth";
 import { EngineeringInputError, limits, modelPolicy, protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { workerLimits } from "@/lib/engineering/worker-policy";
@@ -189,6 +191,40 @@ export async function GET(request: Request) {
   }
 }
 
+function persistApprovalFailureDiagnostic(
+  stage:
+    | "request_validation"
+    | "target_verification"
+    | "database_client"
+    | "prepared_subject_verification_and_persistence",
+): void {
+  const filePath = join(
+    process.cwd(),
+    ".next",
+    "dev",
+    "logs",
+    "engineering-approval-failure.json",
+  );
+
+  const line = `${JSON.stringify({
+    event: "engineering.approval.failure",
+    stage,
+    category: "unexpected_error",
+  })}\n`;
+
+  if (Buffer.byteLength(line, "utf8") > 256) return;
+
+  void (async () => {
+    const file = await open(filePath, "wx");
+    try {
+      await file.writeFile(line, "utf8");
+    } finally {
+      await file.close();
+    }
+  })().catch(() => {
+    // Diagnostic failure must not alter the HTTP response.
+  });
+}
 export async function POST(request: Request) {
   const actor = await getAuthenticatedAdminUsername();
   if (!actor) return Response.json({ error: "Unauthorized." }, { status: 401 });
@@ -209,6 +245,7 @@ export async function POST(request: Request) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     body = parsed as Record<string, unknown>;
   } catch { return Response.json({ error: "Invalid JSON." }, { status: 400 }); }
+  let approvalFailureStage: "request_validation" | "target_verification" | "database_client" | "prepared_subject_verification_and_persistence" | undefined;
   try {
     if (body.action === "create") {
       if (typeof body.request !== "string") throw new EngineeringInputError("Request is required.");
@@ -258,10 +295,15 @@ export async function POST(request: Request) {
     }
     if (typeof body.id !== "string" || !uuid.test(body.id) || !Number.isSafeInteger(body.version) || Number(body.version) < 0 || typeof body.action !== "string") throw new EngineeringInputError("Task ID, version and action are required.");
     if (body.action === "approve") {
+      approvalFailureStage = "request_validation";
       if (typeof body.preparedAttemptId !== "string" || !uuid.test(body.preparedAttemptId) || typeof body.targetBaseSha !== "string" || !/^[a-f0-9]{40}$/.test(body.targetBaseSha)) throw new EngineeringInputError("The exact prepared subject and reviewed target base SHA are required for plan approval.");
+      approvalFailureStage = "target_verification";
       const currentTargetSha = await readWorkerTargetBaseSha();
       if (body.targetBaseSha !== currentTargetSha) throw new EngineeringConflict("The target branch changed. Refresh the plan review before approving.");
-      const task = await approvePreparedAttempt(body.id, Number(body.version), body.preparedAttemptId, actor, getSql(), async () => currentTargetSha);
+      approvalFailureStage = "database_client";
+      const database = getSql();
+      approvalFailureStage = "prepared_subject_verification_and_persistence";
+      const task = await approvePreparedAttempt(body.id, Number(body.version), body.preparedAttemptId, actor, database, async () => currentTargetSha);
       return Response.json({ task }, { headers: { "Cache-Control": "no-store" } });
     }
     if (body.action === "authorize_execution") {
@@ -281,6 +323,12 @@ export async function POST(request: Request) {
     if (error instanceof EngineeringConflict) return Response.json({ error: error.message }, { status: 409 });
     // Database errors must not expose connection details, SQL or credentials.
     if (error instanceof EngineeringInputError) return Response.json({ error: error.message }, { status: 400 });
+    if (approvalFailureStage) {
+      try {
+        console.error("engineering.approval.failure", { stage: approvalFailureStage, category: "unexpected_error" });
+        persistApprovalFailureDiagnostic(approvalFailureStage);
+      } catch { /* Diagnostics must not alter the existing response. */ }
+    }
     return Response.json({ error: "Engineering storage unavailable." }, { status: 503 });
   }
 }
