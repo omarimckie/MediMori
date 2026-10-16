@@ -36,6 +36,7 @@
     "test:engineering": "tsx --test src/lib/engineering/*.test.ts",
     "test:engineering:http": "node scripts/engineering-http-smoke.mjs",
     "engineering:preflight": "tsx scripts/engineering-preflight.ts",
+    "docs:engineering:check": "node scripts/check-engineering-runbook.mjs",
     "engineering:worker": "node scripts/engineering-worker-launch.mjs",
     "engineering:merge": "node scripts/engineering-merge-executor-launch.mjs"
   },

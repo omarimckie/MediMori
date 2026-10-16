@@ -28,7 +28,7 @@ export interface IsolatedWorkspace {
 }
 export type Ingress = (op: string, owner: string, epoch: number, data?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 export type { ProposalShapeCategory, IssuedAnchor };
-export type WorkerDiagnostic = { stage: "implementation" | "review" | "worker"; code: "provider_incomplete" | "proposal_invalid_json" | "proposal_invalid_shape" | "proposal_out_of_scope" | "proposal_invalid_content" | "proposal_apply_failed" | "proposal_evidence_persist_failed" | "call_progress_persist_failed" | "replacement_target_missing" | "replacement_target_ambiguous" | "replacement_overlap" | "replacement_scope_rejected" | "replacement_revision_mismatch" | "replacement_content_invalid" | "replacement_apply_failed" | "validation_executor_unavailable" | "validation_protocol_error" | "validation_source_prepare_failed" | "validation_overlay_prepare_failed" | "validation_dependency_unavailable" | "validation_image_unavailable" | "validation_start_persistence_failed" | "validation_evidence_persistence_failed" | "post_apply_revision_mismatch" | "post_apply_scope_verification_failed" | "lease_or_fence_lost" | "runtime_deadline_exceeded" | "sandbox_cleanup_failed" | "worker_failure"; shapeCategory?: ProposalShapeCategory; replacementCount?: number; progressPhase?: "response_processed" | "proposal_validated" | "proposal_applied" | "review_validated"; validationStage?: ValidationPreparationStage | "post_apply_verification" | "validation_environment_prepare" | "validation_cycle" | "validation_gate" | "validation_progress" | "validation_evidence"; validationRevision?: string; validationGate?: string; responseId?: string; responseStatus?: "completed" | "incomplete" | "failed" | "unknown"; incompleteReason?: "max_output_tokens" | "content_filter" | "other"; outputTokens?: number; outputLimit?: number; cleanupFailures?: CleanupFailure[] };
+export type WorkerDiagnostic = { stage: "implementation" | "review" | "worker"; operation?: "provider_call" | "apply_proposal" | "prepare_validation_environment" | "run_validation" | "workspace_cleanup" | "worker_lifecycle"; category?: "provider_failure" | "proposal_failure" | "validation_failure" | "cleanup_failure" | "worker_failure"; cleanupOutcome?: "succeeded" | "failed" | "not_attempted"; code: "provider_incomplete" | "proposal_invalid_json" | "proposal_invalid_shape" | "proposal_out_of_scope" | "proposal_invalid_content" | "proposal_apply_failed" | "proposal_evidence_persist_failed" | "call_progress_persist_failed" | "replacement_target_missing" | "replacement_target_ambiguous" | "replacement_overlap" | "replacement_scope_rejected" | "replacement_revision_mismatch" | "replacement_content_invalid" | "replacement_apply_failed" | "validation_executor_unavailable" | "validation_protocol_error" | "validation_source_prepare_failed" | "validation_overlay_prepare_failed" | "validation_dependency_unavailable" | "validation_image_unavailable" | "validation_start_persistence_failed" | "validation_evidence_persistence_failed" | "post_apply_revision_mismatch" | "post_apply_scope_verification_failed" | "lease_or_fence_lost" | "runtime_deadline_exceeded" | "sandbox_cleanup_failed" | "worker_failure"; shapeCategory?: ProposalShapeCategory; replacementCount?: number; progressPhase?: "response_processed" | "proposal_validated" | "proposal_applied" | "review_validated"; validationStage?: ValidationPreparationStage | "post_apply_verification" | "validation_environment_prepare" | "validation_cycle" | "validation_gate" | "validation_progress" | "validation_evidence"; validationRevision?: string; validationGate?: string; responseId?: string; responseStatus?: "completed" | "incomplete" | "failed" | "unknown"; incompleteReason?: "max_output_tokens" | "content_filter" | "other"; outputTokens?: number; outputLimit?: number; cleanupFailures?: CleanupFailure[] };
 export class WorkerFailure extends EngineeringInputError {
   constructor(readonly diagnostic: WorkerDiagnostic, message = "Worker stopped; inspect bounded diagnostics.") { super(message); }
 }
@@ -235,11 +235,31 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
     return { status: "awaiting_merge", calls: state.model_calls, costUsd: state.cost_usd, softWarning: Number(state.cost_usd) >= workerLimits.softUsd };
   } catch (error) {
     let cleanupFailures: CleanupFailure[] = error instanceof DockerCleanupError ? error.cleanupFailures : [];
-    try { await workspace.dispose?.(); }
-    catch (cleanupError) { if(cleanupError instanceof DockerCleanupError) cleanupFailures=[...new Map([...cleanupFailures,...cleanupError.cleanupFailures].map(item=>[`${item.resourceType}:${item.category}`,item])).values()].slice(0,16); }
+    let cleanupOutcome: NonNullable<WorkerDiagnostic["cleanupOutcome"]> = "not_attempted";
+    if (workspace.dispose) {
+      cleanupOutcome = "succeeded";
+      try { await workspace.dispose(); }
+      catch (cleanupError) {
+        cleanupOutcome = "failed";
+        if(cleanupError instanceof DockerCleanupError) cleanupFailures=[...new Map([...cleanupFailures,...cleanupError.cleanupFailures].map(item=>[`${item.resourceType}:${item.category}`,item])).values()].slice(0,16);
+      }
+    }
     let diagnostic: WorkerDiagnostic = error instanceof WorkerFailure ? {...lastCompletion,...error.diagnostic} : {...lastCompletion,stage:"worker",code:"worker_failure"};
     if (currentCall) await ingress("call_progress", owner, epoch, { key: currentCall.key, phase: "failed", failureCode: diagnostic.code, ...(diagnostic.progressPhase ? { progressPhase: diagnostic.progressPhase } : {}) }).catch(() => {});
-    if(cleanupFailures.length) diagnostic={...diagnostic,stage:"worker",code:"sandbox_cleanup_failed",cleanupFailures};
+    if(cleanupFailures.length && error instanceof DockerCleanupError) diagnostic={...diagnostic,stage:"worker",code:"sandbox_cleanup_failed",cleanupFailures};
+    else if(cleanupFailures.length) diagnostic={...diagnostic,cleanupFailures};
+    const operation: NonNullable<WorkerDiagnostic["operation"]> = diagnostic.code === "sandbox_cleanup_failed" ? "workspace_cleanup"
+      : diagnostic.validationStage === "validation_gate" || diagnostic.validationStage === "validation_cycle" || diagnostic.validationStage === "validation_evidence" ? "run_validation"
+      : diagnostic.validationStage ? "prepare_validation_environment"
+      : diagnostic.code === "provider_incomplete" || diagnostic.code === "call_progress_persist_failed" && diagnostic.progressPhase === "response_processed" ? "provider_call"
+      : diagnostic.stage === "implementation" ? "apply_proposal"
+      : "worker_lifecycle";
+    const category: NonNullable<WorkerDiagnostic["category"]> = diagnostic.code === "sandbox_cleanup_failed" ? "cleanup_failure"
+      : diagnostic.code === "provider_incomplete" || diagnostic.code === "call_progress_persist_failed" && diagnostic.progressPhase === "response_processed" ? "provider_failure"
+      : diagnostic.stage === "implementation" ? "proposal_failure"
+      : diagnostic.validationStage || diagnostic.code.startsWith("validation_") ? "validation_failure"
+      : "worker_failure";
+    diagnostic = { ...diagnostic, operation, category, cleanupOutcome };
     await ingress("block", owner, epoch, { diagnostic }).catch(() => {});
     if (error instanceof EngineeringInputError) throw error;
     throw new EngineeringInputError("Worker stopped; inspect authoritative records.");

@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { getAuthenticatedAdminUsername } from "@/lib/admin-auth";
+import { safeAdminEventDiagnostic } from "@/lib/engineering/event-diagnostics";
 import { EngineeringInputError, limits, modelPolicy, protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { workerLimits } from "@/lib/engineering/worker-policy";
 import { actOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, EngineeringConflict, findMergeDecisionReplay, listTasks, prepareFreshAttempt, prepareInitialAttempt, prepareRetryAttemptSubject, supersedeStalePreparedAttempt, recordMergeDecision, recordRunEvidence, taskHistory, taskSubmissionKeyPattern } from "@/lib/engineering/store";
@@ -26,6 +27,7 @@ function safeEventDetails(action: unknown, details: unknown) {
   if (typeof value.beforeClaim === "boolean") safe.beforeClaim = value.beforeClaim;
   if (typeof value.estimatedCostUsd === "number" && Number.isFinite(value.estimatedCostUsd) && value.estimatedCostUsd >= 0) safe.estimatedCostUsd = value.estimatedCostUsd;
   if (typeof value.previousDisposition === "string" && value.previousDisposition.length <= 32) safe.previousDisposition = value.previousDisposition;
+  Object.assign(safe, safeAdminEventDiagnostic(action, value));
   const evidence = value.proposalEvidence;
   if (action === "proposal_evidence" && evidence && typeof evidence === "object" && !Array.isArray(evidence)) {
     const proposal = evidence as Record<string, unknown>;

@@ -290,7 +290,7 @@ test("post-apply preparation failures persist their bounded category and never s
     await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:"prep-failure",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)};}),/bounded diagnostics/);
     assert.equal(calls,1);assert.equal(gateCalls,0);
     const block=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows[0].details.diagnostic as Record<string,unknown>;
-    assert.equal(block.code,"validation_overlay_prepare_failed");assert.equal(block.validationStage,"next_env_overlay");assert.equal(block.validationRevision,"c".repeat(40));
+    assert.equal(block.code,"validation_overlay_prepare_failed");assert.equal(block.validationStage,"next_env_overlay");assert.equal(block.validationRevision,"c".repeat(40));assert.equal(block.operation,"prepare_validation_environment");assert.equal(block.category,"validation_failure");assert.equal(block.cleanupOutcome,"not_attempted");
     const progress=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE task_id=$1 AND action='validation_progress' ORDER BY created_at",[f.task.id])).rows.map(row=>row.details.progressStage);
     assert.deepEqual(progress,["post_apply_verified","validation_environment_prepare_started"]);
     assert.equal((await f.db.query("SELECT * FROM engineering_validations WHERE run_id=$1::uuid",[f.run])).rows.length,0);
@@ -338,9 +338,17 @@ test("applied proposal is durable before cleanup and cleanup failures persist on
     assert.equal(calls,2);assert.equal((await taskHistory(f.task.id,f.sql)).task!.status,"blocked");
     const events=(await f.db.query<{action:string;details:Record<string,unknown>}>("SELECT action,details FROM engineering_events WHERE task_id=$1 AND action IN ('proposal_evidence','block') ORDER BY created_at",[f.task.id])).rows;
     assert.equal(events.length,2);assert.ok(events.some(event=>event.action==="proposal_evidence"));
-    const block=events.find(event=>event.action==="block")!;const diagnostic=block.details.diagnostic as {code:string;cleanupFailures:Array<{resourceType:string;category:string}>};
-    assert.equal(diagnostic.code,"sandbox_cleanup_failed");assert.deepEqual(diagnostic.cleanupFailures,[{resourceType:"source-volume",category:"resource_in_use"}]);
+    const block=events.find(event=>event.action==="block")!;const diagnostic=block.details.diagnostic as {code:string;operation:string;category:string;cleanupOutcome:string;cleanupFailures:Array<{resourceType:string;category:string}>};
+    assert.equal(diagnostic.code,"sandbox_cleanup_failed");assert.deepEqual(diagnostic.cleanupFailures,[{resourceType:"source-volume",category:"resource_in_use"}]);assert.equal(diagnostic.operation,"workspace_cleanup");assert.equal(diagnostic.category,"cleanup_failure");assert.equal(diagnostic.cleanupOutcome,"failed");
     assert.equal(JSON.stringify(events).includes("original"),false);assert.equal(JSON.stringify(events).includes("updated"),false);
+  }finally{await f.close();}
+});
+test("primary diagnostic survives a separate cleanup failure",async()=>{
+  const f=await fixture();try{
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("invalid proposal must not apply"),validate:async()=>assert.fail("invalid proposal must not validate"),dispose:async()=>{throw new DockerCleanupError([{resourceType:"source-volume",category:"resource_in_use"}]);}};
+    await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"primary-and-cleanup",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:"not-json",status:"completed"})),/bounded diagnostics/);
+    const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows[0].details;
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_json",responseId:"primary-and-cleanup",responseStatus:"completed",outputTokens:100,outputLimit:8192,operation:"apply_proposal",category:"proposal_failure",cleanupOutcome:"failed",cleanupFailures:[{resourceType:"source-volume",category:"resource_in_use"}]});
   }finally{await f.close();}
 });
 test("uncertain calls never resend, and cancellation still permits authoritative reconciliation",async()=>{
@@ -420,7 +428,7 @@ test("incomplete provider response is reconciled and leaves bounded diagnostic e
     const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Incomplete output must not be applied"),validate:async()=>assert.fail("Incomplete output must not be validated")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:4888,output_tokens:2048},text:'{"README.md":"partial',status:"incomplete",incomplete_reason:"max_output_tokens"})),/bounded diagnostics/);
     const events=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows;
-    assert.deepEqual(events[0].details.diagnostic,{stage:"implementation",code:"provider_incomplete",responseId:"resp_fixture",responseStatus:"incomplete",incompleteReason:"max_output_tokens",outputTokens:2048,outputLimit:8192});
+    assert.deepEqual(events[0].details.diagnostic,{stage:"implementation",code:"provider_incomplete",operation:"provider_call",category:"provider_failure",cleanupOutcome:"not_attempted",responseId:"resp_fixture",responseStatus:"incomplete",incompleteReason:"max_output_tokens",outputTokens:2048,outputLimit:8192});
     assert.equal((await f.db.query("SELECT * FROM engineering_worker_calls WHERE state='settled'")).rows.length,1);
     assert.equal(JSON.stringify(events).includes("partial"),false);
   }finally{await f.close();}
@@ -430,7 +438,7 @@ test("malformed proposal is blocked with safe parser code and settled completion
     const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Malformed output must not be applied"),validate:async()=>assert.fail("Malformed output must not be validated")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:2048},text:"not-json",status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
-    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_json",responseId:"resp_fixture",responseStatus:"completed",outputTokens:2048,outputLimit:8192});
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_json",operation:"apply_proposal",category:"proposal_failure",cleanupOutcome:"not_attempted",responseId:"resp_fixture",responseStatus:"completed",outputTokens:2048,outputLimit:8192});
     assert.equal(JSON.stringify(details).includes("not-json"),false);
   }finally{await f.close();}
 });
@@ -439,7 +447,7 @@ test("completed invalid proposal records only allow-listed shape metadata",async
     const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("Invalid proposal must not be applied"),validate:async()=>assert.fail("Invalid proposal must not validate")};
     await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:'{"unexpected":"private-sentinel"}',status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
-    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_shape",shapeCategory:"unexpected_field",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_invalid_shape",operation:"apply_proposal",category:"proposal_failure",cleanupOutcome:"not_attempted",shapeCategory:"unexpected_field",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
     assert.equal(JSON.stringify(details).includes("private-sentinel"),false);
   }finally{await f.close();}
 });
@@ -448,7 +456,7 @@ test("application failure records safe diagnostic and never validates",async()=>
     const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>{throw new Error("private filesystem detail")},validate:async()=>assert.fail("Rejected apply must not validate")};
     await assert.rejects(runWorker(f.ingress,workspace,async(body)=>({id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body),status:"completed"})),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
-    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"replacement_apply_failed",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"replacement_apply_failed",operation:"apply_proposal",category:"proposal_failure",cleanupOutcome:"not_attempted",responseId:"resp_fixture",responseStatus:"completed",outputTokens:100,outputLimit:8192});
     assert.equal(JSON.stringify(details).includes("private filesystem detail"),false);
   }finally{await f.close();}
 });
@@ -465,7 +473,7 @@ test("settled calls retain bounded response metadata when progress persistence f
     const call=(await f.db.query<{state:string;processing_state:string;actual_input:number;actual_output:number}>("SELECT * FROM engineering_worker_calls")).rows[0];
     assert.equal(call.state,"settled");assert.equal(call.processing_state,"failed");assert.equal(call.actual_input,100);assert.equal(call.actual_output,60);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
-    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"call_progress_persist_failed",progressPhase:"response_processed",responseId:"resp_progress_fixture",responseStatus:"completed",outputTokens:60,outputLimit:8192});
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"call_progress_persist_failed",operation:"provider_call",category:"provider_failure",cleanupOutcome:"not_attempted",progressPhase:"response_processed",responseId:"resp_progress_fixture",responseStatus:"completed",outputTokens:60,outputLimit:8192});
     assert.equal(JSON.stringify(details).includes("private database host"),false);
     assert.equal((await f.db.query("SELECT * FROM engineering_validations")).rows.length,0);
   }finally{await f.close();}
@@ -483,7 +491,7 @@ test("proposal-evidence ingress failure receives its own bounded settled-call ca
     const call=(await f.db.query<{state:string;processing_state:string}>("SELECT * FROM engineering_worker_calls")).rows[0];
     assert.equal(call.state,"settled");assert.equal(call.processing_state,"failed");
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
-    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_evidence_persist_failed",replacementCount:1,responseId:"resp_evidence_fixture",responseStatus:"completed",outputTokens:60,outputLimit:8192});
+    assert.deepEqual(details.diagnostic,{stage:"implementation",code:"proposal_evidence_persist_failed",operation:"apply_proposal",category:"proposal_failure",cleanupOutcome:"not_attempted",replacementCount:1,responseId:"resp_evidence_fixture",responseStatus:"completed",outputTokens:60,outputLimit:8192});
     assert.equal(JSON.stringify(details).includes("private filesystem"),false);
     assert.equal((await f.db.query("SELECT * FROM engineering_events WHERE action='proposal_evidence'")).rows.length,0);
     assert.equal((await f.db.query("SELECT * FROM engineering_validations")).rows.length,0);
