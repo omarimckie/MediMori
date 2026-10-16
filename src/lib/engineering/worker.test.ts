@@ -9,7 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
 import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, prepareInitialAttempt, recordRunEvidence, taskHistory } from "./store";
 import { commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits } from "./worker-policy";
-import { context, edits, extractResponsesOutputText, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
+import { context, edits, extractResponsesOutputText, openaiGenerate, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
 import { DockerCleanupError } from "./docker-ownership";
 import { buildBoundedReplacementContext } from "./replacement-anchors";
@@ -174,6 +174,54 @@ test("bounded proposal parser classifies malformed shapes without retaining valu
   assert.throws(()=>edits(plan,JSON.stringify({replacements:[{anchorId:"f".repeat(64),replacementText:"two"}]}),[anchor],revision),error=>error instanceof WorkerFailure&&error.diagnostic.code==="proposal_invalid_content");
   assert.equal(extractResponsesOutputText({output:[{content:[{type:"output_text",text:"safe"},{type:"refusal",refusal:"do not retain"}]}]}),"safe");
   assert.equal(extractResponsesOutputText({output:[{content:"not content objects"}]}),"");
+});
+test("Responses adapter accepts a completed response and validates bounded identity and usage",async()=>{
+  const originalFetch=globalThis.fetch;
+  try{
+    globalThis.fetch=async(_input,init)=>{
+      assert.equal(init?.method,"POST");assert.equal(init?.signal instanceof AbortSignal,true);
+      return Response.json({id:"resp_fixture_123",model:"gpt-6-luna",service_tier:"default",status:"completed",usage:{input_tokens:12,output_tokens:34},output:[{content:[{type:"output_text",text:"answer"}]}]});
+    };
+    const result=await openaiGenerate("fixture-key")({},new AbortController().signal);
+    assert.deepEqual(result,{id:"resp_fixture_123",model:"gpt-6-luna",service_tier:"default",status:"completed",usage:{input_tokens:12,output_tokens:34},text:"answer",incomplete_reason:undefined});
+  }finally{globalThis.fetch=originalFetch;}
+});
+test("Responses adapter rejects non-2xx without retrying",async()=>{
+  const originalFetch=globalThis.fetch;let calls=0;
+  try{
+    globalThis.fetch=async()=>{calls++;return new Response("error",{status:429});};
+    await assert.rejects(openaiGenerate("fixture-key")({},new AbortController().signal),/HTTP 429.*uncertain.*no automatic resend/);
+    assert.equal(calls,1);
+  }finally{globalThis.fetch=originalFetch;}
+});
+test("Responses adapter treats malformed JSON and invalid envelopes as uncertain",async()=>{
+  const originalFetch=globalThis.fetch;
+  try{
+    globalThis.fetch=async()=>new Response("{",{status:200,headers:{"Content-Type":"application/json"}});
+    await assert.rejects(openaiGenerate("fixture-key")({},new AbortController().signal),/JSON invalid.*reservation retained/);
+    const invalidResponses:unknown[]=[null,{},
+      {id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:1,output_tokens:2}},
+      {id:"",model:"gpt-6-luna",service_tier:"default",status:"completed",usage:{input_tokens:1,output_tokens:2}},
+      {id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",status:"queued",usage:{input_tokens:1,output_tokens:2}},
+      {id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",status:"completed",usage:{input_tokens:-1,output_tokens:2}},
+      {id:"resp_fixture",model:"gpt-6-luna",service_tier:"default",status:"completed",usage:{input_tokens:1,output_tokens:1.5}},
+      {id:"resp_fixture",model:"gpt-6-luna",status:"completed",usage:{input_tokens:1,output_tokens:2}},
+    ];
+    for(const invalid of invalidResponses){
+      globalThis.fetch=async()=>Response.json(invalid);
+      await assert.rejects(openaiGenerate("fixture-key")({},new AbortController().signal),/invalid|missing/i);
+    }
+  }finally{globalThis.fetch=originalFetch;}
+});
+test("Responses adapter treats aborts and transport errors as uncertain without retrying",async()=>{
+  const originalFetch=globalThis.fetch;let calls=0;
+  try{
+    globalThis.fetch=async()=>{calls++;throw Object.assign(new Error("private transport detail"),{name:"AbortError"});};
+    await assert.rejects(openaiGenerate("fixture-key")({},new AbortController().signal),/transport outcome uncertain/);
+    globalThis.fetch=async()=>{calls++;throw new Error("private transport detail");};
+    await assert.rejects(openaiGenerate("fixture-key")({},new AbortController().signal),/transport outcome uncertain/);
+    assert.equal(calls,2);
+  }finally{globalThis.fetch=originalFetch;}
 });
 test("fresh sanitized export refreshes current source and excludes environment and Git data",async()=>{
   const parent=await mkdtemp(join(tmpdir(),"m2c6a-export-"));const source=join(parent,"source"),exports=join(parent,"exports");await mkdir(source);await mkdir(exports);gitFixture(source,"init","-q");

@@ -56,15 +56,18 @@ export function openaiGenerate(key: string): Generate {
     let response: Response;
     try { response = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal }); }
     catch { throw new EngineeringInputError("OpenAI transport outcome uncertain; no automatic resend."); }
-    if (!response.ok) throw new EngineeringInputError(`OpenAI HTTP ${response.status}; no automatic resend.`);
-    const data: unknown = await response.json();
+    if (!response.ok) throw new EngineeringInputError(`OpenAI HTTP ${response.status}; outcome uncertain, no automatic resend.`);
+    let data: unknown;
+    try { data = await response.json(); }
+    catch { throw new EngineeringInputError("OpenAI response JSON invalid; outcome uncertain, reservation retained."); }
     const text = extractResponsesOutputText(data);
     if (!data || typeof data !== "object") throw new EngineeringInputError("OpenAI response envelope invalid; reconciliation required.");
     const envelope=data as Record<string,unknown>;
-    const usage=envelope.usage as Record<string,unknown>|undefined;
-    if (!usage || typeof envelope.id !== "string") throw new EngineeringInputError("OpenAI usage missing; reconciliation required.");
+    const usage=envelope.usage && typeof envelope.usage === "object" && !Array.isArray(envelope.usage) ? envelope.usage as Record<string,unknown> : undefined;
+    if (typeof envelope.id !== "string" || !/^resp_[A-Za-z0-9_-]+$/.test(envelope.id) || typeof envelope.model !== "string" || !envelope.model.trim() || typeof envelope.service_tier !== "string" || !envelope.service_tier.trim() || !usage || ![usage.input_tokens, usage.output_tokens].every(n => Number.isSafeInteger(n) && (n as number) >= 0)) throw new EngineeringInputError("OpenAI response identity or usage invalid; reconciliation required.");
+    if (envelope.status !== "completed" && envelope.status !== "incomplete" && envelope.status !== "failed") throw new EngineeringInputError("OpenAI response status missing or invalid; reconciliation required.");
     const incompleteDetails=envelope.incomplete_details as Record<string,unknown>|undefined;
-    return { id: envelope.id, model: typeof envelope.model === "string" ? envelope.model : "unknown", service_tier: typeof envelope.service_tier === "string" ? envelope.service_tier : "unknown", usage: { input_tokens: usage.input_tokens as number, output_tokens: usage.output_tokens as number }, text, status: typeof envelope.status === "string" ? envelope.status : "unknown", incomplete_reason: typeof incompleteDetails?.reason === "string" ? incompleteDetails.reason : undefined };
+    return { id: envelope.id, model: envelope.model, service_tier: envelope.service_tier, usage: { input_tokens: usage.input_tokens as number, output_tokens: usage.output_tokens as number }, text, status: envelope.status as "completed" | "incomplete" | "failed", incomplete_reason: typeof incompleteDetails?.reason === "string" ? incompleteDetails.reason : undefined };
   };
 }
 
