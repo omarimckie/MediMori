@@ -21,6 +21,7 @@ export type VerifiedPhysicalCheckout = {
   customerName: string;
   customerEmail: string;
   shippingAddress: ShippingAddressSnapshot;
+  shippingAddressMissing: boolean;
   unitPriceCents: number;
   shippingPriceCents: number;
 };
@@ -186,21 +187,24 @@ export function evaluatePaidPhysicalCheckout(
   }
 
   const shippingAddress = shippingAddressFromSession(session);
-  if (!shippingAddress) {
-    return {
-      ok: false,
-      status: 400,
-      error: "Checkout session is missing a shipping address.",
-    };
-  }
-
-  if (shippingAddress.country && shippingAddress.country !== "US") {
+  if (shippingAddress?.country && shippingAddress.country !== "US") {
     return {
       ok: false,
       status: 400,
       error: "Physical orders must ship to the United States.",
     };
   }
+
+  const shippingAddressMissing = !shippingAddress;
+  const addressSnapshot: ShippingAddressSnapshot = shippingAddress ?? {
+    name: null,
+    line1: null,
+    line2: null,
+    city: null,
+    state: null,
+    postalCode: null,
+    country: null,
+  };
 
   return {
     ok: true,
@@ -214,7 +218,8 @@ export function evaluatePaidPhysicalCheckout(
       stripeChargeId: chargeIdFromSession(session),
       customerName,
       customerEmail: normalizeEmail(email),
-      shippingAddress,
+      shippingAddress: addressSnapshot,
+      shippingAddressMissing,
       unitPriceCents: PHYSICAL_UNIT_PRICE_CENTS,
       shippingPriceCents: PHYSICAL_SHIPPING_PRICE_CENTS,
     },

@@ -7,6 +7,14 @@ import {
 import { fulfillPhysicalOrder } from "@/lib/fulfill-physical-order";
 import { evaluatePaidPhysicalCheckout, isPhysicalCheckoutSession } from "@/lib/physical-checkout-ownership";
 import { createLibraryAccessUrl } from "@/lib/magic-link";
+import { itemizedDigitalLinesFromSession, persistItemizedDigitalPurchase } from "@/lib/order-notifications/digital-lines";
+import { ensureOwnerOrderPushLive, retryFailedOwnerOrderPushesLive } from "@/lib/order-notifications/owner-push-live";
+import { recordDigitalPurchaseItems } from "@/lib/order-notifications/repository";
+import {
+  checkoutPaymentAcknowledgement,
+  isPaidCheckoutFulfillmentEvent,
+} from "@/lib/order-notifications/paid-session-events";
+import { paidOrderWebhookHttpStatus } from "@/lib/order-notifications/webhook-ack";
 import { recordStripeRefundAndRecompute } from "@/lib/purchase-refunds";
 import { ensurePaidNewsletterRedemptionBeforeFulfillment } from "@/lib/newsletter-promotion-redemption";
 import { recordPurchaseAndEntitlement } from "@/lib/purchases";
@@ -211,7 +219,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
-  if (event.type !== "checkout.session.completed") {
+  if (!isPaidCheckoutFulfillmentEvent(event.type)) {
     return NextResponse.json({ received: true });
   }
 
@@ -228,6 +236,20 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Checkout session could not be retrieved." },
       { status: 400 },
+    );
+  }
+
+  const acknowledgement = checkoutPaymentAcknowledgement(
+    event.type,
+    session.payment_status,
+  );
+  if (!acknowledgement.fulfill) {
+    if (acknowledgement.httpStatus === 200) {
+      return NextResponse.json({ received: true });
+    }
+    return NextResponse.json(
+      { error: "Checkout session is not paid." },
+      { status: acknowledgement.httpStatus },
     );
   }
 
@@ -257,25 +279,74 @@ export async function POST(request: Request) {
       });
     }
 
-    const fulfillment = await fulfillPhysicalOrder(
-      stripe,
-      physicalEvaluation.order,
-    );
-
-    if (!fulfillment.ok) {
-      console.error("Physical order could not be fulfilled:", {
+    let fulfillment;
+    try {
+      fulfillment = await fulfillPhysicalOrder(stripe, physicalEvaluation.order);
+    } catch (error) {
+      console.error("Physical order could not be recorded:", {
         sessionId: physicalEvaluation.order.stripeCheckoutSessionId,
-        reason: fulfillment.reason,
-        refunded: fulfillment.refunded,
+        error: error instanceof Error ? error.message : "unknown",
       });
-      return NextResponse.json({
-        received: true,
-        physicalFulfillment: "inventory_unavailable",
-        refunded: fulfillment.refunded,
-      });
+      return NextResponse.json(
+        { error: "Physical order could not be recorded." },
+        {
+          status: paidOrderWebhookHttpStatus({
+            orderPersisted: false,
+            notificationJobPersisted: false,
+          }),
+        },
+      );
     }
 
-    if (!fulfillment.duplicate) {
+    let notification;
+    try {
+      notification = await ensureOwnerOrderPushLive({
+        kind: "physical",
+        orderId: fulfillment.order.id,
+        quantity: fulfillment.order.quantity,
+        needsAttention:
+          fulfillment.inventoryProcessingFailed ||
+          fulfillment.order.shippingAddressMissing,
+        stripeCheckoutSessionId: fulfillment.order.stripeCheckoutSessionId,
+        stripeEventId: event.id,
+        attentionFlags: fulfillment.order.attentionFlags,
+        customerName: fulfillment.order.customerName,
+        customerEmail: fulfillment.order.customerEmail,
+        shippingAddress: fulfillment.order.shippingAddress,
+      });
+    } catch (error) {
+      console.error("Order notification could not be recorded:", {
+        sessionId: fulfillment.order.stripeCheckoutSessionId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return NextResponse.json(
+        { error: "Order notification could not be recorded." },
+        {
+          status: paidOrderWebhookHttpStatus({
+            orderPersisted: true,
+            notificationJobPersisted: false,
+          }),
+        },
+      );
+    }
+
+    if (
+      paidOrderWebhookHttpStatus({
+        orderPersisted: true,
+        notificationJobPersisted: notification.jobPersisted,
+      }) !== 200
+    ) {
+      return NextResponse.json(
+        { error: "Order notification could not be recorded." },
+        { status: 500 },
+      );
+    }
+
+    if (
+      !fulfillment.duplicate &&
+      !fulfillment.inventoryProcessingFailed &&
+      !fulfillment.order.shippingAddressMissing
+    ) {
       try {
         await sendPhysicalOrderConfirmationEmail(fulfillment.order);
         await sendPhysicalFulfillmentNotificationEmail(fulfillment.order);
@@ -287,7 +358,21 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ received: true, physicalFulfillment: "ok" });
+    try {
+      await retryFailedOwnerOrderPushesLive();
+    } catch (error) {
+      console.error("Could not retry owner order notifications:", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+
+    return NextResponse.json({
+      received: true,
+      physicalFulfillment: fulfillment.inventoryProcessingFailed
+        ? "inventory_needs_attention"
+        : "ok",
+      ownerPushDelivered: notification.pushDelivered,
+    });
   }
 
   const evaluation = evaluatePaidCheckout(session);
@@ -314,8 +399,23 @@ export async function POST(request: Request) {
     });
   }
 
+  const digitalLines = itemizedDigitalLinesFromSession(
+    session,
+    evaluation.purchase.bookId,
+  );
+  const digitalQuantity = digitalLines.reduce((sum, line) => sum + line.quantity, 0);
+
+  let purchaseId = "";
+  let purchaseEmail = "";
+  let purchaseSessionId = "";
   try {
-    await recordPurchaseAndEntitlement(evaluation.purchase);
+    const saved = await recordPurchaseAndEntitlement(evaluation.purchase);
+    purchaseId = saved.purchase.id;
+    purchaseEmail = saved.purchase.email;
+    purchaseSessionId = saved.purchase.stripeCheckoutSessionId;
+    await persistItemizedDigitalPurchase(digitalLines, (items) =>
+      recordDigitalPurchaseItems(saved.purchase.id, items),
+    );
   } catch (error) {
     console.error("Could not record eBook purchase:", {
       sessionId: evaluation.purchase.stripeCheckoutSessionId,
@@ -324,7 +424,40 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(
       { error: "Purchase could not be recorded." },
-      { status: 500 },
+      {
+        status: paidOrderWebhookHttpStatus({
+          orderPersisted: false,
+          notificationJobPersisted: false,
+        }),
+      },
+    );
+  }
+
+  let digitalNotification;
+  try {
+    digitalNotification = await ensureOwnerOrderPushLive({
+      kind: "digital",
+      orderId: purchaseId,
+      quantity: digitalQuantity,
+      needsAttention: false,
+      stripeCheckoutSessionId: purchaseSessionId,
+      stripeEventId: event.id,
+      attentionFlags: [],
+      customerEmail: purchaseEmail,
+    });
+  } catch (error) {
+    console.error("Order notification could not be recorded:", {
+      sessionId: purchaseSessionId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Order notification could not be recorded." },
+      {
+        status: paidOrderWebhookHttpStatus({
+          orderPersisted: true,
+          notificationJobPersisted: false,
+        }),
+      },
     );
   }
 
@@ -341,5 +474,16 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ received: true });
+  try {
+    await retryFailedOwnerOrderPushesLive();
+  } catch (error) {
+    console.error("Could not retry owner order notifications:", {
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
+
+  return NextResponse.json({
+    received: true,
+    ownerPushDelivered: digitalNotification.pushDelivered,
+  });
 }

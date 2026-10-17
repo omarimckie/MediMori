@@ -1,11 +1,14 @@
 import { getSql } from "./db";
 import { normalizeEmail } from "./checkout-ownership";
+import { INVENTORY_DISCREPANCY_ACKNOWLEDGED } from "./order-notifications/inventory-resolution";
 
 export type PhysicalFulfillmentStatus =
   | "unfulfilled"
   | "shipped"
   | "cancelled"
   | "refunded";
+
+export type PhysicalInventoryState = "pending" | "processing" | "applied" | "failed";
 
 export type ShippingAddressSnapshot = {
   name: string | null;
@@ -29,6 +32,10 @@ export type PhysicalOrderRow = {
   customerName: string;
   customerEmail: string;
   shippingAddress: ShippingAddressSnapshot;
+  shippingAddressMissing: boolean;
+  paymentStatus: string;
+  inventoryState: PhysicalInventoryState;
+  attentionFlags: string[];
   fulfillmentStatus: PhysicalFulfillmentStatus;
   trackingNumber: string | null;
   carrier: string | null;
@@ -48,12 +55,39 @@ export type RecordPhysicalOrderInput = {
   customerName: string;
   customerEmail: string;
   shippingAddress: ShippingAddressSnapshot;
+  shippingAddressMissing?: boolean;
+  attentionFlags?: string[];
   fulfillmentStatus: PhysicalFulfillmentStatus;
 };
 
 function asDate(value: unknown): Date {
   if (value instanceof Date) return value;
   return new Date(String(value));
+}
+
+function parseFlags(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapInventoryState(value: unknown): PhysicalInventoryState {
+  if (
+    value === "pending" ||
+    value === "processing" ||
+    value === "applied" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return "applied";
 }
 
 function mapFulfillmentStatus(value: unknown): PhysicalFulfillmentStatus {
@@ -113,6 +147,11 @@ function mapPhysicalOrder(row: Record<string, unknown>): PhysicalOrderRow {
     customerName: String(row.customer_name),
     customerEmail: String(row.customer_email),
     shippingAddress: shipping,
+    shippingAddressMissing: row.shipping_address_missing === true,
+    paymentStatus:
+      row.payment_status == null ? "paid" : String(row.payment_status),
+    inventoryState: mapInventoryState(row.inventory_state),
+    attentionFlags: parseFlags(row.attention_flags),
     fulfillmentStatus: mapFulfillmentStatus(row.fulfillment_status),
     trackingNumber:
       row.tracking_number == null ? null : String(row.tracking_number),
@@ -143,6 +182,8 @@ export async function insertPhysicalOrder(
   const sql = getSql();
   const orderId = crypto.randomUUID();
   const email = normalizeEmail(input.customerEmail);
+  const attentionFlags = input.attentionFlags ?? [];
+  const shippingAddressMissing = input.shippingAddressMissing === true;
 
   try {
     await sql`
@@ -158,6 +199,10 @@ export async function insertPhysicalOrder(
         customer_name,
         customer_email,
         shipping_address,
+        shipping_address_missing,
+        payment_status,
+        inventory_state,
+        attention_flags,
         fulfillment_status
       )
       VALUES (
@@ -172,6 +217,10 @@ export async function insertPhysicalOrder(
         ${input.customerName},
         ${email},
         ${JSON.stringify(input.shippingAddress)}::jsonb,
+        ${shippingAddressMissing},
+        'paid',
+        'pending',
+        ${JSON.stringify(attentionFlags)}::jsonb,
         ${input.fulfillmentStatus}
       )
       ON CONFLICT (stripe_checkout_session_id) DO NOTHING
@@ -197,4 +246,109 @@ export async function insertPhysicalOrder(
   }
 
   return { created: order.id === orderId, order };
+}
+
+export async function getPhysicalOrderById(
+  orderId: string,
+): Promise<PhysicalOrderRow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT *
+    FROM physical_orders
+    WHERE id = ${orderId}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? mapPhysicalOrder(row as Record<string, unknown>) : null;
+}
+
+export async function claimPhysicalInventoryProcessing(
+  stripeCheckoutSessionId: string,
+): Promise<"claimed" | "settled"> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE physical_orders
+    SET inventory_state = 'processing', updated_at = NOW()
+    WHERE stripe_checkout_session_id = ${stripeCheckoutSessionId}
+      AND inventory_state = 'pending'
+    RETURNING id
+  `;
+  return rows.length ? "claimed" : "settled";
+}
+
+export async function markPhysicalInventoryApplied(orderId: string): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET inventory_state = 'applied', updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND inventory_state = 'processing'
+  `;
+}
+
+export async function markPhysicalInventoryFailed(orderId: string): Promise<void> {
+  const order = await getPhysicalOrderById(orderId);
+  const flags = new Set(order?.attentionFlags ?? []);
+  flags.add("inventory_processing_failed");
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET
+      inventory_state = 'failed',
+      attention_flags = ${JSON.stringify([...flags])}::jsonb,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+  `;
+}
+
+export async function acknowledgePhysicalInventoryDiscrepancy(
+  orderId: string,
+): Promise<"acknowledged" | "not_uncertain" | "missing"> {
+  const sql = getSql();
+  const flag = JSON.stringify([INVENTORY_DISCREPANCY_ACKNOWLEDGED]);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET
+      attention_flags = CASE
+        WHEN attention_flags @> ${flag}::jsonb THEN attention_flags
+        ELSE attention_flags || ${flag}::jsonb
+      END,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND inventory_state = 'processing'
+    RETURNING id
+  `;
+  if (rows.length) return "acknowledged";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  return "not_uncertain";
+}
+
+export async function markPhysicalOrderShipped(
+  orderId: string,
+): Promise<"shipped" | "inventory_unresolved" | "not_awaiting" | "missing"> {
+  const sql = getSql();
+  const acknowledged = JSON.stringify([INVENTORY_DISCREPANCY_ACKNOWLEDGED]);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET fulfillment_status = 'shipped', updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'unfulfilled'
+      AND (
+        inventory_state <> 'processing'
+        OR attention_flags @> ${acknowledged}::jsonb
+      )
+    RETURNING id
+  `;
+  if (rows.length) return "shipped";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  if (
+    existing.fulfillmentStatus === "unfulfilled" &&
+    existing.inventoryState === "processing" &&
+    !existing.attentionFlags.includes(INVENTORY_DISCREPANCY_ACKNOWLEDGED)
+  ) {
+    return "inventory_unresolved";
+  }
+  return "not_awaiting";
 }

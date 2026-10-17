@@ -1,36 +1,55 @@
 import type Stripe from "stripe";
-import { getSql } from "./db";
 import { decrementPhysicalInventory } from "./physical-inventory";
-import { refundStripePaymentIntent } from "./stripe-payment-refund";
 import {
+  claimPhysicalInventoryProcessing,
   getPhysicalOrderByCheckoutSessionId,
   insertPhysicalOrder,
+  markPhysicalInventoryApplied,
+  markPhysicalInventoryFailed,
   type PhysicalOrderRow,
 } from "./physical-orders";
 import type { VerifiedPhysicalCheckout } from "./physical-checkout-ownership";
 
-export type FulfillPhysicalOrderResult =
-  | { ok: true; duplicate: boolean; order: PhysicalOrderRow }
-  | { ok: false; refunded: boolean; reason: string };
+export type FulfillPhysicalOrderResult = {
+  ok: true;
+  duplicate: boolean;
+  order: PhysicalOrderRow;
+  inventoryProcessingFailed: boolean;
+};
 
-async function markPhysicalOrderRefunded(orderId: string): Promise<void> {
-  const sql = getSql();
-  await sql`
-    UPDATE physical_orders
-    SET fulfillment_status = 'refunded', updated_at = NOW()
-    WHERE id = ${orderId}::uuid
-  `;
-}
+export type PhysicalFulfillmentDeps = {
+  insertPhysicalOrder: typeof insertPhysicalOrder;
+  claimPhysicalInventoryProcessing: typeof claimPhysicalInventoryProcessing;
+  decrementPhysicalInventory: typeof decrementPhysicalInventory;
+  markPhysicalInventoryApplied: typeof markPhysicalInventoryApplied;
+  markPhysicalInventoryFailed: typeof markPhysicalInventoryFailed;
+  getPhysicalOrderByCheckoutSessionId: typeof getPhysicalOrderByCheckoutSessionId;
+};
+
+const defaultPhysicalFulfillmentDeps: PhysicalFulfillmentDeps = {
+  insertPhysicalOrder,
+  claimPhysicalInventoryProcessing,
+  decrementPhysicalInventory,
+  markPhysicalInventoryApplied,
+  markPhysicalInventoryFailed,
+  getPhysicalOrderByCheckoutSessionId,
+};
 
 /**
- * Claims the checkout session via unique insert, decrements inventory once, and records the order.
- * Idempotent per stripe_checkout_session_id. Refunds if inventory is unavailable.
+ * Records a paid physical order before inventory processing.
+ * Inventory failure keeps the paid order and flags it; it does not refund.
+ * A duplicate checkout session does not decrement inventory twice.
  */
 export async function fulfillPhysicalOrder(
-  stripe: Stripe,
+  _stripe: Stripe,
   verified: VerifiedPhysicalCheckout,
+  deps: PhysicalFulfillmentDeps = defaultPhysicalFulfillmentDeps,
 ): Promise<FulfillPhysicalOrderResult> {
-  const { created, order } = await insertPhysicalOrder({
+  const attentionFlags = verified.shippingAddressMissing
+    ? ["missing_shipping_address"]
+    : [];
+
+  const { created } = await deps.insertPhysicalOrder({
     stripeCheckoutSessionId: verified.stripeCheckoutSessionId,
     stripePaymentIntentId: verified.stripePaymentIntentId,
     bookId: verified.bookId,
@@ -41,44 +60,52 @@ export async function fulfillPhysicalOrder(
     customerName: verified.customerName,
     customerEmail: verified.customerEmail,
     shippingAddress: verified.shippingAddress,
+    shippingAddressMissing: verified.shippingAddressMissing,
+    attentionFlags,
     fulfillmentStatus: "unfulfilled",
   });
 
-  if (!created) {
-    const duplicate = await getPhysicalOrderByCheckoutSessionId(
-      verified.stripeCheckoutSessionId,
-    );
-    if (!duplicate) {
-      throw new Error("Physical order claim failed.");
-    }
-    return { ok: true, duplicate: true, order: duplicate };
-  }
-
-  const remaining = await decrementPhysicalInventory(
-    verified.bookId,
-    verified.quantity,
+  const claim = await deps.claimPhysicalInventoryProcessing(
+    verified.stripeCheckoutSessionId,
   );
 
-  if (remaining === null) {
-    await markPhysicalOrderRefunded(order.id);
-    let refunded = false;
-    if (verified.stripePaymentIntentId) {
-      refunded = await refundStripePaymentIntent(
-        stripe,
-        verified.stripePaymentIntentId,
+  if (claim === "claimed") {
+    let inventoryFailed = false;
+    try {
+      const remaining = await deps.decrementPhysicalInventory(
+        verified.bookId,
+        verified.quantity,
       );
+      inventoryFailed = remaining === null;
+    } catch {
+      inventoryFailed = true;
     }
-    return {
-      ok: false,
-      refunded,
-      reason: "inventory_unavailable",
-    };
+
+    const current = await deps.getPhysicalOrderByCheckoutSessionId(
+      verified.stripeCheckoutSessionId,
+    );
+    if (!current) {
+      throw new Error("Physical order claim failed.");
+    }
+
+    if (inventoryFailed) {
+      await deps.markPhysicalInventoryFailed(current.id);
+    } else {
+      await deps.markPhysicalInventoryApplied(current.id);
+    }
   }
 
-  const finalOrder =
-    (await getPhysicalOrderByCheckoutSessionId(
-      verified.stripeCheckoutSessionId,
-    )) ?? order;
+  const order = await deps.getPhysicalOrderByCheckoutSessionId(
+    verified.stripeCheckoutSessionId,
+  );
+  if (!order) {
+    throw new Error("Physical order was not recorded.");
+  }
 
-  return { ok: true, duplicate: false, order: finalOrder };
+  return {
+    ok: true,
+    duplicate: !created,
+    order,
+    inventoryProcessingFailed: order.inventoryState === "failed",
+  };
 }
