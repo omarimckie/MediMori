@@ -5,13 +5,17 @@ import {
   computeObservationSlotId,
   createInitialWatchdogState,
   isActivationPending,
+  isMaintenanceActive,
   isPrimaryHeartbeatStale,
+  outageNotificationWasSent,
 } from "./evaluate";
 import type {
+  BeginPushAttemptResult,
   CommitObservationInput,
   CommitObservationResult,
   IncidentNotificationState,
   MaintenanceWindow,
+  PushClaimAcquireResult,
   WatchdogPrimaryActivationEvidence,
   WatchdogState,
 } from "./types";
@@ -21,12 +25,18 @@ import {
   type WatchdogCommitStore,
 } from "./commit-observation-core";
 import {
+  beginOutagePushAttempt,
+  beginRecoveryPushAttempt,
   ensureIncidentNotificationRow,
   finalizeOutagePushClaimRow,
   finalizeRecoveryPushClaimRow,
   loadIncidentNotificationRow,
+  outagePushAttemptEligibleFromState,
+  recoveryPushAttemptEligibleFromState,
+  STALE_UNATTEMPTED_CLAIM_INTERVAL,
   tryAcquireOutagePushClaim,
   tryAcquireRecoveryPushClaim,
+  type WatchdogIncidentSnapshot,
 } from "./notification-claims";
 import {
   insertDispatcherWatchdogIncident,
@@ -58,24 +68,41 @@ export type WatchdogRepository = {
   commitObservation(input: CommitObservationInput): Promise<CommitObservationResult>;
   recordOutagePushOutcome(input: {
     incidentId: string;
+    claimNonce: string;
     pushDelivered: number;
     ambiguous?: boolean;
     now: Date;
   }): Promise<IncidentNotificationState | null>;
-  tryAcquireOutagePushClaim(incidentId: string): Promise<"acquired" | "blocked" | "missing">;
-  tryAcquireRecoveryPushClaim(incidentId: string): Promise<"acquired" | "blocked" | "missing">;
+  tryAcquireOutagePushClaim(incidentId: string): Promise<PushClaimAcquireResult>;
+  tryAcquireRecoveryPushClaim(incidentId: string): Promise<PushClaimAcquireResult>;
+  beginOutagePushAttempt(input: {
+    incidentId: string;
+    claimNonce: string;
+    adminNotificationId?: string | null;
+    now: Date;
+  }): Promise<BeginPushAttemptResult>;
+  beginRecoveryPushAttempt(input: {
+    incidentId: string;
+    claimNonce: string;
+    adminNotificationId?: string | null;
+    now: Date;
+  }): Promise<BeginPushAttemptResult>;
   finalizeRecoveryPushClaim(input: {
     incidentId: string;
+    claimNonce: string;
     pushDelivered: number;
     ambiguous?: boolean;
     now: Date;
   }): Promise<IncidentNotificationState | null>;
 };
 
+export { STALE_UNATTEMPTED_CLAIM_INTERVAL };
+
 type MemoryStore = {
   state: WatchdogState | null;
   observations: Set<number>;
   incidentNotifications: Map<string, IncidentNotificationState>;
+  incidents: Map<string, WatchdogIncidentSnapshot>;
   maintenanceWindows: MaintenanceWindow[];
 };
 
@@ -136,6 +163,7 @@ export function createMemoryWatchdogRepository(
     state: seed?.state ?? null,
     observations: seed?.observations ?? new Set(),
     incidentNotifications: seed?.incidentNotifications ?? new Map(),
+    incidents: seed?.incidents ?? new Map(),
     maintenanceWindows: seed?.maintenanceWindows ?? [],
   };
 
@@ -181,15 +209,30 @@ export function createMemoryWatchdogRepository(
     },
 
     async commitObservation(input: CommitObservationInput) {
-      return withMemoryLock(async () =>
-        commitObservationCore(memoryCommitStore(store), input),
-      );
+      return withMemoryLock(async () => {
+        const result = commitObservationCore(memoryCommitStore(store), input);
+        const nowIso = input.now.toISOString();
+        if (result.openedIncidentId) {
+          store.incidents.set(result.openedIncidentId, {
+            status: "open",
+            resolvedAt: null,
+          });
+        }
+        if (result.resolvedIncidentId) {
+          store.incidents.set(result.resolvedIncidentId, {
+            status: "resolved",
+            resolvedAt: nowIso,
+          });
+        }
+        return result;
+      });
     },
 
-    async recordOutagePushOutcome({ incidentId, pushDelivered, ambiguous, now }) {
+    async recordOutagePushOutcome({ incidentId, claimNonce, pushDelivered, ambiguous, now }) {
       return withMemoryLock(async () => {
         const row = store.incidentNotifications.get(incidentId);
-        if (!row) return null;
+        if (!row || row.outagePushClaimStatus !== "claimed") return null;
+        if (row.outagePushClaimNonce !== claimNonce) return null;
         const nowIso = now.toISOString();
         if (ambiguous || pushDelivered > 0) {
           row.outagePushClaimStatus = ambiguous ? "ambiguous" : "delivered";
@@ -197,55 +240,162 @@ export function createMemoryWatchdogRepository(
         } else {
           row.outagePushClaimStatus = "failed";
         }
+        row.outagePushClaimNonce = null;
         row.updatedAt = nowIso;
         return { ...row };
       });
     },
 
     async tryAcquireOutagePushClaim(incidentId) {
-      const row = store.incidentNotifications.get(incidentId);
-      if (!row) return "missing";
-      if (row.outagePushClaimStatus === "delivered" || row.outagePushClaimStatus === "ambiguous") {
-        return "blocked";
-      }
-      if (row.outagePushClaimStatus === "claimed") return "blocked";
-      if (row.outagePushClaimStatus === "none" || row.outagePushClaimStatus === "failed") {
-        row.outagePushClaimStatus = "claimed";
-        return "acquired";
-      }
-      return "blocked";
+      return withMemoryLock(async () => {
+        const row = store.incidentNotifications.get(incidentId);
+        if (!row) return { status: "missing" as const };
+        if (outageNotificationWasSent(row)) return { status: "blocked" as const };
+        memoryReclaimStaleUnattemptedOutage(row);
+        if (row.outagePushClaimStatus === "none" || row.outagePushClaimStatus === "failed") {
+          const claimNonce = crypto.randomUUID();
+          row.outagePushClaimStatus = "claimed";
+          row.outagePushClaimNonce = claimNonce;
+          row.outagePushAttemptStartedAt = null;
+          row.outagePushAdminNotificationId = null;
+          row.updatedAt = new Date().toISOString();
+          return { status: "acquired" as const, claimNonce };
+        }
+        return { status: "blocked" as const };
+      });
     },
 
     async tryAcquireRecoveryPushClaim(incidentId) {
-      const row = store.incidentNotifications.get(incidentId);
-      if (!row) return "missing";
-      if (!row.outagePushSentAt && row.outagePushClaimStatus !== "delivered" && row.outagePushClaimStatus !== "ambiguous") {
-        return "blocked";
-      }
-      if (row.recoveryPushClaimStatus === "delivered" || row.recoveryPushClaimStatus === "ambiguous") {
-        return "blocked";
-      }
-      if (row.recoveryPushClaimStatus === "claimed") return "blocked";
-      if (row.recoveryPushClaimStatus === "none" || row.recoveryPushClaimStatus === "failed") {
-        row.recoveryPushClaimStatus = "claimed";
-        return "acquired";
-      }
-      return "blocked";
+      return withMemoryLock(async () => {
+        const row = store.incidentNotifications.get(incidentId);
+        if (!row) return { status: "missing" as const };
+        if (!outageNotificationWasSent(row)) return { status: "blocked" as const };
+        if (
+          row.recoveryPushClaimStatus === "delivered" ||
+          row.recoveryPushClaimStatus === "ambiguous"
+        ) {
+          return { status: "blocked" as const };
+        }
+        memoryReclaimStaleUnattemptedRecovery(row);
+        if (row.recoveryPushClaimStatus === "none" || row.recoveryPushClaimStatus === "failed") {
+          const claimNonce = crypto.randomUUID();
+          row.recoveryPushClaimStatus = "claimed";
+          row.recoveryPushClaimNonce = claimNonce;
+          row.recoveryPushAttemptStartedAt = null;
+          row.recoveryPushAdminNotificationId = null;
+          row.updatedAt = new Date().toISOString();
+          return { status: "acquired" as const, claimNonce };
+        }
+        return { status: "blocked" as const };
+      });
     },
 
-    async finalizeRecoveryPushClaim({ incidentId, pushDelivered, ambiguous, now }) {
-      const row = store.incidentNotifications.get(incidentId);
-      if (!row) return null;
-      row.recoveryPushClaimStatus =
-        ambiguous || pushDelivered > 0
-          ? ambiguous
-            ? "ambiguous"
-            : "delivered"
-          : "failed";
-      row.updatedAt = now.toISOString();
-      return { ...row };
+    async beginOutagePushAttempt({ incidentId, claimNonce, adminNotificationId, now }) {
+      return withMemoryLock(async () => {
+        const state = store.state;
+        const row = store.incidentNotifications.get(incidentId);
+        if (!state || !row) {
+          return { ok: false, code: "watchdog_outage_push_not_eligible" };
+        }
+        const eligible = outagePushAttemptEligibleFromState({
+          incidentId,
+          incident: store.incidents.get(incidentId) ?? null,
+          watchdogState: state,
+          maintenanceActive: isMaintenanceActive(store.maintenanceWindows, now.getTime()),
+        });
+        if (!eligible) {
+          return { ok: false, code: "watchdog_outage_push_not_eligible" };
+        }
+        if (
+          row.outagePushClaimStatus !== "claimed" ||
+          row.outagePushClaimNonce !== claimNonce ||
+          row.outagePushAttemptStartedAt != null ||
+          row.outagePushAdminNotificationId != null
+        ) {
+          return { ok: false, code: "watchdog_outage_push_begin_rejected" };
+        }
+        const nowIso = now.toISOString();
+        row.outagePushAttemptStartedAt = nowIso;
+        row.outagePushAdminNotificationId = adminNotificationId ?? null;
+        row.updatedAt = nowIso;
+        return { ok: true };
+      });
+    },
+
+    async beginRecoveryPushAttempt({ incidentId, claimNonce, adminNotificationId, now }) {
+      return withMemoryLock(async () => {
+        const state = store.state;
+        const row = store.incidentNotifications.get(incidentId);
+        if (!state || !row) {
+          return { ok: false, code: "watchdog_recovery_push_not_eligible" };
+        }
+        const eligible = recoveryPushAttemptEligibleFromState({
+          incident: store.incidents.get(incidentId) ?? null,
+          notification: row,
+          watchdogState: state,
+        });
+        if (!eligible) {
+          return { ok: false, code: "watchdog_recovery_push_not_eligible" };
+        }
+        if (
+          row.recoveryPushClaimStatus !== "claimed" ||
+          row.recoveryPushClaimNonce !== claimNonce ||
+          row.recoveryPushAttemptStartedAt != null ||
+          row.recoveryPushAdminNotificationId != null
+        ) {
+          return { ok: false, code: "watchdog_recovery_push_begin_rejected" };
+        }
+        const nowIso = now.toISOString();
+        row.recoveryPushAttemptStartedAt = nowIso;
+        row.recoveryPushAdminNotificationId = adminNotificationId ?? null;
+        row.updatedAt = nowIso;
+        return { ok: true };
+      });
+    },
+
+    async finalizeRecoveryPushClaim({ incidentId, claimNonce, pushDelivered, ambiguous, now }) {
+      return withMemoryLock(async () => {
+        const row = store.incidentNotifications.get(incidentId);
+        if (!row || row.recoveryPushClaimStatus !== "claimed") return null;
+        if (row.recoveryPushClaimNonce !== claimNonce) return null;
+        row.recoveryPushClaimStatus =
+          ambiguous || pushDelivered > 0
+            ? ambiguous
+              ? "ambiguous"
+              : "delivered"
+            : "failed";
+        row.recoveryPushClaimNonce = null;
+        row.updatedAt = now.toISOString();
+        return { ...row };
+      });
     },
   };
+}
+
+const STALE_UNATTEMPTED_CLAIM_MS = 10 * 60 * 1000;
+
+function memoryReclaimStaleUnattemptedOutage(row: IncidentNotificationState): void {
+  if (row.outagePushClaimStatus !== "claimed") return;
+  if (row.outagePushClaimNonce == null) return;
+  if (row.outagePushAttemptStartedAt != null || row.outagePushAdminNotificationId != null) {
+    return;
+  }
+  const ageMs = Date.now() - Date.parse(row.updatedAt);
+  if (ageMs < STALE_UNATTEMPTED_CLAIM_MS) return;
+  row.outagePushClaimStatus = "none";
+  row.outagePushClaimNonce = null;
+}
+
+function memoryReclaimStaleUnattemptedRecovery(row: IncidentNotificationState): void {
+  if (row.recoveryPushClaimStatus !== "claimed") return;
+  if (row.recoveryPushClaimNonce == null) return;
+  if (row.recoveryPushAttemptStartedAt != null || row.recoveryPushAdminNotificationId != null) {
+    return;
+  }
+  const ageMs = Date.now() - Date.parse(row.updatedAt);
+  if (ageMs < STALE_UNATTEMPTED_CLAIM_MS) return;
+  row.recoveryPushClaimStatus = "none";
+  row.recoveryPushClaimNonce = null;
 }
 
 export type PostgresWatchdogDeps = {
@@ -442,10 +592,11 @@ export function createPostgresWatchdogRepository(
       return runTx(async (client) => commitPostgresObservation(client, input));
     },
 
-    async recordOutagePushOutcome({ incidentId, pushDelivered, ambiguous, now }) {
+    async recordOutagePushOutcome({ incidentId, claimNonce, pushDelivered, ambiguous, now }) {
       return runTx(async (client) =>
         finalizeOutagePushClaimRow(client, {
           incidentId,
+          claimNonce,
           pushDelivered,
           ambiguous,
           nowIso: now.toISOString(),
@@ -461,10 +612,31 @@ export function createPostgresWatchdogRepository(
       return runTx(async (client) => tryAcquireRecoveryPushClaim(client, incidentId));
     },
 
+    async beginOutagePushAttempt(input) {
+      return runTx(async (client) =>
+        beginOutagePushAttempt(client, {
+          ...input,
+          nowIso: input.now.toISOString(),
+        }),
+      );
+    },
+
+    async beginRecoveryPushAttempt(input) {
+      return runTx(async (client) =>
+        beginRecoveryPushAttempt(client, {
+          ...input,
+          nowIso: input.now.toISOString(),
+        }),
+      );
+    },
+
     async finalizeRecoveryPushClaim(input) {
       return runTx(async (client) =>
         finalizeRecoveryPushClaimRow(client, {
-          ...input,
+          incidentId: input.incidentId,
+          claimNonce: input.claimNonce,
+          pushDelivered: input.pushDelivered,
+          ambiguous: input.ambiguous,
           nowIso: input.now.toISOString(),
         }),
       );

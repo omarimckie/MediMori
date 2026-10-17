@@ -41,9 +41,44 @@ type NotificationRow = {
   outage_push_claim_status: string;
   recovery_push_claim_status: string;
   outage_push_sent_at: string | null;
+  outage_push_claim_nonce: string | null;
+  outage_push_attempt_started_at: string | null;
+  outage_push_admin_notification_id: string | null;
+  recovery_push_claim_nonce: string | null;
+  recovery_push_attempt_started_at: string | null;
+  recovery_push_admin_notification_id: string | null;
   created_at: string;
   updated_at: string;
 };
+
+function emptyNotificationRow(incidentId: string, now: string): NotificationRow {
+  return {
+    incident_id: incidentId,
+    outage_push_claim_status: "none",
+    recovery_push_claim_status: "none",
+    outage_push_sent_at: null,
+    outage_push_claim_nonce: null,
+    outage_push_attempt_started_at: null,
+    outage_push_admin_notification_id: null,
+    recovery_push_claim_nonce: null,
+    recovery_push_attempt_started_at: null,
+    recovery_push_admin_notification_id: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function parseIntervalMs(interval: string): number {
+  const match = /^(\d+)\s+minutes?$/i.exec(interval.trim());
+  if (!match) {
+    throw new Error(`fake_pg_unsupported_interval:${interval}`);
+  }
+  return Number(match[1]) * 60_000;
+}
+
+function claimIsStale(updatedAtIso: string, intervalMs: number): boolean {
+  return Date.now() - Date.parse(updatedAtIso) >= intervalMs;
+}
 
 export type FakeWatchdogPgStore = {
   state: StateRow | null;
@@ -344,6 +379,9 @@ export function createFakeWatchdogPoolClient(
           return queryResult([]);
         }
         row.status = "resolved";
+        if (p[1] != null) {
+          row.resolved_at = String(p[1]);
+        }
         return queryResult([{ id: incidentId }], 1);
       }
 
@@ -355,16 +393,26 @@ export function createFakeWatchdogPoolClient(
         const incidentId = String(p[0]);
         if (!store.notifications.has(incidentId)) {
           const now = new Date().toISOString();
-          store.notifications.set(incidentId, {
-            incident_id: incidentId,
-            outage_push_claim_status: "none",
-            recovery_push_claim_status: "none",
-            outage_push_sent_at: null,
-            created_at: now,
-            updated_at: now,
-          });
+          store.notifications.set(incidentId, emptyNotificationRow(incidentId, now));
         }
         return queryResult([]);
+      }
+
+      if (
+        normalized.includes("from marketing_incidents") &&
+        normalized.includes("where id")
+      ) {
+        const incidentId = String(p[0]);
+        const row = store.incidents.get(incidentId);
+        if (!row) {
+          return queryResult([]);
+        }
+        return queryResult([
+          {
+            status: row.status ?? "open",
+            resolved_at: row.resolved_at ?? null,
+          },
+        ]);
       }
 
       if (
@@ -388,34 +436,157 @@ export function createFakeWatchdogPoolClient(
         if (!row) {
           return queryResult([]);
         }
-        if (normalized.includes("outage_push_claim_status = 'claimed'")) {
+        const nowIso = new Date().toISOString();
+
+        if (
+          normalized.includes("outage_push_claim_status = 'none'") &&
+          normalized.includes("outage_push_claim_nonce is not null")
+        ) {
+          const intervalMs = parseIntervalMs(String(p[1]));
+          if (
+            row.outage_push_claim_status === "claimed" &&
+            row.outage_push_claim_nonce != null &&
+            row.outage_push_attempt_started_at == null &&
+            row.outage_push_admin_notification_id == null &&
+            claimIsStale(row.updated_at, intervalMs)
+          ) {
+            row.outage_push_claim_status = "none";
+            row.outage_push_claim_nonce = null;
+            row.updated_at = nowIso;
+          }
+          return queryResult([]);
+        }
+
+        if (
+          normalized.includes("recovery_push_claim_status = 'none'") &&
+          normalized.includes("recovery_push_claim_nonce is not null")
+        ) {
+          const intervalMs = parseIntervalMs(String(p[1]));
+          if (
+            row.recovery_push_claim_status === "claimed" &&
+            row.recovery_push_claim_nonce != null &&
+            row.recovery_push_attempt_started_at == null &&
+            row.recovery_push_admin_notification_id == null &&
+            claimIsStale(row.updated_at, intervalMs)
+          ) {
+            row.recovery_push_claim_status = "none";
+            row.recovery_push_claim_nonce = null;
+            row.updated_at = nowIso;
+          }
+          return queryResult([]);
+        }
+
+        if (
+          normalized.includes("outage_push_claim_nonce = $2") &&
+          normalized.includes("outage_push_claim_status in ('none', 'failed')")
+        ) {
+          const claimNonce = String(p[1]);
           if (!["none", "failed"].includes(row.outage_push_claim_status)) {
             return queryResult([]);
           }
           row.outage_push_claim_status = "claimed";
-          row.updated_at = new Date().toISOString();
-          return queryResult([{ incident_id: incidentId }], 1);
+          row.outage_push_claim_nonce = claimNonce;
+          row.outage_push_attempt_started_at = null;
+          row.outage_push_admin_notification_id = null;
+          row.updated_at = nowIso;
+          return queryResult([{ outage_push_claim_nonce: claimNonce }], 1);
         }
-        if (normalized.includes("recovery_push_claim_status = 'claimed'")) {
+
+        if (
+          normalized.includes("recovery_push_claim_nonce = $2") &&
+          normalized.includes("recovery_push_claim_status in ('none', 'failed')")
+        ) {
+          const claimNonce = String(p[1]);
           if (!["none", "failed"].includes(row.recovery_push_claim_status)) {
             return queryResult([]);
           }
           row.recovery_push_claim_status = "claimed";
-          row.updated_at = new Date().toISOString();
+          row.recovery_push_claim_nonce = claimNonce;
+          row.recovery_push_attempt_started_at = null;
+          row.recovery_push_admin_notification_id = null;
+          row.updated_at = nowIso;
+          return queryResult([{ recovery_push_claim_nonce: claimNonce }], 1);
+        }
+
+        if (normalized.includes("outage_push_attempt_started_at = $3")) {
+          const claimNonce = String(p[1]);
+          const attemptAt = String(p[2]);
+          const adminId = p[3] == null ? null : String(p[3]);
+          if (
+            row.outage_push_claim_status !== "claimed" ||
+            row.outage_push_claim_nonce !== claimNonce ||
+            row.outage_push_attempt_started_at != null ||
+            row.outage_push_admin_notification_id != null
+          ) {
+            return queryResult([]);
+          }
+          row.outage_push_attempt_started_at = attemptAt;
+          row.outage_push_admin_notification_id = adminId;
+          row.updated_at = nowIso;
           return queryResult([{ incident_id: incidentId }], 1);
         }
-        const status = String(p[1]);
-        if (normalized.includes("outage_push_sent_at")) {
+
+        if (normalized.includes("recovery_push_attempt_started_at = $3")) {
+          const claimNonce = String(p[1]);
+          const attemptAt = String(p[2]);
+          const adminId = p[3] == null ? null : String(p[3]);
+          if (
+            row.recovery_push_claim_status !== "claimed" ||
+            row.recovery_push_claim_nonce !== claimNonce ||
+            row.recovery_push_attempt_started_at != null ||
+            row.recovery_push_admin_notification_id != null
+          ) {
+            return queryResult([]);
+          }
+          row.recovery_push_attempt_started_at = attemptAt;
+          row.recovery_push_admin_notification_id = adminId;
+          row.updated_at = nowIso;
+          return queryResult([{ incident_id: incidentId }], 1);
+        }
+
+        if (
+          normalized.includes("outage_push_claim_nonce = $2::uuid") &&
+          normalized.includes("outage_push_claim_status = 'claimed'")
+        ) {
+          const claimNonce = String(p[1]);
+          const status = String(p[2]);
+          const sentAt = p[3] == null ? null : String(p[3]);
+          if (
+            row.outage_push_claim_status !== "claimed" ||
+            row.outage_push_claim_nonce !== claimNonce
+          ) {
+            return queryResult([]);
+          }
           row.outage_push_claim_status = status;
-          const sentAt = p[2] == null ? null : String(p[2]);
           if (sentAt) {
             row.outage_push_sent_at = row.outage_push_sent_at ?? sentAt;
           }
-        } else {
-          row.recovery_push_claim_status = status;
+          row.outage_push_claim_nonce = null;
+          row.updated_at = nowIso;
+          return queryResult([{ ...row }], 1);
         }
-        row.updated_at = new Date().toISOString();
-        return queryResult([{ ...row }], 1);
+
+        if (
+          normalized.includes("recovery_push_claim_nonce = $2::uuid") &&
+          normalized.includes("recovery_push_claim_status = 'claimed'")
+        ) {
+          const claimNonce = String(p[1]);
+          const status = String(p[2]);
+          if (
+            row.recovery_push_claim_status !== "claimed" ||
+            row.recovery_push_claim_nonce !== claimNonce
+          ) {
+            return queryResult([]);
+          }
+          row.recovery_push_claim_status = status;
+          row.recovery_push_claim_nonce = null;
+          row.updated_at = nowIso;
+          return queryResult([{ ...row }], 1);
+        }
+
+        throw new Error(
+          `fake_pg_unhandled_notification_update: ${normalized.slice(0, 160)}`,
+        );
       }
 
       throw new Error(`fake_pg_unhandled_query: ${normalized.slice(0, 120)}`);

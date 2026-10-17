@@ -18,9 +18,9 @@ export function parseMarketingDispatcherWatchdogMigrationStatements(migrationSql
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  if (statements.length !== 6) {
+  if (statements.length !== 7) {
     throw new Error(
-      `Expected 6 marketing dispatcher watchdog migration statements, got ${statements.length}.`,
+      `Expected 7 marketing dispatcher watchdog migration statements, got ${statements.length}.`,
     );
   }
 
@@ -31,6 +31,7 @@ export function parseMarketingDispatcherWatchdogMigrationStatements(migrationSql
     "CREATE TABLE IF NOT EXISTS marketing_dispatcher_maintenance_windows",
     "CREATE INDEX IF NOT EXISTS marketing_dispatcher_maintenance_ends_at_idx",
     "CREATE INDEX IF NOT EXISTS marketing_dispatcher_maintenance_starts_at_idx",
+    "ALTER TABLE marketing_dispatcher_watchdog_incident_notifications",
   ];
 
   for (let i = 0; i < expectedPrefixes.length; i += 1) {

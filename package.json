@@ -20,7 +20,7 @@
     "marketing:schema:incidents": "node scripts/apply-marketing-incidents-schema.mjs",
     "marketing:schema:incidents-notification-linkage": "node scripts/apply-marketing-incidents-notification-linkage.mjs",
     "marketing:schema:dispatcher-watchdog": "node scripts/apply-marketing-dispatcher-watchdog-schema.mjs",
-    "test:dispatcher-watchdog": "tsx --test src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog.test.ts src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-migration-runner.test.ts src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-postgres.test.ts",
+    "test:dispatcher-watchdog": "tsx --test src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog.test.ts src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-migration-runner.test.ts src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-postgres.test.ts src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-notification-claims.test.ts",
     "scrape:amazon": "node scripts/scrape-amazon.mjs",
     "security:check": "node scripts/check-secrets.mjs",
     "newsletter:migration-dry-run": "tsx scripts/newsletter-migration-dry-run.ts",
