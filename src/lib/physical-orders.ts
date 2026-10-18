@@ -1,6 +1,14 @@
 import { getSql } from "./db";
 import { normalizeEmail } from "./checkout-ownership";
 import { INVENTORY_DISCREPANCY_ACKNOWLEDGED } from "./order-notifications/inventory-resolution";
+import {
+  shippingFingerprint,
+  type ShipmentDetails,
+  type ShippingClaimResult,
+  type ShippingCorrectionResult,
+  type ShippingNoticeErrorCode,
+  type ShippingSaveResult,
+} from "./order-notifications/shipping-carriers";
 
 export type PhysicalFulfillmentStatus =
   | "unfulfilled"
@@ -39,6 +47,10 @@ export type PhysicalOrderRow = {
   fulfillmentStatus: PhysicalFulfillmentStatus;
   trackingNumber: string | null;
   carrier: string | null;
+  shippingNoticeStatus: "pending" | "sending" | "sent" | "failed" | null;
+  shippingNoticeSentFingerprint: string | null;
+  shippingNoticeError: ShippingNoticeErrorCode | null;
+  shippingNoticeSentAt: Date | null;
   purchasedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -156,6 +168,14 @@ function mapPhysicalOrder(row: Record<string, unknown>): PhysicalOrderRow {
     trackingNumber:
       row.tracking_number == null ? null : String(row.tracking_number),
     carrier: row.carrier == null ? null : String(row.carrier),
+    shippingNoticeStatus: mapShippingNoticeStatus(row.shipping_notice_status),
+    shippingNoticeSentFingerprint:
+      row.shipping_notice_sent_fingerprint == null
+        ? null
+        : String(row.shipping_notice_sent_fingerprint),
+    shippingNoticeError: mapShippingNoticeError(row.shipping_notice_error),
+    shippingNoticeSentAt:
+      row.shipping_notice_sent_at == null ? null : asDate(row.shipping_notice_sent_at),
     purchasedAt: asDate(row.purchased_at),
     createdAt: asDate(row.created_at),
     updatedAt: asDate(row.updated_at),
@@ -324,25 +344,54 @@ export async function acknowledgePhysicalInventoryDiscrepancy(
   return "not_uncertain";
 }
 
+function mapShippingNoticeStatus(
+  value: unknown,
+): PhysicalOrderRow["shippingNoticeStatus"] {
+  if (
+    value === "pending" ||
+    value === "sending" ||
+    value === "sent" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function mapShippingNoticeError(value: unknown): ShippingNoticeErrorCode | null {
+  if (value === "resend_not_configured" || value === "send_failed") return value;
+  if (value == null || value === "") return null;
+  return "send_failed";
+}
+
 export async function markPhysicalOrderShipped(
   orderId: string,
-): Promise<"shipped" | "inventory_unresolved" | "not_awaiting" | "missing"> {
+  shipment: ShipmentDetails,
+): Promise<ShippingSaveResult> {
   const sql = getSql();
   const acknowledged = JSON.stringify([INVENTORY_DISCREPANCY_ACKNOWLEDGED]);
   const rows = await sql`
     UPDATE physical_orders
-    SET fulfillment_status = 'shipped', updated_at = NOW()
+    SET
+      fulfillment_status = 'shipped',
+      carrier = ${shipment.carrier},
+      tracking_number = ${shipment.trackingNumber},
+      shipping_notice_status = 'pending',
+      shipping_notice_error = NULL,
+      updated_at = NOW()
     WHERE id = ${orderId}::uuid
       AND fulfillment_status = 'unfulfilled'
+      AND payment_status = 'paid'
       AND (
         inventory_state <> 'processing'
         OR attention_flags @> ${acknowledged}::jsonb
       )
     RETURNING id
   `;
-  if (rows.length) return "shipped";
+  if (rows.length) return "saved";
   const existing = await getPhysicalOrderById(orderId);
   if (!existing) return "missing";
+  if (existing.paymentStatus !== "paid") return "payment_ineligible";
   if (
     existing.fulfillmentStatus === "unfulfilled" &&
     existing.inventoryState === "processing" &&
@@ -351,4 +400,110 @@ export async function markPhysicalOrderShipped(
     return "inventory_unresolved";
   }
   return "not_awaiting";
+}
+
+export async function correctPhysicalShipment(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<ShippingCorrectionResult> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET
+      carrier = ${shipment.carrier},
+      tracking_number = ${shipment.trackingNumber},
+      shipping_notice_status = CASE
+        WHEN shipping_notice_sent_fingerprint = ${fingerprint} THEN 'sent'
+        ELSE 'pending'
+      END,
+      shipping_notice_error = NULL,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'shipped'
+      AND payment_status = 'paid'
+      AND (
+        shipping_notice_status IS DISTINCT FROM 'sending'
+        OR updated_at < NOW() - INTERVAL '2 minutes'
+      )
+    RETURNING shipping_notice_status
+  `;
+  const status = rows[0]?.shipping_notice_status;
+  if (status === "sent") return "already_sent";
+  if (status === "pending") return "pending";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  if (existing.paymentStatus !== "paid") return "payment_ineligible";
+  if (existing.fulfillmentStatus !== "shipped") return "not_shipped";
+  if (existing.shippingNoticeStatus === "sending") return "in_progress";
+  return "not_shipped";
+}
+
+export async function claimPhysicalShippingNotice(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<ShippingClaimResult> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET shipping_notice_status = 'sending', updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'shipped'
+      AND payment_status = 'paid'
+      AND carrier = ${shipment.carrier}
+      AND tracking_number = ${shipment.trackingNumber}
+      AND shipping_notice_sent_fingerprint IS DISTINCT FROM ${fingerprint}
+      AND (
+        shipping_notice_status IN ('pending', 'failed')
+        OR (
+          shipping_notice_status = 'sending'
+          AND updated_at < NOW() - INTERVAL '2 minutes'
+        )
+      )
+    RETURNING id
+  `;
+  if (rows.length) return "claimed";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "not_eligible";
+  if (existing.shippingNoticeSentFingerprint === fingerprint) return "already_sent";
+  if (existing.shippingNoticeStatus === "sending") return "in_progress";
+  return "not_eligible";
+}
+
+export async function markPhysicalShippingNoticeSent(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<void> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  await sql`
+    UPDATE physical_orders
+    SET
+      shipping_notice_status = 'sent',
+      shipping_notice_sent_fingerprint = ${fingerprint},
+      shipping_notice_error = NULL,
+      shipping_notice_sent_at = NOW(),
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND shipping_notice_status = 'sending'
+      AND carrier = ${shipment.carrier}
+      AND tracking_number = ${shipment.trackingNumber}
+  `;
+}
+
+export async function markPhysicalShippingNoticeFailed(
+  orderId: string,
+  code: ShippingNoticeErrorCode,
+): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET
+      shipping_notice_status = 'failed',
+      shipping_notice_error = ${code},
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND shipping_notice_status = 'sending'
+  `;
 }

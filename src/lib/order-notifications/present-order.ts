@@ -2,6 +2,7 @@ import type { ShippingAddressSnapshot } from "@/lib/physical-orders";
 import type { RefundStatus } from "@/lib/purchases";
 import { inventoryDiscrepancyBlocksShipment } from "./inventory-resolution";
 import type { OrderKind } from "./privacy";
+import { shippingCarrierLabel, shippingNoticeLabel } from "./shipping-carriers";
 
 export type PhysicalFulfillmentStatus =
   | "unfulfilled"
@@ -37,6 +38,12 @@ export type OrderDetailView = {
   acknowledgementLabel: string;
   canMarkShipped: boolean;
   inventoryDiscrepancyOpen: boolean;
+  carrier: string | null;
+  carrierLabel: string | null;
+  trackingNumber: string | null;
+  shippingNoticeLabel: string | null;
+  canRetryShippingNotice: boolean;
+  canCorrectShipment: boolean;
 };
 
 const ATTENTION_COPY: Record<string, string> = {
@@ -70,11 +77,13 @@ export function completeShippingFields(
   ];
 }
 
+export const UNEXPECTED_PAYMENT_STATUS_LABEL = "Unexpected payment status";
+
 export function physicalPaymentLabel(status: string): string {
   if (status === "paid") return "Paid";
   if (status === "refunded") return "Refunded";
   if (status === "partially_refunded") return "Partially refunded";
-  return "Paid";
+  return UNEXPECTED_PAYMENT_STATUS_LABEL;
 }
 
 export function physicalFulfillmentLabel(status: PhysicalFulfillmentStatus): string {
@@ -85,9 +94,10 @@ export function physicalFulfillmentLabel(status: PhysicalFulfillmentStatus): str
 }
 
 export function digitalPaymentLabel(status: RefundStatus): string {
+  if (status === "paid") return "Paid";
   if (status === "partially_refunded") return "Partially refunded";
   if (status === "fully_refunded") return "Fully refunded";
-  return "Paid";
+  return UNEXPECTED_PAYMENT_STATUS_LABEL;
 }
 
 export function digitalFulfillmentLabel(status: RefundStatus): string {
@@ -149,6 +159,10 @@ export function presentPhysicalOrder(input: {
   inventoryState: "pending" | "processing" | "applied" | "failed";
   acknowledgedAt: Date | null;
   justAcknowledged: boolean;
+  trackingNumber?: string | null;
+  carrier?: string | null;
+  shippingNoticeStatus?: "pending" | "sending" | "sent" | "failed" | null;
+  shippingNoticeError?: string | null;
 }): OrderDetailView {
   const flags = [...input.attentionFlags];
   if (input.shippingAddressMissing && !flags.includes("missing_shipping_address")) {
@@ -195,6 +209,19 @@ export function presentPhysicalOrder(input: {
       fulfillmentAfterExplicitShip(input.fulfillmentStatus) === "shipped" &&
       !inventoryDiscrepancyOpen,
     inventoryDiscrepancyOpen,
+    carrier: input.carrier ?? null,
+    carrierLabel: shippingCarrierLabel(input.carrier),
+    trackingNumber: blankToNull(input.trackingNumber),
+    shippingNoticeLabel: shippingNoticeLabel({
+      status: input.shippingNoticeStatus ?? null,
+      error: input.shippingNoticeError ?? null,
+    }),
+    canRetryShippingNotice:
+      input.fulfillmentStatus === "shipped" &&
+      input.paymentStatus === "paid" &&
+      (input.shippingNoticeStatus === "failed" || input.shippingNoticeStatus === "pending"),
+    canCorrectShipment:
+      input.fulfillmentStatus === "shipped" && input.paymentStatus === "paid",
   };
 }
 
@@ -224,6 +251,12 @@ export function presentDigitalOrder(input: {
     ),
     canMarkShipped: false,
     inventoryDiscrepancyOpen: false,
+    carrier: null,
+    carrierLabel: null,
+    trackingNumber: null,
+    shippingNoticeLabel: null,
+    canRetryShippingNotice: false,
+    canCorrectShipment: false,
   };
 }
 

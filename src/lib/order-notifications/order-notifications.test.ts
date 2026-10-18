@@ -21,8 +21,11 @@ import {
   attentionMessages,
   fulfillmentAfterExplicitShip,
   listUnacknowledged,
+  digitalPaymentLabel,
+  physicalPaymentLabel,
   presentDigitalOrder,
   presentPhysicalOrder,
+  UNEXPECTED_PAYMENT_STATUS_LABEL,
 } from "./present-order";
 import {
   OrderPersistenceError,
@@ -210,6 +213,10 @@ function memoryFulfillment(decrement: () => Promise<number | null>) {
         fulfillmentStatus: input.fulfillmentStatus,
         trackingNumber: null,
         carrier: null,
+        shippingNoticeStatus: null,
+        shippingNoticeSentFingerprint: null,
+        shippingNoticeError: null,
+        shippingNoticeSentAt: null,
         purchasedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -527,6 +534,7 @@ test("order detail shows the full address, items, quantities, payment, and fulfi
   assert.equal(detail.items[0]?.quantity, 2);
   assert.equal(detail.paymentStatus, "Paid");
   assert.equal(detail.fulfillmentStatus, "Awaiting shipment");
+  assert.equal(detail.trackingNumber, null);
   assert.equal(detail.shippingException, null);
   const values = new Map(detail.shippingFields?.map((field) => [field.label, field.value]));
   assert.equal(values.get("Name"), CUSTOMER_NAME);
@@ -537,6 +545,59 @@ test("order detail shows the full address, items, quantities, payment, and fulfi
   assert.equal(values.get("Postal code"), POSTAL);
   assert.equal(values.get("Country"), "US");
   assert.match(detail.acknowledgementLabel, /Marked reviewed/);
+
+  const tracked = presentPhysicalOrder({
+    orderId: ORDER_ID,
+    customerName: CUSTOMER_NAME,
+    customerEmail: CUSTOMER_EMAIL,
+    paymentStatus: "paid",
+    fulfillmentStatus: "shipped",
+    items: [{ title: "Children Diseases: Sickle Cell", quantity: 2, unitAmountCents: 1000 }],
+    shippingAddress: PRIVATE_ADDRESS,
+    shippingAddressMissing: false,
+    attentionFlags: [],
+    inventoryState: "applied",
+    acknowledgedAt: null,
+    justAcknowledged: true,
+    trackingNumber: "1Z999AA10123456784",
+    carrier: "ups",
+    shippingNoticeStatus: "sent",
+    shippingNoticeError: null,
+  });
+  assert.equal(tracked.trackingNumber, "1Z999AA10123456784");
+  assert.equal(tracked.carrierLabel, "UPS");
+  assert.equal(tracked.canMarkShipped, false);
+  assert.equal(tracked.canCorrectShipment, true);
+  assert.equal(tracked.shippingNoticeLabel, "Customer shipping email delivered.");
+});
+
+test("unknown payment statuses are not labeled paid", () => {
+  assert.equal(physicalPaymentLabel("paid"), "Paid");
+  assert.equal(physicalPaymentLabel("refunded"), "Refunded");
+  assert.equal(physicalPaymentLabel("partially_refunded"), "Partially refunded");
+  for (const status of ["unpaid", "failed", "pending", "no_payment_required", ""]) {
+    assert.equal(physicalPaymentLabel(status), UNEXPECTED_PAYMENT_STATUS_LABEL);
+    assert.notEqual(physicalPaymentLabel(status), "Paid");
+  }
+  assert.equal(digitalPaymentLabel("paid"), "Paid");
+  assert.equal(
+    digitalPaymentLabel("unpaid" as Parameters<typeof digitalPaymentLabel>[0]),
+    UNEXPECTED_PAYMENT_STATUS_LABEL,
+  );
+});
+
+test("tracking number rejects unsafe values", async () => {
+  const { parseShipment } = await import("./shipping-carriers");
+  assert.equal(parseShipment({ carrier: "usps", trackingNumber: "   " }).ok, false);
+  const spaced = parseShipment({
+    carrier: "usps",
+    trackingNumber: " 9400 1118 9000 0000 00 ",
+  });
+  assert.equal(spaced.ok, true);
+  if (spaced.ok) assert.equal(spaced.shipment.trackingNumber, "940011189000000000");
+  assert.equal(parseShipment({ carrier: "usps", trackingNumber: "1Z<script>" }).ok, false);
+  assert.equal(parseShipment({ carrier: "usps", trackingNumber: "A".repeat(65) }).ok, false);
+  assert.equal(parseShipment({ carrier: "pirate-ship", trackingNumber: "123" }).ok, false);
 });
 
 test("digital purchases keep itemized quantities and stay deduplicated", async () => {
@@ -981,7 +1042,17 @@ test("uncertain inventory blocks shipment until acknowledged and is not decremen
   assert.match(orders, /inventory_state = 'processing'/);
   assert.match(resolution, /inventory_discrepancy_acknowledged/);
   assert.doesNotMatch(orders, /decrementPhysicalInventory/);
-  assert.match(shipRoute, /inventory_unresolved/);
+  const handler = readFileSync(new URL("./shipping-confirmation.ts", import.meta.url), "utf8");
+  assert.match(handler, /inventory_unresolved/);
+  assert.match(handler, /!input\.isAdmin/);
+  assert.match(shipRoute, /isAdminAuthenticated/);
+  assert.match(shipRoute, /handlePhysicalShipment/);
+  assert.match(orders, /payment_status = 'paid'/);
+  assert.match(orders, /tracking_number = \$\{shipment\.trackingNumber\}/);
+  assert.match(orders, /carrier = \$\{shipment\.carrier\}/);
+  assert.match(orders, /shipping_notice_status = 'failed'/);
+  assert.match(orders, /shipping_notice_error = \$\{code\}/);
+  assert.match(orders, /fulfillment_status = 'unfulfilled'/);
 });
 
 test("eight automatic claims exhaust a notification and the ninth requires recovery", () => {

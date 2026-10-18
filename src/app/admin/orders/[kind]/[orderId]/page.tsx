@@ -1,6 +1,6 @@
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AcknowledgeInventoryButton } from "@/components/admin/orders/AcknowledgeInventoryButton";
-import { MarkShippedButton } from "@/components/admin/orders/MarkShippedButton";
+import { PhysicalShipmentControls } from "@/components/admin/orders/PhysicalShipmentControls";
 import { RecoverNotificationButton } from "@/components/admin/orders/RecoverNotificationButton";
 import {
   loadOwnerOrderDetail,
@@ -84,12 +84,51 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
                 {order.fulfillmentStatus}
               </dd>
             </div>
+            {order.kind === "physical" ? (
+              <>
+                <div>
+                  <dt className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
+                    Carrier
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-charcoal">
+                    {order.carrierLabel ?? "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase tracking-wide text-brand-charcoal/60">
+                    Tracking number
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-charcoal">
+                    {order.trackingNumber ?? "Not recorded"}
+                  </dd>
+                </div>
+              </>
+            ) : null}
           </dl>
           {order.inventoryDiscrepancyOpen ? (
             <AcknowledgeInventoryButton kind={order.kind} orderId={order.orderId} />
           ) : null}
           {order.canMarkShipped ? (
-            <MarkShippedButton kind={order.kind} orderId={order.orderId} />
+            <PhysicalShipmentControls
+              kind={order.kind}
+              orderId={order.orderId}
+              mode="ship"
+              initialCarrier={null}
+              initialTrackingNumber={null}
+              noticeLabel={null}
+              canRetry={false}
+            />
+          ) : null}
+          {order.canCorrectShipment ? (
+            <PhysicalShipmentControls
+              kind={order.kind}
+              orderId={order.orderId}
+              mode="correct"
+              initialCarrier={order.carrier}
+              initialTrackingNumber={order.trackingNumber}
+              noticeLabel={order.shippingNoticeLabel}
+              canRetry={order.canRetryShippingNotice}
+            />
           ) : null}
           {notification ? (
             <div className="mt-4 border-t border-brand-brown/10 pt-4">

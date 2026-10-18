@@ -60,6 +60,10 @@ export async function loadOwnerOrderDetail(
       inventoryState: order.inventoryState,
       acknowledgedAt: acknowledgement.acknowledgedAt,
       justAcknowledged: acknowledgement.wasUnacknowledged,
+      trackingNumber: order.trackingNumber,
+      carrier: order.carrier,
+      shippingNoticeStatus: order.shippingNoticeStatus,
+      shippingNoticeError: order.shippingNoticeError,
     });
   }
 
