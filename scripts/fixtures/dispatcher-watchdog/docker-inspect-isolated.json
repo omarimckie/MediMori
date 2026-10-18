@@ -1,0 +1,30 @@
+[
+  {
+    "Name": "/tf-watchdog-pg-run-abc123",
+    "HostConfig": {
+      "NetworkMode": "tf-watchdog-net-run-abc123",
+      "PortBindings": {},
+      "Binds": [
+        "tf-watchdog-pg-data-run-abc123:/var/lib/postgresql/data"
+      ],
+      "Privileged": false,
+      "RestartPolicy": { "Name": "no" }
+    },
+    "NetworkSettings": {
+      "Ports": {},
+      "Networks": {
+        "tf-watchdog-net-run-abc123": {
+          "IPAddress": "172.28.0.2"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "tf-watchdog-pg-data-run-abc123",
+        "Source": "/var/lib/docker/volumes/tf-watchdog-pg-data-run-abc123/_data",
+        "Destination": "/var/lib/postgresql/data"
+      }
+    ]
+  }
+]
