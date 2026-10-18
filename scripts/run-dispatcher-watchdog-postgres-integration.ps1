@@ -208,19 +208,16 @@ See docs/dispatcher-watchdog-postgres-integration.md.
 }
 
 function Assert-GitPreflight {
-    $expectedRoot = ($script:RepoRoot -replace '\\', '/').ToLowerInvariant()
-    $top = (git -C $script:RepoRoot rev-parse --show-toplevel).Trim()
-    $normalizedTop = ($top -replace '\\', '/').ToLowerInvariant()
-    if ($normalizedTop -ne $expectedRoot) {
-        throw 'integration_git_root_mismatch'
-    }
-    $branch = (git -C $script:RepoRoot branch --show-current).Trim()
-    if ($branch -ne 'main') {
-        throw 'integration_git_branch_mismatch'
-    }
-    $head = (git -C $script:RepoRoot rev-parse HEAD).Trim()
-    if ($head -ne 'a95a8c5d27dfe2cf954ebd60a78189743d6aa70a') {
-        throw 'integration_git_head_mismatch'
+    $env:WD_INTEGRATION_REPO_ROOT = $script:RepoRoot
+    Push-Location $script:RepoRoot
+    try {
+        Invoke-Node @(
+            '-e',
+            "import { assertGitPreflight } from './scripts/dispatcher-watchdog-integration-wrapper-lib.mjs'; assertGitPreflight();"
+        ) | Out-Null
+    } finally {
+        Pop-Location
+        Remove-Item Env:WD_INTEGRATION_REPO_ROOT -ErrorAction SilentlyContinue
     }
 }
 
