@@ -526,7 +526,7 @@ test("settled calls retain bounded response metadata when progress persistence f
     assert.equal((await f.db.query("SELECT * FROM engineering_validations")).rows.length,0);
   }finally{await f.close();}
 });
-test("proposal-evidence ingress failure receives its own bounded settled-call category",async()=>{
+test("proposal-evidence transport ingress failure receives its own bounded settled-call category",async()=>{
   const f=await fixture();try{
     let content=richSource,calls=0;
     const ingress:Ingress=async(op,owner,epoch,data={})=>{
@@ -543,5 +543,31 @@ test("proposal-evidence ingress failure receives its own bounded settled-call ca
     assert.equal(JSON.stringify(details).includes("private filesystem"),false);
     assert.equal((await f.db.query("SELECT * FROM engineering_events WHERE action='proposal_evidence'")).rows.length,0);
     assert.equal((await f.db.query("SELECT * FROM engineering_validations")).rows.length,0);
+  }finally{await f.close();}
+});
+test("proposal-evidence ingress rejection is distinct from transport failures",async()=>{
+  const f=await fixture();try{
+    let content=richSource,calls=0;
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      if(op==="proposal_evidence")throw new Error("proposal_evidence_denied");
+      return f.ingress(op,owner,epoch,data);
+    };
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),apply:async(replacements)=>{content=replacements[0].replacement;return proposalEvidence();},validate:async()=>assert.fail("Rejected evidence persistence must not validate")};
+    await assert.rejects(runWorker(ingress,workspace,async(body)=>{calls++;return{id:"resp_evidence_reject",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:60},text:proposalFor(body),status:"completed"};}),/bounded diagnostics/);
+    const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
+    assert.equal((details.diagnostic as Record<string,unknown>).code,"proposal_evidence_rejected");
+  }finally{await f.close();}
+});
+test("proposal-evidence lease ingress failure maps to lease_or_fence_lost",async()=>{
+  const f=await fixture();try{
+    let content=richSource,calls=0;
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      if(op==="proposal_evidence")throw new Error("lease_denied");
+      return f.ingress(op,owner,epoch,data);
+    };
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),apply:async(replacements)=>{content=replacements[0].replacement;return proposalEvidence();},validate:async()=>assert.fail("Rejected evidence persistence must not validate")};
+    await assert.rejects(runWorker(ingress,workspace,async(body)=>{calls++;return{id:"resp_evidence_lease",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:60},text:proposalFor(body),status:"completed"};}),/bounded diagnostics/);
+    const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
+    assert.equal((details.diagnostic as Record<string,unknown>).code,"lease_or_fence_lost");
   }finally{await f.close();}
 });

@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { EngineeringInputError } from "../src/lib/engineering/policy";
+import { toBoundedIngressError } from "../src/lib/engineering/proposal-evidence-ingress";
 import { executablePlan } from "../src/lib/engineering/worker-policy";
 import { diagnoseFreshExport, DockerWorkspace } from "../src/lib/engineering/workspace";
 import { createApprovedExecutionExport } from "../src/lib/engineering/source-binding";
@@ -127,8 +128,7 @@ export async function main(run = process.argv[2]) {
       }
       return result;
     } catch (error) {
-      if (error instanceof EngineeringInputError) throw error;
-      throw new EngineeringInputError("Worker ingress refused or unavailable.");
+      throw toBoundedIngressError(error);
     }
   };
   const proxy: IsolatedWorkspace = { preflightRevision:async()=>preflightRevision, snapshot: () => {if(!workspace)throw new EngineeringInputError("Workspace not initialized.");return workspace.snapshot();}, apply: (files, revision) => {if(!workspace)throw new EngineeringInputError("Workspace not initialized.");return workspace.apply(files, revision);}, prepareValidationEnvironment: revision => {if(!workspace)throw new EngineeringInputError("Workspace not initialized.");return workspace.prepareValidationEnvironment(revision);}, validate: (args, revision, signal) => {if(!workspace)throw new EngineeringInputError("Workspace not initialized.");return workspace.validate(args, revision, signal);}, dispose:async()=>{if(workspace)await workspace.dispose();else await rm(exportRoot,{recursive:true,force:true});} };

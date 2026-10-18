@@ -12,7 +12,7 @@ const validationStages = new Set([
 ]);
 const codes = new Set([
   "provider_incomplete", "proposal_invalid_json", "proposal_invalid_shape", "proposal_out_of_scope",
-  "proposal_invalid_content", "proposal_apply_failed", "proposal_evidence_persist_failed",
+  "proposal_invalid_content", "proposal_apply_failed", "proposal_evidence_rejected", "proposal_evidence_persist_failed",
   "call_progress_persist_failed", "replacement_target_missing", "replacement_target_ambiguous",
   "replacement_overlap", "replacement_scope_rejected", "replacement_revision_mismatch",
   "replacement_content_invalid", "replacement_apply_failed", "validation_executor_unavailable",

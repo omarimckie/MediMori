@@ -4,6 +4,7 @@ import { DockerCleanupError } from "./docker-ownership";
 import type { CleanupFailure } from "./docker-ownership";
 import { approvedModels, commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits, type Model } from "./worker-policy";
 import { AnchorProtocolError, buildBoundedReplacementContext, replacementProposalFormat, replacementProposalSchema, resolveReplacementProposal, type AnchorReplacement, type IssuedAnchor, type ProposalShapeCategory } from "./replacement-anchors";
+import { classifyProposalEvidenceIngressFailure } from "./proposal-evidence-ingress";
 import { normalizeValidationEvidence, ValidationPreparationError, type ValidationEvidence, type ValidationPreparationStage } from "./validation-diagnostics";
 
 export type Snapshot = { revision: string; files: Record<string, string>; changedFiles: string[] };
@@ -28,7 +29,7 @@ export interface IsolatedWorkspace {
 }
 export type Ingress = (op: string, owner: string, epoch: number, data?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 export type { ProposalShapeCategory, IssuedAnchor };
-export type WorkerDiagnostic = { stage: "implementation" | "review" | "worker"; operation?: "provider_call" | "apply_proposal" | "prepare_validation_environment" | "run_validation" | "workspace_cleanup" | "worker_lifecycle"; category?: "provider_failure" | "proposal_failure" | "validation_failure" | "cleanup_failure" | "worker_failure"; cleanupOutcome?: "succeeded" | "failed" | "not_attempted"; code: "provider_incomplete" | "proposal_invalid_json" | "proposal_invalid_shape" | "proposal_out_of_scope" | "proposal_invalid_content" | "proposal_apply_failed" | "proposal_evidence_persist_failed" | "call_progress_persist_failed" | "replacement_target_missing" | "replacement_target_ambiguous" | "replacement_overlap" | "replacement_scope_rejected" | "replacement_revision_mismatch" | "replacement_content_invalid" | "replacement_apply_failed" | "validation_executor_unavailable" | "validation_protocol_error" | "validation_source_prepare_failed" | "validation_overlay_prepare_failed" | "validation_dependency_unavailable" | "validation_image_unavailable" | "validation_start_persistence_failed" | "validation_evidence_persistence_failed" | "post_apply_revision_mismatch" | "post_apply_scope_verification_failed" | "lease_or_fence_lost" | "runtime_deadline_exceeded" | "sandbox_cleanup_failed" | "worker_failure"; shapeCategory?: ProposalShapeCategory; replacementCount?: number; progressPhase?: "response_processed" | "proposal_validated" | "proposal_applied" | "review_validated"; validationStage?: ValidationPreparationStage | "post_apply_verification" | "validation_environment_prepare" | "validation_cycle" | "validation_gate" | "validation_progress" | "validation_evidence"; validationRevision?: string; validationGate?: string; responseId?: string; responseStatus?: "completed" | "incomplete" | "failed" | "unknown"; incompleteReason?: "max_output_tokens" | "content_filter" | "other"; outputTokens?: number; outputLimit?: number; cleanupFailures?: CleanupFailure[] };
+export type WorkerDiagnostic = { stage: "implementation" | "review" | "worker"; operation?: "provider_call" | "apply_proposal" | "prepare_validation_environment" | "run_validation" | "workspace_cleanup" | "worker_lifecycle"; category?: "provider_failure" | "proposal_failure" | "validation_failure" | "cleanup_failure" | "worker_failure"; cleanupOutcome?: "succeeded" | "failed" | "not_attempted"; code: "provider_incomplete" | "proposal_invalid_json" | "proposal_invalid_shape" | "proposal_out_of_scope" | "proposal_invalid_content" | "proposal_apply_failed" | "proposal_evidence_rejected" | "proposal_evidence_persist_failed" | "call_progress_persist_failed" | "replacement_target_missing" | "replacement_target_ambiguous" | "replacement_overlap" | "replacement_scope_rejected" | "replacement_revision_mismatch" | "replacement_content_invalid" | "replacement_apply_failed" | "validation_executor_unavailable" | "validation_protocol_error" | "validation_source_prepare_failed" | "validation_overlay_prepare_failed" | "validation_dependency_unavailable" | "validation_image_unavailable" | "validation_start_persistence_failed" | "validation_evidence_persistence_failed" | "post_apply_revision_mismatch" | "post_apply_scope_verification_failed" | "lease_or_fence_lost" | "runtime_deadline_exceeded" | "sandbox_cleanup_failed" | "worker_failure"; shapeCategory?: ProposalShapeCategory; replacementCount?: number; progressPhase?: "response_processed" | "proposal_validated" | "proposal_applied" | "review_validated"; validationStage?: ValidationPreparationStage | "post_apply_verification" | "validation_environment_prepare" | "validation_cycle" | "validation_gate" | "validation_progress" | "validation_evidence"; validationRevision?: string; validationGate?: string; responseId?: string; responseStatus?: "completed" | "incomplete" | "failed" | "unknown"; incompleteReason?: "max_output_tokens" | "content_filter" | "other"; outputTokens?: number; outputLimit?: number; cleanupFailures?: CleanupFailure[] };
 export class WorkerFailure extends EngineeringInputError {
   constructor(readonly diagnostic: WorkerDiagnostic, message = "Worker stopped; inspect bounded diagnostics.") { super(message); }
 }
@@ -175,8 +176,12 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
           throw new WorkerFailure({stage:"implementation",code});
         }
         try { await send("proposal_evidence", proposalEvidence as unknown as Record<string, unknown>); }
-        catch {
-          throw new WorkerFailure({stage:"implementation",code:"proposal_evidence_persist_failed",replacementCount:proposal.length});
+        catch (error) {
+          throw new WorkerFailure(classifyProposalEvidenceIngressFailure(error, {
+            signalAborted: controller.signal.aborted,
+            abortCode,
+            replacementCount: proposal.length,
+          }));
         }
         if (currentCall) await persistProgress("implementation",currentCall.key,"proposal_applied");
         currentCall = undefined;
