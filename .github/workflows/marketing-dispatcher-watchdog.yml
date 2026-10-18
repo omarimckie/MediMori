@@ -1,0 +1,132 @@
+# Independent publishing-health watchdog (verified QStash primary signal only).
+# Does NOT invoke marketing-publish or publishDue.
+# WARNING: Merging this file to the repository default branch enables the cron schedule on GitHub
+# (once Actions are enabled for the repo). Disable the workflow in GitHub settings before merge if
+# secrets, Vercel enablement, and activation are not ready.
+# GitHub scheduled runs may be delayed; observation slots are durable in Postgres (15-minute buckets).
+# Healthchecks.io success ping runs only after a confirmed HTTP 200 tick response — it does not prove
+# marketing-publish ran, that QStash primary is fresh, or that phone push delivery succeeded.
+
+name: Marketing dispatcher watchdog
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketing-dispatcher-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/marketing-dispatcher-watchdog
+        id: watchdog_tick
+        env:
+          MARKETING_DISPATCHER_WATCHDOG_BASE_URL: ${{ vars.MARKETING_DISPATCHER_WATCHDOG_BASE_URL }}
+          DISPATCHER_WATCHDOG_SECRET: ${{ secrets.DISPATCHER_WATCHDOG_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MARKETING_DISPATCHER_WATCHDOG_BASE_URL}" ]; then
+            echo "::error::Set repository variable MARKETING_DISPATCHER_WATCHDOG_BASE_URL (HTTPS production origin, e.g. https://twilight-feather.com)."
+            exit 1
+          fi
+          if [ -z "${DISPATCHER_WATCHDOG_SECRET}" ]; then
+            echo "::error::Set repository secret DISPATCHER_WATCHDOG_SECRET (must match Vercel DISPATCHER_WATCHDOG_SECRET)."
+            exit 1
+          fi
+
+          BASE="${MARKETING_DISPATCHER_WATCHDOG_BASE_URL%/}"
+          case "${BASE}" in
+            https://*) ;;
+            *)
+              echo "::error::MARKETING_DISPATCHER_WATCHDOG_BASE_URL must be an https:// origin."
+              exit 1
+              ;;
+          esac
+
+          URL="${BASE}/api/cron/marketing-dispatcher-watchdog"
+          echo "Watchdog target: ${URL}"
+          echo "Auth: Bearer DISPATCHER_WATCHDOG_SECRET (value not logged)"
+          echo "GitHub run: ${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}"
+
+          HTTP_CODE="$(
+            curl -sS -o /tmp/marketing-dispatcher-watchdog-response.json -w "%{http_code}" \
+              --max-time 120 \
+              -X POST \
+              -H "Authorization: Bearer ${DISPATCHER_WATCHDOG_SECRET}" \
+              -H "Content-Type: application/json" \
+              -H "x-github-run-id: ${GITHUB_RUN_ID}" \
+              -H "x-github-run-attempt: ${GITHUB_RUN_ATTEMPT}" \
+              --data '{}' \
+              "${URL}"
+          )"
+
+          echo "HTTP status: ${HTTP_CODE}"
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Watchdog tick failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require("fs");
+          const allowedOutcomes = new Set([
+            "committed",
+            "duplicate_slot",
+            "ignored_late_slot",
+            "ignored_not_activated",
+          ]);
+          let raw = "";
+          try {
+            raw = fs.readFileSync("/tmp/marketing-dispatcher-watchdog-response.json", "utf8");
+          } catch {
+            console.error("::error::Watchdog response body missing");
+            process.exit(1);
+          }
+          let body;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            console.error("::error::Watchdog response was not valid JSON");
+            process.exit(1);
+          }
+          if (body?.ok !== true) {
+            console.error("::error::Watchdog response missing ok:true (tick not confirmed)");
+            process.exit(1);
+          }
+          if (!allowedOutcomes.has(body.outcome)) {
+            console.error("::error::Unexpected watchdog outcome:", String(body.outcome));
+            process.exit(1);
+          }
+          if (!Number.isInteger(body.observationSlotId)) {
+            console.error("::error::Watchdog response missing observationSlotId");
+            process.exit(1);
+          }
+          console.log("watchdog outcome:", body.outcome);
+          console.log("observation slot:", body.observationSlotId);
+          NODE
+
+          echo "Watchdog tick confirmed."
+
+      - name: Healthchecks.io success ping
+        env:
+          HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL: ${{ secrets.HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL}" ]; then
+            echo "::error::Set repository secret HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL (Healthchecks.io ping URL; value not logged)."
+            exit 1
+          fi
+
+          echo "Sending Healthchecks.io success ping (URL not logged)."
+          curl -fsS --max-time 30 --retry 2 "${HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL}"
+          echo "Healthchecks ping succeeded."
