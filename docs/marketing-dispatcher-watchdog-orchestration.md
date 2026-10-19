@@ -65,10 +65,43 @@ Pushing `.github/workflows/marketing-dispatcher-watchdog.yml` to the **default b
 ## Activation prerequisites (production)
 
 1. Apply schemas on production Neon in order: incidents (and linkage if needed) → [QStash-primary migration](marketing-dispatcher-qstash-primary-schema-migration.md) → [watchdog migration](marketing-dispatcher-watchdog-schema-migration.md) (both guarded; operator-authorized).
-2. Confirm verified QStash deliveries update `marketing_dispatcher_qstash_primary`.
-3. Record activation with verified evidence (`recordPrimaryQstashActivation`).
-4. Set Vercel env vars; set `MARKETING_DISPATCHER_WATCHDOG_ENABLED=true` only when ready.
-5. Configure GitHub variables/secrets; enable workflow when operator approves.
+2. Deploy application code with verified QStash primary heartbeat on `marketing-publish` (signature + `Authorization: Bearer CRON_SECRET`).
+3. Confirm at least one row in `marketing_dispatcher_qstash_verified_deliveries` and a fresh `marketing_dispatcher_qstash_primary.last_seen_at` (see snapshot below).
+4. Record activation via the guarded operator script (calls `recordPrimaryQstashActivation` — **not** raw SQL).
+5. Set Vercel env vars; set `MARKETING_DISPATCHER_WATCHDOG_ENABLED=true` only when ready.
+6. Configure GitHub variables/secrets; **disable** the watchdog workflow until steps 4–5 are complete; enable schedule only after owner approval.
+
+### Guarded QStash primary activation (operator)
+
+**STOP** if any prerequisite schema is missing, if no verified delivery exists, if `last_seen_at` is absent, or if the primary heartbeat is older than **30 minutes** (same window as watchdog primary stale threshold).
+
+Required environment variables (never commit real values):
+
+| Variable | Purpose |
+|----------|---------|
+| `MARKETING_DISPATCHER_WATCHDOG_ACTIVATION_AUTHORIZED` | Must be `execute` to mutate |
+| `MARKETING_DISPATCHER_WATCHDOG_ACTIVATION_DATABASE_URL` | Dedicated Postgres URL (not `DATABASE_URL`) |
+| `MARKETING_MIGRATION_EXPECTED_PG_HOST` | Exact hostname guard |
+| `MARKETING_MIGRATION_EXPECTED_PG_DATABASE` | Exact database name guard |
+| `MARKETING_DISPATCHER_WATCHDOG_ACTIVATION_DRY_RUN` | `report` — offline config report, no DB connection |
+
+Evidence is **derived from the database only** (`verificationKind: qstash_signature_verified`, `verifiedAt` from `marketing_dispatcher_qstash_primary.last_seen_at`, `attestationId` from the latest `marketing_dispatcher_qstash_verified_deliveries.jti` at or before that timestamp). Operators cannot supply arbitrary JTIs or timestamps.
+
+**Dry-run (safe, offline):**
+
+`MARKETING_DISPATCHER_WATCHDOG_ACTIVATION_DRY_RUN=report npx tsx scripts/execute-marketing-dispatcher-watchdog-activation.mjs`
+
+**Read-only readiness snapshot** (connects read-only; no activation authorization required):
+
+`MARKETING_DISPATCHER_WATCHDOG_ACTIVATION_SNAPSHOT=report` plus the dedicated URL and expected host/database variables → `npx tsx scripts/report-marketing-dispatcher-watchdog-activation-snapshot.mjs`
+
+Snapshot JSON reports table presence, delivery count, heartbeat age/freshness, `primary_qstash_activated_at`, and `activationPending`. It never prints connection strings, signing keys, or `CRON_SECRET`.
+
+**Authorized execute** (owner approval only):
+
+Set all execute variables, then `npx tsx scripts/execute-marketing-dispatcher-watchdog-activation.mjs`. On success, re-run the snapshot and confirm `activationPending: false` and `primaryQstashActivatedAt` set.
+
+CLI failures print a sanitized `code` only (no URLs or secrets).
 
 ## Manual testing (controlled)
 
