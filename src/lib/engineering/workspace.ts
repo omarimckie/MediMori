@@ -9,8 +9,9 @@ import { cleanupOwnedDockerResources, dockerOwnershipArgs, DockerCleanupError, v
 import type { IsolatedWorkspace, ProposalEvidence, Snapshot } from "./worker";
 import { anchorLimits, issuedAnchorId, sha256, verifyAnchorIdentity, type AnchorReplacement } from "./replacement-anchors";
 import { allowlistedSystemCode, relativePathHash, WorkspaceExportError, type WorkspaceExportCode } from "./workspace-export-diagnostics";
-import { makeValidationEvidence, ValidationPreparationError, type ValidationPreparationCode, type ValidationPreparationStage, type ValidationEvidence } from "./validation-diagnostics";
+import { makeValidationEvidence, ValidationPreparationError, withStagingCleanupFailure, type ValidationPreparationCode, type ValidationPreparationStage, type ValidationEvidence } from "./validation-diagnostics";
 import { initializeNextEnvPrivateOverlayCommand, validationVolumeMountArgs } from "./validation-volume-policy";
+import { populateHelperEntrypointCommand, sourceVolumePopulateTimeoutMs, streamTarDirectoryIntoDockerExec, type ValidationPreparationOperation } from "./validation-source-populate";
 import { resolveCanonicalSourceManifest, verifyCanonicalSourceCheckout, copyCanonicalSourceManifest, SOURCE_SELECTION_LIMITS, SOURCE_SELECTION_POLICY_VERSION, type CanonicalSourceManifest } from "./source-manifest";
 const exec = promisify(execFile);
 const secret = /(?:sk-(?:proj-)?[A-Za-z0-9_-]{24,}|(?:postgres(?:ql)?:\/\/)[^\s/:@]+:[^\s/@]+@[^\s]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}|vercel_blob_rw_[A-Za-z0-9_]{20,})/;
@@ -246,6 +247,8 @@ export class DockerWorkspace implements IsolatedWorkspace {
     let helper = "";
     let failureCode: ValidationPreparationCode = "validation_source_prepare_failed";
     let failureStage: ValidationPreparationStage = "source_volume";
+    let failureOperation: ValidationPreparationOperation = "local_staging_export";
+    let deferredError: unknown;
     try {
       failureCode = "validation_executor_unavailable"; failureStage = "docker_preflight";
       await exec("docker", ["info", "--format={{.ServerVersion}}"], { timeout: 15000, windowsHide: true });
@@ -253,7 +256,7 @@ export class DockerWorkspace implements IsolatedWorkspace {
       await exec("docker", ["image", "inspect", this.image], { timeout: 15000, windowsHide: true });
       failureCode = "validation_dependency_unavailable"; failureStage = "dependency_check";
       await exec("docker", ["volume", "inspect", this.dependencyVolume], { timeout: 15000, windowsHide: true });
-      failureCode = "validation_source_prepare_failed"; failureStage = "source_volume";
+      failureCode = "validation_source_prepare_failed"; failureStage = "source_volume"; failureOperation = "local_staging_export";
       const tree = await contents(this.root);
       if (treeRevision(tree) !== expectedRevision) throw new EngineeringInputError("Workspace changed before volume population.");
       staging = await mkdtemp(join(this.scratchRoot, "medimori-sandbox-export-"));
@@ -272,26 +275,37 @@ export class DockerWorkspace implements IsolatedWorkspace {
       if (secret.test(bytes.toString("utf8"))) throw new EngineeringInputError("Secret detected; context export refused.");
       this.nextEnvSourceHash = createHash("sha256").update(bytes).digest("hex");
       if (!/^[a-f0-9]{64}$/.test(tree["next-env.d.ts"] ?? "") || this.nextEnvSourceHash !== tree["next-env.d.ts"]) throw new EngineeringInputError("Next.js declaration file differs from the approved source revision.");
+      failureOperation = "docker_volume_create";
       for (const volume of [this.sourceVolume, this.cacheVolume, this.uploadsVolume, this.privateVolume]) await this.createVolume(volume);
+      const populateTimeoutMs = sourceVolumePopulateTimeoutMs(Object.keys(tree).length);
+      const uploadPath = join(staging, "public", "marketing-uploads");
+      let includeUploads = false;
+      try {
+        await lstat(uploadPath);
+        includeUploads = true;
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+      }
       helper = `medimori-worker-populate-${this.id}`;
       this.resourcesMayExist = true;
+      failureOperation = "docker_populate_create";
       await exec("docker", ["create", "--name", helper, ...dockerOwnershipArgs(this.owner, "populate-container"), "--network=none", "--user=0:0",
         "--mount", `type=volume,source=${this.sourceVolume},target=/workspace`,
         "--mount", `type=volume,source=${this.cacheVolume},target=/cache`,
         "--mount", `type=volume,source=${this.uploadsVolume},target=/uploads`,
         "--mount", `type=volume,source=${this.privateVolume},target=/private`,
-        "--entrypoint=/bin/sh", this.image, "-c", "sleep 60"], { timeout: 20000, windowsHide: true });
-      await exec("docker", ["cp", `${staging}${sep}.`, `${helper}:/workspace`], { timeout: 60000, windowsHide: true });
-      const uploadPath = join(staging, "public", "marketing-uploads");
-      try {
-        await lstat(uploadPath);
-        await exec("docker", ["cp", `${uploadPath}${sep}.`, `${helper}:/uploads`], { timeout: 60000, windowsHide: true });
-      } catch (error) {
-        if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+        "--entrypoint=/bin/sh", this.image, "-c", populateHelperEntrypointCommand(Object.keys(tree).length, includeUploads)], { timeout: 20000, windowsHide: true });
+      await exec("docker", ["start", helper], { timeout: 15000, windowsHide: true });
+      failureOperation = "docker_populate_workspace";
+      await streamTarDirectoryIntoDockerExec(helper, staging, "/workspace", populateTimeoutMs);
+      if (includeUploads) {
+        failureOperation = "docker_populate_uploads";
+        await streamTarDirectoryIntoDockerExec(helper, uploadPath, "/uploads", Math.min(populateTimeoutMs, 180_000));
       }
+      failureOperation = "docker_populate_remove";
       await exec("docker", ["rm", "--force", helper], { timeout: 15000, windowsHide: true });
       helper = "";
-      failureCode = "validation_overlay_prepare_failed"; failureStage = "next_env_overlay";
+      failureCode = "validation_overlay_prepare_failed"; failureStage = "next_env_overlay"; failureOperation = "docker_overlay_init";
       await exec("docker", ["run", "--rm", ...dockerOwnershipArgs(this.owner, "populate-container"), "--network=none", "--user=0:0",
         "--mount", `type=volume,source=${this.sourceVolume},target=/workspace`,
         "--mount", `type=volume,source=${this.cacheVolume},target=/cache`,
@@ -301,16 +315,28 @@ export class DockerWorkspace implements IsolatedWorkspace {
       this.volumesReady = true;
     } catch (error) {
       if (helper) await exec("docker", ["rm", "--force", helper], { timeout: 10000, windowsHide: true }).catch(() => {});
+      deferredError = error instanceof ValidationPreparationError || error instanceof EngineeringInputError
+        ? error
+        : new ValidationPreparationError(failureCode, failureStage, failureOperation);
       try { await this.cleanupVolumes(); }
-      catch (cleanupError) { if (cleanupError instanceof DockerCleanupError) throw cleanupError; }
-      if (error instanceof ValidationPreparationError) throw error;
-      throw new ValidationPreparationError(failureCode, failureStage);
+      catch (cleanupError) {
+        if (cleanupError instanceof DockerCleanupError) {
+          if (deferredError instanceof ValidationPreparationError) deferredError = withStagingCleanupFailure(deferredError);
+          else if (!deferredError) throw cleanupError;
+        }
+      }
     } finally {
       if (staging) {
         try { await rm(staging, { recursive: true, force: true }); }
-        catch { throw new ValidationPreparationError("validation_source_prepare_failed", "source_volume"); }
+        catch {
+          if (!this.volumesReady) {
+            if (deferredError instanceof ValidationPreparationError) deferredError = withStagingCleanupFailure(deferredError);
+            else if (!deferredError) deferredError = new ValidationPreparationError("validation_source_prepare_failed", "source_volume", "staging_cleanup");
+          }
+        }
       }
     }
+    if (deferredError) throw deferredError;
   }
   private async inspectDiagnosticSourceWrites(): Promise<{ available: boolean; changedCount: number | null; changedPaths: string[]; nextEnvEffect: "created" | "changed" | "unchanged" | "removed" | "unavailable"; failureStage: string | null }> {
     const observer = `medimori-build-observer-${this.id}`;

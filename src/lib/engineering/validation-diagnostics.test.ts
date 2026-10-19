@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boundedValidationExcerpt, makeValidationEvidence, normalizeValidationEvidence, sanitizeValidationLabel, ValidationPreparationError, validationPreparationCodes } from "./validation-diagnostics";
+import { boundedValidationExcerpt, makeValidationEvidence, normalizeValidationEvidence, sanitizeValidationLabel, ValidationPreparationError, validationPreparationCodes, withStagingCleanupFailure } from "./validation-diagnostics";
 
 const revision = "a".repeat(40);
 
@@ -89,10 +89,20 @@ test("excerpt parsing still drops non-actionable build noise", () => {
   assert.deepEqual(result.failedTests, []);
 });
 
+test("staging cleanup failure preserves the primary preparation operation and code", () => {
+  const primary = new ValidationPreparationError("validation_source_prepare_failed", "source_volume", "docker_populate_workspace");
+  const merged = withStagingCleanupFailure(primary);
+  assert.equal(merged.code, "validation_source_prepare_failed");
+  assert.equal(merged.operation, "docker_populate_workspace");
+  assert.equal(merged.stagingCleanupFailed, true);
+  assert.equal(withStagingCleanupFailure(merged), merged);
+});
+
 test("validation preparation failures expose only allow-listed stage and category metadata", () => {
   for (const code of validationPreparationCodes) {
-    const error = new ValidationPreparationError(code, code === "validation_overlay_prepare_failed" ? "next_env_overlay" : code === "validation_image_unavailable" ? "image_check" : code === "validation_dependency_unavailable" ? "dependency_check" : code === "validation_executor_unavailable" ? "docker_preflight" : "source_volume");
+    const error = new ValidationPreparationError(code, code === "validation_overlay_prepare_failed" ? "next_env_overlay" : code === "validation_image_unavailable" ? "image_check" : code === "validation_dependency_unavailable" ? "dependency_check" : code === "validation_executor_unavailable" ? "docker_preflight" : "source_volume", "docker_populate_workspace");
     assert.equal(error.code, code);
+    assert.equal(error.operation, "docker_populate_workspace");
     assert.ok(error.message.includes("Validation environment preparation failed"));
     assert.equal(JSON.stringify(error).includes("private"), false);
   }

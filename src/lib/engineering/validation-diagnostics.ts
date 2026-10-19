@@ -21,11 +21,25 @@ export const validationPreparationCodes = [
 ] as const;
 export type ValidationPreparationCode = typeof validationPreparationCodes[number];
 export type ValidationPreparationStage = "docker_preflight" | "image_check" | "dependency_check" | "source_volume" | "next_env_overlay";
+export type ValidationPreparationOperation = import("./validation-source-populate").ValidationPreparationOperation;
 export class ValidationPreparationError extends Error {
-  constructor(readonly code: ValidationPreparationCode, readonly stage: ValidationPreparationStage) {
+  readonly stagingCleanupFailed: boolean;
+  constructor(
+    readonly code: ValidationPreparationCode,
+    readonly stage: ValidationPreparationStage,
+    readonly operation?: ValidationPreparationOperation,
+    stagingCleanupFailed = false,
+  ) {
     super("Validation environment preparation failed.");
     this.name = "ValidationPreparationError";
+    this.stagingCleanupFailed = stagingCleanupFailed;
   }
+}
+
+/** Keeps the primary preparation failure when disposable staging cleanup also fails. */
+export function withStagingCleanupFailure(primary: ValidationPreparationError): ValidationPreparationError {
+  if (primary.stagingCleanupFailed) return primary;
+  return new ValidationPreparationError(primary.code, primary.stage, primary.operation, true);
 }
 export type ValidationEvidence = {
   revision: string;
