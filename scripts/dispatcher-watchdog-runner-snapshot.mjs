@@ -40,6 +40,7 @@ export const RUNNER_SOURCE_ALLOWLIST = [
   "scripts/resolve-marketing-dispatcher-watchdog-test-database-url.mjs",
   "scripts/apply-marketing-incidents-schema.mjs",
   "scripts/apply-marketing-dispatcher-watchdog-schema.mjs",
+  "scripts/resolve-marketing-dispatcher-watchdog-schema-database-url.mjs",
   "scripts/apply-marketing-dispatcher-qstash-primary-schema.mjs",
   "scripts/resolve-marketing-qstash-primary-schema-database-url.mjs",
   "scripts/apply-marketing-web-push-schema.mjs",

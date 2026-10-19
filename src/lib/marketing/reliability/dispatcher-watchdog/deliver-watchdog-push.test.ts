@@ -99,7 +99,7 @@ describe("deliverWatchdogOutagePush", () => {
             failureCount: 0,
           },
         ],
-        sendToSubscription: async () => ({ ok: true }),
+        sendToSubscription: async () => ({ ok: true, permanentFailure: false }),
         updateDelivery: async () => {},
       },
     );
@@ -163,7 +163,7 @@ describe("deliverWatchdogOutagePush", () => {
             failureCount: 0,
           },
         ],
-        sendToSubscription: async (sub) => ({ ok: sub.id === "s1" }),
+        sendToSubscription: async (sub) => ({ ok: sub.id === "s1", permanentFailure: false }),
         updateDelivery: async () => {},
       },
     );
@@ -199,7 +199,7 @@ describe("deliverWatchdogOutagePush", () => {
           failureCount: 0,
         },
       ],
-      sendToSubscription: async () => ({ ok: true }),
+      sendToSubscription: async () => ({ ok: true, permanentFailure: false }),
       updateDelivery: async () => {},
     };
     const first = await deliverWatchdogOutagePush(
@@ -277,7 +277,7 @@ describe("deliverWatchdogOutagePush", () => {
             failureCount: 0,
           },
         ],
-        sendToSubscription: async () => ({ ok: false }),
+        sendToSubscription: async () => ({ ok: false, permanentFailure: false }),
         updateDelivery: async () => {},
       },
     );
@@ -343,7 +343,7 @@ describe("deliverWatchdogRecoveryPush", () => {
             failureCount: 0,
           },
         ],
-        sendToSubscription: async () => ({ ok: true }),
+        sendToSubscription: async () => ({ ok: true, permanentFailure: false }),
         updateDelivery: async () => {},
       },
     );
@@ -388,7 +388,7 @@ describe("deliverWatchdogRecoveryPush", () => {
             failureCount: 0,
           },
         ],
-        sendToSubscription: async () => ({ ok: true }),
+        sendToSubscription: async () => ({ ok: true, permanentFailure: false }),
         updateDelivery: async () => {},
       },
     );

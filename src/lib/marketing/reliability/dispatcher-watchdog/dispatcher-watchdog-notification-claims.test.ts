@@ -314,6 +314,7 @@ describe("dispatcher watchdog notification claims (B3a + P1)", () => {
     await activateFakeQstash(repo);
     const incidentId = await openIncidentFakePg(repo);
     const first = await repo.tryAcquireOutagePushClaim(incidentId);
+    assert.equal(first.status, "acquired");
     store.notifications.get(incidentId)!.updated_at = new Date(
       Date.now() - 11 * 60_000,
     ).toISOString();
@@ -415,6 +416,7 @@ describe("dispatcher watchdog notification claims (B3a + P1)", () => {
     await activateFakeQstash(repo);
     const incidentId = await openIncidentFakePg(repo);
     const first = await repo.tryAcquireOutagePushClaim(incidentId);
+    assert.equal(first.status, "acquired");
     await repo.beginOutagePushAttempt({
       incidentId,
       claimNonce: first.claimNonce,
@@ -430,6 +432,7 @@ describe("dispatcher watchdog notification claims (B3a + P1)", () => {
     const repo = createMemoryWatchdogRepository();
     const incidentId = await openIncident(repo);
     const acquired = await repo.tryAcquireOutagePushClaim(incidentId);
+    assert.equal(acquired.status, "acquired");
     const began = await repo.beginOutagePushAttempt({
       incidentId,
       claimNonce: acquired.claimNonce,
@@ -443,6 +446,7 @@ describe("dispatcher watchdog notification claims (B3a + P1)", () => {
     const incidentId = await openIncident(repo);
     const otherId = crypto.randomUUID();
     const acquired = await repo.tryAcquireOutagePushClaim(incidentId);
+    assert.equal(acquired.status, "acquired");
     const state = await repo.getState();
     if (state.activeIncidentId === incidentId) {
       const began = await repo.beginOutagePushAttempt({

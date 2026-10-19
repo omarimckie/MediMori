@@ -6,7 +6,7 @@ Independent monitoring for **verified QStash primary** dispatcher health. This p
 
 | Component | Role |
 |-----------|------|
-| **QStash → `marketing-publish`** | Updates `marketing_dispatcher_qstash_primary` only after signature-verified delivery |
+| **QStash → `marketing-publish`** | Updates `marketing_dispatcher_qstash_primary` only after **both** `Authorization: Bearer CRON_SECRET` and a valid `upstash-signature` on the publish route (see below) |
 | **`POST /api/cron/marketing-dispatcher-watchdog`** | Reads verified primary `last_seen_at`, commits 15-minute observation slots, Policy A push when eligible |
 | **GitHub Actions `marketing-dispatcher-watchdog.yml`** | Scheduled `*/15 * * * *` + `workflow_dispatch`; POSTs the watchdog endpoint |
 | **Healthchecks.io** | Success ping **only from GitHub Actions** after HTTP 200 + confirmed tick JSON |
@@ -33,6 +33,10 @@ Enabling the HTTP endpoint (`MARKETING_DISPATCHER_WATCHDOG_ENABLED=true`) is **n
 | `MARKETING_DISPATCHER_WATCHDOG_ADMIN_USERNAME` | Admin username for `dispatcher_warning` push targets |
 | `DATABASE_URL` | Neon (watchdog + QStash primary tables) |
 | `QSTASH_CURRENT_SIGNING_KEY` / `QSTASH_NEXT_SIGNING_KEY` | QStash signature verification on publish route (primary signal) |
+| `QSTASH_WEBHOOK_URL` | Must match the QStash destination URL exactly (used when verifying signatures) |
+| `CRON_SECRET` | Required on the publish route; QStash must send `Authorization: Bearer <CRON_SECRET>` in addition to `upstash-signature` |
+
+**QStash destination headers:** Configure the Upstash QStash destination for `POST /api/cron/marketing-publish` with a custom `Authorization` header of `Bearer <CRON_SECRET>` (same value as Vercel `CRON_SECRET`). A valid `upstash-signature` alone does **not** pass `authorizeMarketingCron`; unsigned Vercel cron traffic cannot populate the verified QStash primary tables.
 
 Do not commit real values. Rotate `DISPATCHER_WATCHDOG_SECRET` independently of `CRON_SECRET`.
 
@@ -60,7 +64,7 @@ Pushing `.github/workflows/marketing-dispatcher-watchdog.yml` to the **default b
 
 ## Activation prerequisites (production)
 
-1. Apply watchdog + QStash-primary schemas on production Neon (guarded migration tooling).
+1. Apply schemas on production Neon in order: incidents (and linkage if needed) → [QStash-primary migration](marketing-dispatcher-qstash-primary-schema-migration.md) → [watchdog migration](marketing-dispatcher-watchdog-schema-migration.md) (both guarded; operator-authorized).
 2. Confirm verified QStash deliveries update `marketing_dispatcher_qstash_primary`.
 3. Record activation with verified evidence (`recordPrimaryQstashActivation`).
 4. Set Vercel env vars; set `MARKETING_DISPATCHER_WATCHDOG_ENABLED=true` only when ready.

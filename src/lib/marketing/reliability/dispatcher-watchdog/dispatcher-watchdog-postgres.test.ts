@@ -6,7 +6,8 @@ import {
   createFakeWatchdogPgHarness,
   type FakeWatchdogPgStore,
 } from "./fake-pg-harness";
-import type { PushClaimAcquireResult, WatchdogRepository } from "./repository";
+import type { WatchdogRepository } from "./repository";
+import type { PushClaimAcquireResult } from "./types";
 
 const BASE = new Date("2026-10-12T12:07:00.000Z");
 

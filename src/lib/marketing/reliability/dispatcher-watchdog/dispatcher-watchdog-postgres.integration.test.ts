@@ -14,7 +14,8 @@ import {
   staleLastSeen,
   truncateWatchdogTables,
 } from "./postgres-integration-helpers";
-import type { PushClaimAcquireResult, WatchdogRepository } from "./repository";
+import type { WatchdogRepository } from "./repository";
+import type { PushClaimAcquireResult } from "./types";
 
 const integrationEnabled = isDispatcherWatchdogIntegrationConfigured();
 

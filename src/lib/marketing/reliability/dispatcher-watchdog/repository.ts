@@ -461,6 +461,7 @@ export async function commitPostgresObservation(
     state: { ...state },
     observations: new Set<number>(),
     incidentNotifications: new Map(),
+    incidents: new Map(),
     maintenanceWindows,
   };
 

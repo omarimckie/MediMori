@@ -41,7 +41,7 @@ const mockPushDeps = {
       failureCount: 0,
     },
   ],
-  sendToSubscription: async () => ({ ok: true }),
+  sendToSubscription: async () => ({ ok: true, permanentFailure: false }),
   updateDelivery: async () => {},
 };
 

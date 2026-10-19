@@ -6,7 +6,8 @@ import {
   type DeliverWatchdogPushDeps,
   type WatchdogPushPayload,
 } from "./deliver-watchdog-push";
-import type { CommitObservationResult, WatchdogRepository } from "./repository";
+import type { WatchdogRepository } from "./repository";
+import type { CommitObservationResult } from "./types";
 
 export type WatchdogTickPushSummary = {
   outage: { attempted: boolean; result?: string };
