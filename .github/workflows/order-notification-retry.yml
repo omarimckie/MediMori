@@ -1,0 +1,92 @@
+# Retries failed owner order pushes. Does not call marketing publish.
+
+name: Order notification retry
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: order-notification-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/order-notifications
+        env:
+          MARKETING_PUBLISH_BASE_URL: ${{ vars.MARKETING_PUBLISH_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MARKETING_PUBLISH_BASE_URL}" ]; then
+            echo "::error::Set repository variable MARKETING_PUBLISH_BASE_URL."
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::Set repository secret CRON_SECRET."
+            exit 1
+          fi
+
+          BASE="${MARKETING_PUBLISH_BASE_URL%/}"
+          URL="${BASE}/api/cron/order-notifications"
+          echo "Dispatch target: ${URL}"
+          echo "Auth: Bearer CRON_SECRET (value not logged)"
+
+          set +e
+          HTTP_CODE="$(
+            curl -sS --max-time 60 -o /tmp/order-notification-response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              --data '{}' \
+              "${URL}"
+          )"
+          CURL_EXIT=$?
+          set -e
+
+          if [ "${CURL_EXIT}" -ne 0 ]; then
+            echo "::error::Order notification retry request failed before an HTTP response."
+            exit 1
+          fi
+
+          echo "HTTP status: ${HTTP_CODE}"
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Order notification retry failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require("fs");
+          let raw = "";
+          try {
+            raw = fs.readFileSync("/tmp/order-notification-response.json", "utf8");
+          } catch {
+            console.error("::error::Order notification retry response was missing.");
+            process.exit(1);
+          }
+          let body;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            console.error("::error::Order notification retry response was not valid JSON.");
+            process.exit(1);
+          }
+          const attempted = body?.attempted;
+          const delivered = body?.delivered;
+          const usable = (value) => Number.isInteger(value) && value >= 0;
+          if (!usable(attempted) || !usable(delivered) || delivered > attempted) {
+            console.error("::error::Order notification retry response did not include usable attempted and delivered counts.");
+            process.exit(1);
+          }
+          console.log("attempted:", attempted);
+          console.log("delivered:", delivered);
+          console.log("unresolved:", attempted - delivered);
+          NODE
+
+          echo "Order notification retry completed."

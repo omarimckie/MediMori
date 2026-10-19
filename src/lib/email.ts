@@ -389,3 +389,34 @@ export async function sendPhysicalFulfillmentNotificationEmail(
     throw new Error(error.message || "Could not send fulfillment notification.");
   }
 }
+
+export async function sendPhysicalShippingConfirmationEmail(message: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+}): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    throw Object.assign(new Error("resend_not_configured"), {
+      code: "resend_not_configured",
+    });
+  }
+
+  const { error } = await resend.emails.send(
+    {
+      from,
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    },
+    { idempotencyKey: message.idempotencyKey },
+  );
+
+  if (error) {
+    throw Object.assign(new Error("send_failed"), { code: "send_failed" });
+  }
+}

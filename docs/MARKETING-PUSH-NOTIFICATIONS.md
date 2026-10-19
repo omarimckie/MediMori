@@ -50,7 +50,7 @@ If permission is blocked, use Settings → Safari → Notifications for the inst
 
 - File: `/marketing-sw.js`
 - Handles `push` and `notificationclick`
-- Click opens only paths under `/admin/marketing…` (no external URLs)
+- Click opens Marketing paths under `/admin/marketing…`, and paid-order paths under `/admin/orders/physical|digital/{orderId}` (no external URLs). Order taps still require an authenticated admin session.
 
 ## Morning Brief
 

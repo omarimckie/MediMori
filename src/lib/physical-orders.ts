@@ -1,11 +1,22 @@
 import { getSql } from "./db";
 import { normalizeEmail } from "./checkout-ownership";
+import { INVENTORY_DISCREPANCY_ACKNOWLEDGED } from "./order-notifications/inventory-resolution";
+import {
+  shippingFingerprint,
+  type ShipmentDetails,
+  type ShippingClaimResult,
+  type ShippingCorrectionResult,
+  type ShippingNoticeErrorCode,
+  type ShippingSaveResult,
+} from "./order-notifications/shipping-carriers";
 
 export type PhysicalFulfillmentStatus =
   | "unfulfilled"
   | "shipped"
   | "cancelled"
   | "refunded";
+
+export type PhysicalInventoryState = "pending" | "processing" | "applied" | "failed";
 
 export type ShippingAddressSnapshot = {
   name: string | null;
@@ -29,9 +40,17 @@ export type PhysicalOrderRow = {
   customerName: string;
   customerEmail: string;
   shippingAddress: ShippingAddressSnapshot;
+  shippingAddressMissing: boolean;
+  paymentStatus: string;
+  inventoryState: PhysicalInventoryState;
+  attentionFlags: string[];
   fulfillmentStatus: PhysicalFulfillmentStatus;
   trackingNumber: string | null;
   carrier: string | null;
+  shippingNoticeStatus: "pending" | "sending" | "sent" | "failed" | null;
+  shippingNoticeSentFingerprint: string | null;
+  shippingNoticeError: ShippingNoticeErrorCode | null;
+  shippingNoticeSentAt: Date | null;
   purchasedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -48,12 +67,39 @@ export type RecordPhysicalOrderInput = {
   customerName: string;
   customerEmail: string;
   shippingAddress: ShippingAddressSnapshot;
+  shippingAddressMissing?: boolean;
+  attentionFlags?: string[];
   fulfillmentStatus: PhysicalFulfillmentStatus;
 };
 
 function asDate(value: unknown): Date {
   if (value instanceof Date) return value;
   return new Date(String(value));
+}
+
+function parseFlags(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapInventoryState(value: unknown): PhysicalInventoryState {
+  if (
+    value === "pending" ||
+    value === "processing" ||
+    value === "applied" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return "applied";
 }
 
 function mapFulfillmentStatus(value: unknown): PhysicalFulfillmentStatus {
@@ -113,10 +159,23 @@ function mapPhysicalOrder(row: Record<string, unknown>): PhysicalOrderRow {
     customerName: String(row.customer_name),
     customerEmail: String(row.customer_email),
     shippingAddress: shipping,
+    shippingAddressMissing: row.shipping_address_missing === true,
+    paymentStatus:
+      row.payment_status == null ? "paid" : String(row.payment_status),
+    inventoryState: mapInventoryState(row.inventory_state),
+    attentionFlags: parseFlags(row.attention_flags),
     fulfillmentStatus: mapFulfillmentStatus(row.fulfillment_status),
     trackingNumber:
       row.tracking_number == null ? null : String(row.tracking_number),
     carrier: row.carrier == null ? null : String(row.carrier),
+    shippingNoticeStatus: mapShippingNoticeStatus(row.shipping_notice_status),
+    shippingNoticeSentFingerprint:
+      row.shipping_notice_sent_fingerprint == null
+        ? null
+        : String(row.shipping_notice_sent_fingerprint),
+    shippingNoticeError: mapShippingNoticeError(row.shipping_notice_error),
+    shippingNoticeSentAt:
+      row.shipping_notice_sent_at == null ? null : asDate(row.shipping_notice_sent_at),
     purchasedAt: asDate(row.purchased_at),
     createdAt: asDate(row.created_at),
     updatedAt: asDate(row.updated_at),
@@ -143,6 +202,8 @@ export async function insertPhysicalOrder(
   const sql = getSql();
   const orderId = crypto.randomUUID();
   const email = normalizeEmail(input.customerEmail);
+  const attentionFlags = input.attentionFlags ?? [];
+  const shippingAddressMissing = input.shippingAddressMissing === true;
 
   try {
     await sql`
@@ -158,6 +219,10 @@ export async function insertPhysicalOrder(
         customer_name,
         customer_email,
         shipping_address,
+        shipping_address_missing,
+        payment_status,
+        inventory_state,
+        attention_flags,
         fulfillment_status
       )
       VALUES (
@@ -172,6 +237,10 @@ export async function insertPhysicalOrder(
         ${input.customerName},
         ${email},
         ${JSON.stringify(input.shippingAddress)}::jsonb,
+        ${shippingAddressMissing},
+        'paid',
+        'pending',
+        ${JSON.stringify(attentionFlags)}::jsonb,
         ${input.fulfillmentStatus}
       )
       ON CONFLICT (stripe_checkout_session_id) DO NOTHING
@@ -197,4 +266,244 @@ export async function insertPhysicalOrder(
   }
 
   return { created: order.id === orderId, order };
+}
+
+export async function getPhysicalOrderById(
+  orderId: string,
+): Promise<PhysicalOrderRow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT *
+    FROM physical_orders
+    WHERE id = ${orderId}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? mapPhysicalOrder(row as Record<string, unknown>) : null;
+}
+
+export async function claimPhysicalInventoryProcessing(
+  stripeCheckoutSessionId: string,
+): Promise<"claimed" | "settled"> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE physical_orders
+    SET inventory_state = 'processing', updated_at = NOW()
+    WHERE stripe_checkout_session_id = ${stripeCheckoutSessionId}
+      AND inventory_state = 'pending'
+    RETURNING id
+  `;
+  return rows.length ? "claimed" : "settled";
+}
+
+export async function markPhysicalInventoryApplied(orderId: string): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET inventory_state = 'applied', updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND inventory_state = 'processing'
+  `;
+}
+
+export async function markPhysicalInventoryFailed(orderId: string): Promise<void> {
+  const order = await getPhysicalOrderById(orderId);
+  const flags = new Set(order?.attentionFlags ?? []);
+  flags.add("inventory_processing_failed");
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET
+      inventory_state = 'failed',
+      attention_flags = ${JSON.stringify([...flags])}::jsonb,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+  `;
+}
+
+export async function acknowledgePhysicalInventoryDiscrepancy(
+  orderId: string,
+): Promise<"acknowledged" | "not_uncertain" | "missing"> {
+  const sql = getSql();
+  const flag = JSON.stringify([INVENTORY_DISCREPANCY_ACKNOWLEDGED]);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET
+      attention_flags = CASE
+        WHEN attention_flags @> ${flag}::jsonb THEN attention_flags
+        ELSE attention_flags || ${flag}::jsonb
+      END,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND inventory_state = 'processing'
+    RETURNING id
+  `;
+  if (rows.length) return "acknowledged";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  return "not_uncertain";
+}
+
+function mapShippingNoticeStatus(
+  value: unknown,
+): PhysicalOrderRow["shippingNoticeStatus"] {
+  if (
+    value === "pending" ||
+    value === "sending" ||
+    value === "sent" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function mapShippingNoticeError(value: unknown): ShippingNoticeErrorCode | null {
+  if (value === "resend_not_configured" || value === "send_failed") return value;
+  if (value == null || value === "") return null;
+  return "send_failed";
+}
+
+export async function markPhysicalOrderShipped(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<ShippingSaveResult> {
+  const sql = getSql();
+  const acknowledged = JSON.stringify([INVENTORY_DISCREPANCY_ACKNOWLEDGED]);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET
+      fulfillment_status = 'shipped',
+      carrier = ${shipment.carrier},
+      tracking_number = ${shipment.trackingNumber},
+      shipping_notice_status = 'pending',
+      shipping_notice_error = NULL,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'unfulfilled'
+      AND payment_status = 'paid'
+      AND (
+        inventory_state <> 'processing'
+        OR attention_flags @> ${acknowledged}::jsonb
+      )
+    RETURNING id
+  `;
+  if (rows.length) return "saved";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  if (existing.paymentStatus !== "paid") return "payment_ineligible";
+  if (
+    existing.fulfillmentStatus === "unfulfilled" &&
+    existing.inventoryState === "processing" &&
+    !existing.attentionFlags.includes(INVENTORY_DISCREPANCY_ACKNOWLEDGED)
+  ) {
+    return "inventory_unresolved";
+  }
+  return "not_awaiting";
+}
+
+export async function correctPhysicalShipment(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<ShippingCorrectionResult> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET
+      carrier = ${shipment.carrier},
+      tracking_number = ${shipment.trackingNumber},
+      shipping_notice_status = CASE
+        WHEN shipping_notice_sent_fingerprint = ${fingerprint} THEN 'sent'
+        ELSE 'pending'
+      END,
+      shipping_notice_error = NULL,
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'shipped'
+      AND payment_status = 'paid'
+      AND (
+        shipping_notice_status IS DISTINCT FROM 'sending'
+        OR updated_at < NOW() - INTERVAL '2 minutes'
+      )
+    RETURNING shipping_notice_status
+  `;
+  const status = rows[0]?.shipping_notice_status;
+  if (status === "sent") return "already_sent";
+  if (status === "pending") return "pending";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "missing";
+  if (existing.paymentStatus !== "paid") return "payment_ineligible";
+  if (existing.fulfillmentStatus !== "shipped") return "not_shipped";
+  if (existing.shippingNoticeStatus === "sending") return "in_progress";
+  return "not_shipped";
+}
+
+export async function claimPhysicalShippingNotice(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<ShippingClaimResult> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  const rows = await sql`
+    UPDATE physical_orders
+    SET shipping_notice_status = 'sending', updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND fulfillment_status = 'shipped'
+      AND payment_status = 'paid'
+      AND carrier = ${shipment.carrier}
+      AND tracking_number = ${shipment.trackingNumber}
+      AND shipping_notice_sent_fingerprint IS DISTINCT FROM ${fingerprint}
+      AND (
+        shipping_notice_status IN ('pending', 'failed')
+        OR (
+          shipping_notice_status = 'sending'
+          AND updated_at < NOW() - INTERVAL '2 minutes'
+        )
+      )
+    RETURNING id
+  `;
+  if (rows.length) return "claimed";
+  const existing = await getPhysicalOrderById(orderId);
+  if (!existing) return "not_eligible";
+  if (existing.shippingNoticeSentFingerprint === fingerprint) return "already_sent";
+  if (existing.shippingNoticeStatus === "sending") return "in_progress";
+  return "not_eligible";
+}
+
+export async function markPhysicalShippingNoticeSent(
+  orderId: string,
+  shipment: ShipmentDetails,
+): Promise<void> {
+  const sql = getSql();
+  const fingerprint = shippingFingerprint(shipment);
+  await sql`
+    UPDATE physical_orders
+    SET
+      shipping_notice_status = 'sent',
+      shipping_notice_sent_fingerprint = ${fingerprint},
+      shipping_notice_error = NULL,
+      shipping_notice_sent_at = NOW(),
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND shipping_notice_status = 'sending'
+      AND carrier = ${shipment.carrier}
+      AND tracking_number = ${shipment.trackingNumber}
+  `;
+}
+
+export async function markPhysicalShippingNoticeFailed(
+  orderId: string,
+  code: ShippingNoticeErrorCode,
+): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE physical_orders
+    SET
+      shipping_notice_status = 'failed',
+      shipping_notice_error = ${code},
+      updated_at = NOW()
+    WHERE id = ${orderId}::uuid
+      AND shipping_notice_status = 'sending'
+  `;
 }
