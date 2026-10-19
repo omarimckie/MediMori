@@ -37,7 +37,7 @@ function mockIdentitySql(
   rows: Array<Record<string, unknown>>,
 ): NeonQueryFunction<false, false> {
   const fn = async () => rows;
-  return fn as NeonQueryFunction<false, false>;
+  return fn as unknown as NeonQueryFunction<false, false>;
 }
 
 function validPreviewEnv(): void {
