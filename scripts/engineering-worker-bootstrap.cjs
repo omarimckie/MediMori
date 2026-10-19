@@ -79,7 +79,10 @@ if (process.argv[2] === "--module-graph-smoke") {
       const { WorkerInitializationError, sanitizedInitializationDiagnostic } = require("../src/lib/engineering/worker-initialization");
       const { WorkspaceExportError } = require("../src/lib/engineering/workspace-export-diagnostics");
       const { PreclaimWorkerError, preclaimDiagnosticToJson } = require("../src/lib/engineering/preclaim-diagnostics");
-      if (error instanceof PreclaimWorkerError) {
+      const { WorkerExitError, workerExitReportToJson } = require("../src/lib/engineering/worker-exit-report");
+      if (error instanceof WorkerExitError) {
+        console.error(JSON.stringify(workerExitReportToJson(error.report)));
+      } else if (error instanceof PreclaimWorkerError) {
         console.error(JSON.stringify({
           ...preclaimDiagnosticToJson(error.diagnostic),
           ...(error.localExportDiagnostic ? { ownerActionableExportFailure: error.localExportDiagnostic } : {}),

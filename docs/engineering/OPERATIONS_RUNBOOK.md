@@ -33,6 +33,15 @@ The worker validates these settings before execution:
 4. Treat `validationStage: source_volume` and `validation_source_prepare_failed` as a location and broad classification only. They do not identify which filesystem, copy, Docker, or volume action failed. Use a future approved diagnostic enhancement to capture more precise safe evidence; do not infer a historical root cause from those fields.
 5. When cleanup reports `failed`, use the task and run IDs with the targeted cleanup tooling only after an operator reviews the owned resources and authorizes that cleanup. Never use broad Docker prune commands.
 
+
+## Authorization budget, validation gates, and terminalization
+
+1. SQL authorization is fixed at 30 minutes from `engineering_runs.started_at`. The worker does not extend, reset, or bypass that fence.
+2. Before each validation cycle, each validation gate, and each repair cycle, the worker compares remaining authorized runtime against a **terminalization reserve** of 120 seconds plus the maximum time the next step could consume. Each validation gate is budgeted at up to 240 seconds (matching the Docker exec bound in `workspace.ts`), and validation environment preparation is budgeted at up to 60 seconds. If insufficient time remains, the worker stops with `runtime_deadline_exceeded` rather than starting a gate it cannot finish or skipping required gates.
+3. On failure, the worker captures a **primary** bounded diagnostic first (validation, proposal, provider, or deadline). Workspace cleanup runs afterward; cleanup failure is recorded separately and does not replace the primary code unless cleanup itself was the primary failure (`sandbox_cleanup_failed`).
+4. Terminal `block` ingress is attempted while the lease remains valid. If ingress rejects the block (for example `lease_denied` after the SQL fence), the process exit report sets `durableDisposition: unknown` and records `terminalization.ingressError`; do not assume the run is durably blocked from stderr alone. After a post-claim failure, `scripts/engineering-worker-bootstrap.cjs` emits a bounded JSON exit report with `primary`, `cleanupOutcome`, and `terminalization` fields.
+5. A **stranded active run** shows `engineering_runs.disposition = active` with no recent worker lease, often after authorization expiry with a failed terminal `block`. Recovery is **not automatic**: an operator must use the supported control-plane **`prepareFreshAttempt`** path (same task version rules as production) to expire stale runs and prepare a fresh attempt before re-authorizing execution.
+
 ## Deferred backlog
 
 A future agent may evaluate dedicated diagnostic-history storage if the bounded `engineering_events` projection proves insufficient for operational analysis. This change uses the existing event table only.

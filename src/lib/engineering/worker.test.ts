@@ -9,7 +9,8 @@ import { PGlite } from "@electric-sql/pglite";
 import type { getSql } from "@/lib/db";
 import { actOnTask as storeActOnTask, approvePreparedAttempt, authorizePreparedExecution, createTask, prepareInitialAttempt, recordRunEvidence, taskHistory } from "./store";
 import { commandArgs, defaultRates, executablePlan, pricing, quote, workerLimits } from "./worker-policy";
-import { context, edits, extractResponsesOutputText, openaiGenerate, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
+import { context, edits, extractResponsesOutputText, openaiGenerate, replacementProposalFormat, replacementProposalSchema, runWorker, WorkerFailure, WorkerExitError, type Ingress, type IsolatedWorkspace, type ProposalEvidence } from "./worker";
+import { authorizationDurationMs, terminalizationReserveMs, validationGateMaxMs } from "./worker-runtime-budget";
 import { createFreshExport, exportedWorkspaceRevision } from "./workspace";
 import { DockerCleanupError } from "./docker-ownership";
 import { buildBoundedReplacementContext } from "./replacement-anchors";
@@ -428,7 +429,12 @@ test("provider transport failure makes one attempt, retains reservation and bloc
   const f=await fixture();try{
     let calls=0;
     const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail("No edits after failed call"),validate:async()=>assert.fail("No validation after failed call")};
-    await assert.rejects(runWorker(f.ingress,workspace,async()=>{calls++;throw new Error("private transport detail");}),/outcome uncertain/);
+    await assert.rejects(runWorker(f.ingress,workspace,async()=>{calls++;throw new Error("private transport detail");}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"worker_failure");
+      assert.equal(JSON.stringify(error.report).includes("private transport detail"),false);
+      return true;
+    });
     assert.equal(calls,1);
     const call=(await f.db.query<{state:string;reserved_tokens:number}>("SELECT * FROM engineering_worker_calls")).rows[0];
     assert.equal(call.state,"uncertain");assert.ok(call.reserved_tokens>0);
@@ -569,5 +575,227 @@ test("proposal-evidence lease ingress failure maps to lease_or_fence_lost",async
     await assert.rejects(runWorker(ingress,workspace,async(body)=>{calls++;return{id:"resp_evidence_lease",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:60},text:proposalFor(body),status:"completed"};}),/bounded diagnostics/);
     const details=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE action='block'")).rows[0].details;
     assert.equal((details.diagnostic as Record<string,unknown>).code,"lease_or_fence_lost");
+  }finally{await f.close();}
+});
+test("terminal block ingress failure preserves primary diagnostic and reports unknown durable disposition",async()=>{
+  const f=await fixture();try{
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      if(op==="block")throw new Error("lease_denied");
+      return f.ingress(op,owner,epoch,data);
+    };
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail()};
+    await assert.rejects(runWorker(ingress,workspace,async()=>({id:"block-ingress-fail",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:"not-json",status:"completed"})),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"proposal_invalid_json");
+      assert.equal(error.report.durableDisposition,"unknown");
+      assert.equal(error.report.terminalization.blockRecorded,false);
+      assert.equal(error.report.terminalization.ingressError,"lease_denied");
+      return true;
+    });
+    assert.equal((await f.db.query("SELECT * FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows.length,0);
+  }finally{await f.close();}
+});
+test("primary validation failure with cleanup failure keeps proposal code in exit report",async()=>{
+  const f=await fixture();try{
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>assert.fail(),validate:async()=>assert.fail(),dispose:async()=>{throw new DockerCleanupError([{resourceType:"source-volume",category:"resource_in_use"}]);}};
+    await assert.rejects(runWorker(f.ingress,workspace,async()=>({id:"primary-cleanup-terminal",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:"not-json",status:"completed"})),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"proposal_invalid_json");
+      assert.equal(error.report.cleanupOutcome,"failed");
+      assert.deepEqual(error.report.cleanupFailures,[{resourceType:"source-volume",category:"resource_in_use"}]);
+      assert.equal(error.report.terminalization.blockRecorded,true);
+      assert.equal(error.report.durableDisposition,"blocked");
+      return true;
+    });
+  }finally{await f.close();}
+});
+test("declines validation cycle when remaining authorized runtime is below reserve plus gate maxima",async()=>{
+  const f=await fixture();try{
+    const runRow=(await f.db.query<{started_at:Date}>("SELECT started_at FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0];
+    const startedAtMs=runRow.started_at.getTime();
+    let gateCalls=0;
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>{gateCalls++;return{revision,outcome:"passed"};}};
+    const nowMs=startedAtMs+authorizationDurationMs-terminalizationReserveMs-1;
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>({id:"deadline-cycle",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)}),{now:()=>nowMs}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"runtime_deadline_exceeded");
+      assert.equal(error.report.primary.validationStage,"validation_cycle");
+      return true;
+    });
+    assert.equal(gateCalls,0);
+  }finally{await f.close();}
+});
+test("declines a validation gate when its maximum duration exceeds remaining budget after reserve",async()=>{
+  const f=await fixture();try{
+    let current=revision;
+    const runRow=(await f.db.query<{started_at:Date}>("SELECT started_at FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0];
+    const startedAtMs=runRow.started_at.getTime();
+    const gateCount=6;
+    const cycleMax=60_000+gateCount*validationGateMaxMs;
+    let nowMs=startedAtMs+authorizationDurationMs-terminalizationReserveMs-cycleMax-1_000;
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"README.md":richSource}}),
+      apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},
+      prepareValidationEnvironment:async()=>{nowMs=startedAtMs+authorizationDurationMs-terminalizationReserveMs-validationGateMaxMs+1;},
+      validate:async()=>({revision:current,outcome:"passed"}),
+    };
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>({id:"deadline-gate",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)}),{now:()=>nowMs}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"runtime_deadline_exceeded");
+      assert.equal(error.report.primary.validationStage,"validation_gate");
+      assert.equal(error.report.primary.validationGate,"test");
+      return true;
+    });
+  }finally{await f.close();}
+});
+test("declines another repair cycle when the next validation cycle exceeds remaining budget",async()=>{
+  const f=await fixture();try{
+    let current=revision,content=richSource,calls=0;
+    const runRow=(await f.db.query<{started_at:Date}>("SELECT started_at FROM engineering_runs WHERE id=$1::uuid",[f.run])).rows[0];
+    const startedAtMs=runRow.started_at.getTime();
+    const gateCount=6;
+    const cycleMax=60_000+gateCount*validationGateMaxMs;
+    let nowMs=startedAtMs+authorizationDurationMs-terminalizationReserveMs-cycleMax-120_000;
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),
+      apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},
+      validate:async(args,rev)=>{
+        if(args[2]==="test:engineering"){
+          nowMs=startedAtMs+authorizationDurationMs-terminalizationReserveMs-cycleMax+1;
+        }
+        return args[2]==="lint"?{revision:rev,outcome:"failed",exitCode:1,category:"command_failed"}:{revision:rev,outcome:"passed"};
+      },
+    };
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:`repair-deadline-${calls}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)};},{now:()=>nowMs}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"runtime_deadline_exceeded");
+      assert.equal(error.report.primary.validationStage,"validation_cycle");
+      return true;
+    });
+    assert.equal(calls,1);
+  }finally{await f.close();}
+});
+test("interrupted validation gate without evidence receipt surfaces validation_protocol_error",async()=>{
+  const f=await fixture();try{
+    let current=revision;
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"README.md":richSource}}),
+      apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},
+      validate:async(args)=>{if(args[2]==="lint")throw new Error("private docker host detail");return{revision:current,outcome:"passed"};},
+    };
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>({id:"gate-interrupted",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)})),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"validation_protocol_error");
+      assert.equal(error.report.primary.validationGate,"lint");
+      return true;
+    });
+    assert.equal((await f.db.query("SELECT * FROM engineering_validations WHERE run_id=$1::uuid AND command='lint'",[f.run])).rows.length,0);
+  }finally{await f.close();}
+});
+test("missing started_at fails closed before validation gates with structured exit",async()=>{
+  const f=await fixture();try{
+    let gateCalls=0,calls=0;
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      const result=await f.ingress(op,owner,epoch,data);
+      if(op==="claim")return{...result,started_at:undefined};
+      return result;
+    };
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>{gateCalls++;return{revision,outcome:"passed"};}};
+    await assert.rejects(runWorker(ingress,workspace,async()=>{calls++;throw new Error("provider must not run");}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"worker_failure");
+      assert.equal(error.report.primary.validationStage,"validation_cycle");
+      return true;
+    });
+    assert.equal(calls,0);assert.equal(gateCalls,0);
+  }finally{await f.close();}
+});
+test("malformed started_at fails closed before validation gates with structured exit",async()=>{
+  const f=await fixture();try{
+    let gateCalls=0;
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      const result=await f.ingress(op,owner,epoch,data);
+      if(op==="claim")return{...result,started_at:"not-an-authorization-timestamp"};
+      return result;
+    };
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision,changedFiles:[],files:{"README.md":richSource}}),apply:async()=>proposalEvidence(),validate:async()=>{gateCalls++;return{revision,outcome:"passed"};}};
+    await assert.rejects(runWorker(ingress,workspace,async(body)=>({id:"malformed-started-at",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)})),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"worker_failure");
+      return true;
+    });
+    assert.equal(gateCalls,0);
+  }finally{await f.close();}
+});
+test("post-claim EngineeringInputError emits bounded exit report with preserved cleanup primary",async()=>{
+  const f=await fixture();try{
+    let current=revision,content=richSource,calls=0;
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),
+      apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},
+      validate:async()=>({revision:current,outcome:"passed"}),
+      dispose:async()=>{throw new DockerCleanupError([{resourceType:"source-volume",category:"resource_in_use"}]);},
+    };
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:`cleanup-exit-${calls}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:calls===1?proposalFor(body):'{"passed":true}'};}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"sandbox_cleanup_failed");
+      assert.equal(error.report.cleanupOutcome,"failed");
+      assert.equal(error.report.durableDisposition,"blocked");
+      assert.equal(JSON.stringify(error.report).includes("Sandbox resource cleanup failed"),false);
+      return true;
+    });
+    assert.equal(calls,2);
+  }finally{await f.close();}
+});
+test("post-claim self-review EngineeringInputError preserves worker_failure primary in exit report",async()=>{
+  const f=await fixture();try{
+    let current=revision,content=richSource,calls=0;
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:content===richSource?[]:plan.files,files:{"README.md":content}}),
+      apply:async(replacements,rev)=>{assert.equal(rev,current);content=replacements[0].replacement;current="c".repeat(40);return proposalEvidence(current);},
+      validate:async()=>({revision:current,outcome:"passed"}),
+    };
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:`review-exit-${calls}`,model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:calls===1?proposalFor(body):'{"passed":false}'};}),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"worker_failure");
+      assert.equal(JSON.stringify(error.report).includes("Self-review failed"),false);
+      return true;
+    });
+    assert.equal(calls,2);
+  }finally{await f.close();}
+});
+test("primary validation failure with cleanup and terminal block failures stay bounded and unknown disposition",async()=>{
+  const f=await fixture();try{
+    let current=revision;
+    const ingress:Ingress=async(op,owner,epoch,data={})=>{
+      if(op==="block")throw new Error("lease_denied");
+      return f.ingress(op,owner,epoch,data);
+    };
+    const workspace:IsolatedWorkspace={
+      snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"README.md":richSource}}),
+      apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},
+      validate:async(args,rev)=>{
+        if(args[2]==="lint")throw new Error("private docker detail");
+        return{revision:rev,outcome:"passed"};
+      },
+      dispose:async()=>{throw new DockerCleanupError([{resourceType:"source-volume",category:"resource_in_use"}]);},
+    };
+    await assert.rejects(runWorker(ingress,workspace,async(body)=>({id:"triple-failure",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)})),error=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"validation_protocol_error");
+      assert.equal(error.report.primary.validationGate,"lint");
+      assert.notEqual(error.report.primary.code,"sandbox_cleanup_failed");
+      assert.equal(error.report.cleanupOutcome,"failed");
+      assert.deepEqual(error.report.cleanupFailures,[{resourceType:"source-volume",category:"resource_in_use"}]);
+      assert.equal(error.report.terminalization.blockRecorded,false);
+      assert.equal(error.report.terminalization.ingressError,"lease_denied");
+      assert.equal(error.report.durableDisposition,"unknown");
+      const serialized=JSON.stringify(error.report);
+      assert.equal(serialized.includes("lease_denied"),true);
+      assert.equal(serialized.includes("DATABASE_URL"),false);
+      assert.equal(serialized.includes("private"),false);
+      return true;
+    });
+    assert.equal((await f.db.query("SELECT * FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows.length,0);
   }finally{await f.close();}
 });

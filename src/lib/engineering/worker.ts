@@ -7,6 +7,10 @@ import { AnchorProtocolError, buildBoundedReplacementContext, replacementProposa
 import { prepareValidationEnvironmentDiagnostic } from "./prepare-validation-failure";
 import { classifyProposalEvidenceIngressFailure } from "./proposal-evidence-ingress";
 import { normalizeValidationEvidence, ValidationPreparationError, type ValidationEvidence, type ValidationPreparationStage } from "./validation-diagnostics";
+import { buildWorkerExitReport, WorkerExitError, type WorkerTerminalizationEvidence } from "./worker-exit-report";
+import { authorizationDurationMs, checkRepairCycleBudget, checkValidationCycleBudget, checkValidationGateBudget, type DeadlineExceeded } from "./worker-runtime-budget";
+
+export { WorkerExitError, workerExitReportToJson } from "./worker-exit-report";
 
 export type Snapshot = { revision: string; files: Record<string, string>; changedFiles: string[] };
 export type ProposalEvidence = {
@@ -73,32 +77,63 @@ export function openaiGenerate(key: string): Generate {
   };
 }
 
+function boundedIngressError(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.message.includes("lease_denied")) return "lease_denied";
+    if (/lease|fence|authorization/i.test(error.message)) return "lease_or_fence_rejected";
+  }
+  return "block_ingress_rejected";
+}
+
+function deadlineFailure(deadline: DeadlineExceeded): WorkerFailure {
+  return new WorkerFailure({
+    stage: "worker",
+    code: "runtime_deadline_exceeded",
+    validationStage: deadline.validationStage,
+    validationRevision: deadline.validationRevision,
+    ...(deadline.validationGate ? { validationGate: deadline.validationGate } : {}),
+  });
+}
+
 /** Host supervisor only. Never expose ingress/generate/workspace to model code. */
-export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, generate: Generate, options: { escalationReason?: string; rates?: typeof defaultRates; models?: { luna: Model; sol: Model } } = {}) {
+export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, generate: Generate, options: { escalationReason?: string; rates?: typeof defaultRates; models?: { luna: Model; sol: Model }; now?: () => number } = {}) {
+  const nowMs = () => (options.now ? options.now() : Date.now());
   const models = options.models ?? { luna: "gpt-6-luna", sol: "gpt-6.1-sol" };
   if (models.luna !== approvedModels[0] || models.sol !== approvedModels[1]) throw new EngineeringInputError("Model configuration is outside the approved policy.");
   const owner = randomUUID();
   const preflightRevision = await (workspace.preflightRevision?.() ?? workspace.snapshot().then(s=>s.revision));
   let state = await ingress("claim", owner, 0, { preflightRevision });
+  const attemptPreclaimBlock = async (code: WorkerDiagnostic["code"]) => {
+    try { await ingress("block", owner, Number(state.lease_epoch), { diagnostic: { stage: "worker", code } }); }
+    catch { /* pre-claim operator errors remain on thrown EngineeringInputError */ }
+  };
   if (state.preflight_bound_now !== true) {
-    await ingress("block", owner, Number(state.lease_epoch), { diagnostic:{stage:"worker",code:"replacement_revision_mismatch"} }).catch(()=>{});
+    await attemptPreclaimBlock("replacement_revision_mismatch");
     throw new EngineeringInputError("Run preflight is already bound; refusing a second worker invocation.");
   }
   if (state.preflight_revision !== preflightRevision) {
-    await ingress("block", owner, Number(state.lease_epoch), { diagnostic:{stage:"worker",code:"replacement_revision_mismatch"} }).catch(()=>{});
+    await attemptPreclaimBlock("replacement_revision_mismatch");
     throw new EngineeringInputError("Preflight revision binding mismatch.");
   }
   const epoch = Number(state.lease_epoch);
   const plan = executablePlan(state.plan);
   const startedAt = Date.parse(String(state.started_at ?? ""));
-  const runtimeDeadline = Number.isFinite(startedAt) ? startedAt + 30 * 60 * 1000 : null;
+  const runtimeDeadline = Number.isFinite(startedAt) ? startedAt + authorizationDurationMs : null;
   let lastCompletion: Pick<WorkerDiagnostic,"stage"|"responseId"|"responseStatus"|"outputTokens"|"outputLimit"> | undefined;
   let currentCall: { key: string } | undefined;
   let repairDiagnostics: ValidationEvidence[] = [];
   const controller = new AbortController();
   let abortCode: "lease_or_fence_lost" | "runtime_deadline_exceeded" = "lease_or_fence_lost";
   let heartbeat: Promise<unknown> = Promise.resolve();
-  const timer = setInterval(() => { heartbeat = heartbeat.then(() => ingress("heartbeat", owner, epoch)).catch(() => { abortCode = runtimeDeadline !== null && Date.now() >= runtimeDeadline ? "runtime_deadline_exceeded" : "lease_or_fence_lost"; controller.abort(); }); }, 20000);
+  const timer = setInterval(() => { heartbeat = heartbeat.then(() => ingress("heartbeat", owner, epoch)).catch(() => { abortCode = runtimeDeadline !== null && nowMs() >= runtimeDeadline ? "runtime_deadline_exceeded" : "lease_or_fence_lost"; controller.abort(); }); }, 20000);
+  const attemptTerminalBlock = async (diagnostic: WorkerDiagnostic): Promise<WorkerTerminalizationEvidence> => {
+    try {
+      await ingress("block", owner, epoch, { diagnostic });
+      return { attempted: true, blockRecorded: true };
+    } catch (error) {
+      return { attempted: true, blockRecorded: false, ingressError: boundedIngressError(error) };
+    }
+  };
   const send = async (op: string, data: Record<string, unknown> = {}) => {
     if (controller.signal.aborted) throw new WorkerFailure({stage:"worker",code:abortCode});
     state = await ingress(op, owner, epoch, data); return state;
@@ -159,6 +194,9 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
     return {text:result.text,anchors:ctx.anchors};
   }
   try {
+    if (!Number.isFinite(startedAt)) {
+      throw new WorkerFailure({ stage: "worker", code: "worker_failure", validationStage: "validation_cycle" });
+    }
     while (state.status !== "reviewing") {
       let snapshot = await workspace.snapshot();
       if (state.status === "implementing" || state.status === "repairing") {
@@ -199,6 +237,8 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
       let failed = false;
       repairDiagnostics = [];
       const validationSnapshot = snapshot;
+      const cycleBudget = checkValidationCycleBudget({ startedAtMs: startedAt, nowMs: nowMs(), validationCount: plan.validations.length, validationRevision: validationSnapshot.revision });
+      if (cycleBudget) throw deadlineFailure(cycleBudget);
       await validationProgress("validation_environment_prepare_started",validationSnapshot.revision);
       try { await workspace.prepareValidationEnvironment?.(validationSnapshot.revision); }
       catch (error) {
@@ -208,6 +248,8 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
       await validationProgress("validation_environment_prepare_succeeded",validationSnapshot.revision);
       await validationProgress("validation_cycle_started",validationSnapshot.revision);
       for (const command of plan.validations) {
+        const gateBudget = checkValidationGateBudget({ startedAtMs: startedAt, nowMs: nowMs(), validationRevision: validationSnapshot.revision, validationGate: command });
+        if (gateBudget) throw deadlineFailure(gateBudget);
         try { await send("heartbeat"); }
         catch { throw new WorkerFailure({stage:"worker",code:controller.signal.aborted?abortCode:"lease_or_fence_lost",validationStage:"validation_gate",validationRevision:validationSnapshot.revision,validationGate:command}); }
         await validationProgress("validation_gate_started",validationSnapshot.revision,command);
@@ -228,6 +270,10 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
         if (evidence.category === "docker_unavailable" || evidence.category === "validation_protocol_error") {
           throw new WorkerFailure({ stage: "worker", code: evidence.category === "docker_unavailable" ? "validation_executor_unavailable" : "validation_protocol_error" });
         }
+      }
+      if (failed) {
+        const repairBudget = checkRepairCycleBudget({ startedAtMs: startedAt, nowMs: nowMs(), validationCount: plan.validations.length, validationRevision: validationSnapshot.revision });
+        if (repairBudget) throw deadlineFailure(repairBudget);
       }
       await send(failed ? "repair" : "review");
     }
@@ -271,9 +317,14 @@ export async function runWorker(ingress: Ingress, workspace: IsolatedWorkspace, 
       ? "failed"
       : cleanupOutcome;
     diagnostic = { ...diagnostic, operation, category, cleanupOutcome: mergedCleanupOutcome };
-    await ingress("block", owner, epoch, { diagnostic }).catch(() => {});
-    if (error instanceof EngineeringInputError) throw error;
-    throw new EngineeringInputError("Worker stopped; inspect authoritative records.");
+    const terminalization = await attemptTerminalBlock(diagnostic);
+    const exitReport = buildWorkerExitReport({
+      primary: diagnostic,
+      cleanupOutcome: mergedCleanupOutcome,
+      cleanupFailures,
+      terminalization,
+    });
+    throw new WorkerExitError(exitReport);
   } finally { clearInterval(timer); controller.abort(); await heartbeat; await workspace.dispose?.().catch(()=>{}); }
 }
 export function assertModel(model: string): asserts model is Model {
