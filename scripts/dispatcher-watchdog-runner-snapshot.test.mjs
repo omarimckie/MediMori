@@ -38,7 +38,8 @@ describe("dispatcher watchdog runner snapshot allowlist", () => {
     const qstashResolver = "scripts/resolve-marketing-qstash-primary-schema-database-url.mjs";
     const stripComments = "scripts/apply-marketing-web-push-schema.mjs";
     const qstashSql = "sql/marketing-dispatcher-qstash-primary.sql";
-    for (const required of [qstashApply, qstashResolver, stripComments, qstashSql]) {
+    const h3Integration = "scripts/qstash-primary-schema-disposable.integration.test.mjs";
+    for (const required of [qstashApply, qstashResolver, stripComments, qstashSql, h3Integration]) {
       assert.ok(
         RUNNER_SOURCE_ALLOWLIST.includes(required),
         `missing allowlist entry: ${required}`,

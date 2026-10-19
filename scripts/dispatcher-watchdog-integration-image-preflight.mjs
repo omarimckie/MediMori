@@ -4,6 +4,18 @@ import { assertPinnedImageReference } from "./dispatcher-watchdog-integration-wr
 export const INTEGRATION_EXECUTE_AUTH_ENV = "MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_RUN_AUTHORIZED";
 export const INTEGRATION_EXECUTE_AUTH_VALUE = "execute";
 
+/** When set to execute, the disposable wrapper runs H3 schema integration only (not the 63-test PG suite). */
+export const INTEGRATION_H3_SCHEMA_ONLY_ENV =
+  "MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_H3_SCHEMA_ONLY";
+export const INTEGRATION_H3_SCHEMA_ONLY_VALUE = "execute";
+
+/**
+ * @param {Record<string, string | undefined>} env
+ */
+export function isIntegrationH3SchemaOnlyMode(env = process.env) {
+  return env[INTEGRATION_H3_SCHEMA_ONLY_ENV] === INTEGRATION_H3_SCHEMA_ONLY_VALUE;
+}
+
 /** Phases that must complete before any Docker network/container mutation. */
 export const PREFLIGHT_PHASES_BEFORE_DOCKER_MUTATION = [
   "integration_execute_authorization",

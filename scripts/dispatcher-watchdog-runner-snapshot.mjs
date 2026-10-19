@@ -45,6 +45,7 @@ export const RUNNER_SOURCE_ALLOWLIST = [
   "scripts/apply-marketing-web-push-schema.mjs",
   "scripts/dispatcher-watchdog-apply-schemas-disposable.mjs",
   "scripts/dispatcher-watchdog-disposable-postgres-pool.mjs",
+  "scripts/qstash-primary-schema-disposable.integration.test.mjs",
   "src/lib/marketing/incidents/sanitize.ts",
   "src/lib/marketing/incidents/types.ts",
   "src/lib/marketing/credential-health/heartbeat-store-pool.ts",

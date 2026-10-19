@@ -28,11 +28,18 @@ Do **not** add the integration file to the default `npm test` script.
 
 `scripts/qstash-primary-schema-disposable.integration.test.mjs` is **not** included in `npm run test:dispatcher-watchdog:integration` and does **not** run automatically.
 
-Run it only with explicit owner authorization and the same disposable PostgreSQL environment as the integration suites above (`MARKETING_DISPATCHER_WATCHDOG_TEST_*` variables resolved successfully):
+Run it only with explicit owner authorization, the same disposable Docker PostgreSQL harness as the 63-test suite, and **H3-only mode** (default wrapper behavior remains the 63-test path):
 
-```bash
-node --test scripts/qstash-primary-schema-disposable.integration.test.mjs
+```powershell
+# Same MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_* credentials/images as the 63-test wrapper, plus:
+$env:MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_RUN_AUTHORIZED = "execute"
+$env:MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_H3_SCHEMA_ONLY = "execute"
+$env:MARKETING_DISPATCHER_WATCHDOG_TEST_RUN_ID = "<unique-run-id>"
+# ... PG user/password/database, pinned images, esbuild staging root ...
+.\scripts\run-dispatcher-watchdog-postgres-integration.ps1
 ```
+
+Inside the runner this executes `node --test /work/scripts/qstash-primary-schema-disposable.integration.test.mjs` after disposable schema apply. Do **not** run `node --test` on the host against `MARKETING_DISPATCHER_WATCHDOG_TEST_DATABASE_URL` (PostgreSQL is not published to the host).
 
 ## Schema order (empty database)
 

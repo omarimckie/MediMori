@@ -613,15 +613,26 @@ function Invoke-DisposableIntegrationRun {
         throw 'disposable_schema_apply_failed'
     }
 
-    Write-IntegrationLog 'Executing PostgreSQL integration suite inside runner.'
-    $testCapture = Invoke-DisposableIntegrationNativeCapture `
-        -Stage 'disposable_postgres_integration_tests' `
-        -FilePath 'docker' `
-        -ArgumentList ($runnerEnvExec + @(
+    if ($env:MARKETING_DISPATCHER_WATCHDOG_INTEGRATION_H3_SCHEMA_ONLY -eq 'execute') {
+        Write-IntegrationLog 'Executing H3 QStash primary schema integration suite inside runner.'
+        $integrationTestArgv = @(
+            'node', '--test',
+            '/work/scripts/qstash-primary-schema-disposable.integration.test.mjs'
+        )
+        $integrationTestStage = 'disposable_h3_schema_integration_tests'
+    } else {
+        Write-IntegrationLog 'Executing PostgreSQL integration suite inside runner.'
+        $integrationTestArgv = @(
             'node', '/work/node_modules/tsx/dist/cli.mjs', '--test',
             '/work/src/lib/marketing/reliability/dispatcher-watchdog/dispatcher-watchdog-postgres.integration.test.ts',
             '/work/src/lib/marketing/reliability/qstash-primary/qstash-primary-postgres.integration.test.ts'
-        )) `
+        )
+        $integrationTestStage = 'disposable_postgres_integration_tests'
+    }
+    $testCapture = Invoke-DisposableIntegrationNativeCapture `
+        -Stage $integrationTestStage `
+        -FilePath 'docker' `
+        -ArgumentList ($runnerEnvExec + $integrationTestArgv) `
         -AdditionalSecrets $integrationSecrets
     Write-DisposableIntegrationStageDiagnostic -CaptureResult $testCapture -AdditionalSecrets $integrationSecrets -LogLine ${function:Write-IntegrationLog}
     if ($testCapture.Started) {
