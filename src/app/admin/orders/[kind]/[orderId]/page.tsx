@@ -2,11 +2,16 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { AcknowledgeInventoryButton } from "@/components/admin/orders/AcknowledgeInventoryButton";
 import { PhysicalShipmentControls } from "@/components/admin/orders/PhysicalShipmentControls";
 import { RecoverNotificationButton } from "@/components/admin/orders/RecoverNotificationButton";
+import { ShippingTestEmailControl } from "@/components/admin/orders/ShippingTestEmailControl";
 import {
   loadOwnerOrderDetail,
   parseOwnerOrderRoute,
 } from "@/lib/order-notifications/order-detail";
 import { getLatestOwnerPushForOrder } from "@/lib/order-notifications/repository";
+import {
+  isApprovedShippingTestOrder,
+  isShippingTestEmailEnabled,
+} from "@/lib/order-notifications/shipping-test-notice";
 import type { ShippingField } from "@/lib/order-notifications/present-order";
 import { notFound } from "next/navigation";
 
@@ -143,6 +148,14 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
             </div>
           ) : null}
         </section>
+
+        {order.kind === "physical" && isApprovedShippingTestOrder(order.orderId) ? (
+          <ShippingTestEmailControl
+            kind={order.kind}
+            orderId={order.orderId}
+            enabled={isShippingTestEmailEnabled()}
+          />
+        ) : null}
 
         {order.attention.length ? (
           <section className="rounded-3xl border border-amber-300 bg-amber-50 p-6">
