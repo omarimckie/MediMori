@@ -8,7 +8,7 @@ import {
 import { MemoryMarketingStore } from "./memory-store";
 
 const BLOB_URL =
-  "https://example.test/marketing/public/cccccccccccccccccccccccccccccc.png";
+  "https://store.public.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png";
 
 test("content preview enrichment returns thumbnail for needs_review Smart Upload", async () => {
   const store = new MemoryMarketingStore();

@@ -15,7 +15,7 @@ import {
 import { MemoryMarketingStore } from "./memory-store";
 
 const BLOB_URL =
-  "https://example.test/marketing/public/dddddddddddddddddddddddddddddd.png";
+  "https://store.public.blob.vercel-storage.com/marketing/public/dddddddddddddddddddddddddddddddd.png";
 
 async function seedNeedsReviewSmartUpload(store: MemoryMarketingStore) {
   const assetId = "b3a88242-2e91-4127-960f-43b047152aa9";
