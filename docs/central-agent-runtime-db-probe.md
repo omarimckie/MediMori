@@ -35,9 +35,10 @@ Keep **`CENTRAL_AGENT_STATUS_ENDPOINT_ENABLED=false`** and do not add `CENTRAL_A
    - `git_commit_ref` — `VERCEL_GIT_COMMIT_REF` missing or not the fixed release ref
    - `allowed_git_ref` — configured allowlist missing or not the fixed release ref
    - `expected_branch_id` — configured expected Neon branch missing or not staging
-5. Read-only identity SQL via existing `DATABASE_URL`. Identity mismatch → **503** `"Branch identity mismatch."` (no `reason`). Unexpected DB/runtime errors → **503** `reason: "db_runtime"`.
+5. After authentication and preflight — `DATABASE_URL` present (trimmed non-empty); otherwise **503** `reason: "db_config_missing"` (presence only; never echo the value).
+6. Read-only identity SQL via existing `DATABASE_URL`. Identity mismatch → **503** `"Branch identity mismatch."` (no `reason`). Database client init / connection / query failures → **503** `reason: "db_connect"`.
 
-Diagnostic `reason` values never include env values, secrets, stack traces, or SQL results.
+Diagnostic `reason` values never include env values, secrets, hosts, stack traces, or SQL results.
 
 Deployment Protection stays enabled; use Vercel SSO plus bearer header.
 

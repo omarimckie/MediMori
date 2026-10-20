@@ -19,7 +19,8 @@ export type ProbeUnavailableReason =
   | "allowed_git_ref"
   | "expected_branch_id"
   | "bearer_missing"
-  | "db_runtime";
+  | "db_config_missing"
+  | "db_connect";
 
 export type ProbeGuardFailure = {
   status: 503;

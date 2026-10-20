@@ -29,18 +29,24 @@ export type RuntimeDbProbeDeps = {
   isBearerConfigured?: () => boolean;
   verifyBearer?: (request: Request) => boolean;
   evaluatePreflight?: typeof evaluateRuntimeDbProbePreflightGuards;
+  isDatabaseUrlConfigured?: () => boolean;
   fetchIdentity?: () => Promise<RuntimeDatabaseIdentity>;
 };
+
+function isDatabaseUrlConfiguredDefault(): boolean {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
 
 /**
  * Temporary Preview probe.
  *
- * Order (auth before diagnostic preflight codes):
+ * Order (auth before diagnostic codes):
  * 1. enabled
  * 2. bearer configured → reason bearer_missing
  * 3. bearer verify → 401 (no env diagnostics)
  * 4. preflight → reason codes (authenticated only)
- * 5. identity SQL → mismatch message or reason db_runtime
+ * 5. DATABASE_URL present → reason db_config_missing
+ * 6. identity SQL → mismatch message or reason db_connect
  */
 export async function centralAgentRuntimeDbProbeGet(
   request: Request,
@@ -51,6 +57,8 @@ export async function centralAgentRuntimeDbProbeGet(
     deps.isBearerConfigured ?? isCentralAgentRuntimeDbProbeBearerConfigured;
   const verifyBearer = deps.verifyBearer ?? verifyCentralAgentRuntimeDbProbeBearer;
   const evaluatePreflight = deps.evaluatePreflight ?? evaluateRuntimeDbProbePreflightGuards;
+  const isDatabaseUrlConfigured =
+    deps.isDatabaseUrlConfigured ?? isDatabaseUrlConfiguredDefault;
   const fetchIdentity = deps.fetchIdentity ?? fetchRuntimeDatabaseIdentity;
 
   if (!isEnabled()) {
@@ -68,6 +76,10 @@ export async function centralAgentRuntimeDbProbeGet(
   const preflightFailure = evaluatePreflight();
   if (preflightFailure) {
     return probeGuardFailureResponse(preflightFailure);
+  }
+
+  if (!isDatabaseUrlConfigured()) {
+    return probeUnavailableResponse("db_config_missing");
   }
 
   try {
@@ -92,7 +104,7 @@ export async function centralAgentRuntimeDbProbeGet(
     if (error instanceof RuntimeDatabaseIdentityError) {
       return probeIdentityMismatchResponse();
     }
-    return probeUnavailableResponse("db_runtime");
+    return probeUnavailableResponse("db_connect");
   }
 }
 

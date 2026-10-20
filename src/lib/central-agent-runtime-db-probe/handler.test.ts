@@ -53,6 +53,7 @@ function validPreviewEnv(): void {
     FIXED_STAGING_NEON_BRANCH_ID;
   process.env.VERCEL_ENV = "preview";
   process.env.VERCEL_GIT_COMMIT_REF = FIXED_RELEASE_GIT_REF;
+  process.env.DATABASE_URL = "postgresql://probe-test:probe-test@127.0.0.1:5432/neondb";
 }
 
 function assertNoLeak(body: unknown): void {
@@ -189,6 +190,7 @@ describe("central-agent-runtime-db-probe handler", () => {
     delete process.env[CENTRAL_AGENT_RUNTIME_DB_PROBE_EXPECTED_BRANCH_ID_ENV];
     delete process.env.VERCEL_ENV;
     delete process.env.VERCEL_GIT_COMMIT_REF;
+    delete process.env.DATABASE_URL;
   });
 
   afterEach(() => {
@@ -353,7 +355,33 @@ describe("central-agent-runtime-db-probe handler", () => {
     assert.equal(fetchCalls, 0);
   });
 
-  it("9. returns db_runtime for unexpected database/runtime exceptions", async () => {
+  it("9a. returns db_config_missing when DATABASE_URL is unset", async () => {
+    validPreviewEnv();
+    delete process.env.DATABASE_URL;
+    let fetchCalls = 0;
+    const response = await centralAgentRuntimeDbProbeGet(authRequest(BEARER), {
+      fetchIdentity: async () => {
+        fetchCalls += 1;
+        throw new Error("should not run");
+      },
+    });
+    await assertUnavailableReason(response, "db_config_missing", fetchCalls);
+  });
+
+  it("9b. returns db_config_missing when DATABASE_URL is blank", async () => {
+    validPreviewEnv();
+    process.env.DATABASE_URL = "   ";
+    let fetchCalls = 0;
+    const response = await centralAgentRuntimeDbProbeGet(authRequest(BEARER), {
+      fetchIdentity: async () => {
+        fetchCalls += 1;
+        throw new Error("should not run");
+      },
+    });
+    await assertUnavailableReason(response, "db_config_missing", fetchCalls);
+  });
+
+  it("9c. returns db_connect for connection/query failures", async () => {
     validPreviewEnv();
     let fetchCalls = 0;
     const response = await centralAgentRuntimeDbProbeGet(authRequest(BEARER), {
@@ -366,7 +394,7 @@ describe("central-agent-runtime-db-probe handler", () => {
     assert.equal(response.status, 503);
     const body = (await response.json()) as { error: string; reason: string };
     assert.equal(body.error, "Runtime database probe is unavailable.");
-    assert.equal(body.reason, "db_runtime");
+    assert.equal(body.reason, "db_connect");
     assertNoLeak(body);
   });
 
@@ -449,6 +477,11 @@ describe("central-agent-runtime-db-probe handler", () => {
 
     validPreviewEnv();
     process.env.VERCEL_ENV = "production";
+    await centralAgentRuntimeDbProbeGet(authRequest(BEARER), counting);
+    assert.equal(fetchCalls, 0);
+
+    validPreviewEnv();
+    delete process.env.DATABASE_URL;
     await centralAgentRuntimeDbProbeGet(authRequest(BEARER), counting);
     assert.equal(fetchCalls, 0);
   });
