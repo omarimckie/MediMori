@@ -28,9 +28,24 @@ export type IncidentNotificationState = {
   outagePushClaimStatus: PushClaimStatus;
   recoveryPushClaimStatus: PushClaimStatus;
   outagePushSentAt: string | null;
+  outagePushClaimNonce: string | null;
+  outagePushAttemptStartedAt: string | null;
+  outagePushAdminNotificationId: string | null;
+  recoveryPushClaimNonce: string | null;
+  recoveryPushAttemptStartedAt: string | null;
+  recoveryPushAdminNotificationId: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PushClaimAcquireResult =
+  | { status: "acquired"; claimNonce: string }
+  | { status: "blocked" }
+  | { status: "missing" };
+
+export type BeginPushAttemptResult =
+  | { ok: true }
+  | { ok: false; code: string };
 
 export type MaintenanceWindow = {
   id: string;

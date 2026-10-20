@@ -12,7 +12,7 @@ describe("marketing dispatcher watchdog migration runner", () => {
   it("parses six statements in dependency-safe order", () => {
     const file = readFileSync(migrationSqlPath, "utf8");
     const statements = parseMarketingDispatcherWatchdogMigrationStatements(file);
-    assert.equal(statements.length, 6);
+    assert.equal(statements.length, 7);
     assert.match(statements[0], /^CREATE TABLE IF NOT EXISTS marketing_dispatcher_watchdog_state/);
     assert.match(
       statements[1],
@@ -29,6 +29,10 @@ describe("marketing dispatcher watchdog migration runner", () => {
     assert.match(
       statements[4],
       /^CREATE INDEX IF NOT EXISTS marketing_dispatcher_maintenance_ends_at_idx/,
+    );
+    assert.match(
+      statements[6],
+      /^ALTER TABLE marketing_dispatcher_watchdog_incident_notifications/,
     );
     assert.doesNotMatch(file, /WHERE\s+ends_at\s*>\s*now\s*\(\s*\)/i);
   });

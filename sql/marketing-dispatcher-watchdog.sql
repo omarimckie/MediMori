@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS marketing_dispatcher_watchdog_incident_notifications 
   outage_push_claim_status TEXT NOT NULL DEFAULT 'none',
   recovery_push_claim_status TEXT NOT NULL DEFAULT 'none',
   outage_push_sent_at TIMESTAMPTZ,
+  outage_push_claim_nonce UUID,
+  outage_push_attempt_started_at TIMESTAMPTZ,
+  outage_push_admin_notification_id UUID,
+  recovery_push_claim_nonce UUID,
+  recovery_push_attempt_started_at TIMESTAMPTZ,
+  recovery_push_admin_notification_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT marketing_dispatcher_watchdog_outage_claim_check
@@ -66,3 +72,11 @@ CREATE INDEX IF NOT EXISTS marketing_dispatcher_maintenance_ends_at_idx
 
 CREATE INDEX IF NOT EXISTS marketing_dispatcher_maintenance_starts_at_idx
   ON marketing_dispatcher_maintenance_windows (starts_at);
+
+ALTER TABLE marketing_dispatcher_watchdog_incident_notifications
+  ADD COLUMN IF NOT EXISTS outage_push_claim_nonce UUID,
+  ADD COLUMN IF NOT EXISTS outage_push_attempt_started_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS outage_push_admin_notification_id UUID,
+  ADD COLUMN IF NOT EXISTS recovery_push_claim_nonce UUID,
+  ADD COLUMN IF NOT EXISTS recovery_push_attempt_started_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS recovery_push_admin_notification_id UUID;

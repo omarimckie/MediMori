@@ -274,8 +274,11 @@ describe("dispatcher watchdog evaluate", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     assert.ok(opened.openedIncidentId);
+    const outageClaim = await repo.tryAcquireOutagePushClaim(opened.openedIncidentId!);
+    assert.equal(outageClaim.status, "acquired");
     await repo.recordOutagePushOutcome({
       incidentId: opened.openedIncidentId!,
+      claimNonce: outageClaim.claimNonce,
       pushDelivered: 1,
       now: atMinuteOffset(16),
     });
@@ -293,6 +296,12 @@ describe("dispatcher watchdog evaluate", () => {
         outagePushClaimStatus: "claimed",
         recoveryPushClaimStatus: "none",
         outagePushSentAt: null,
+        outagePushClaimNonce: null,
+        outagePushAttemptStartedAt: null,
+        outagePushAdminNotificationId: null,
+        recoveryPushClaimNonce: null,
+        recoveryPushAttemptStartedAt: null,
+        recoveryPushAdminNotificationId: null,
         createdAt: BASE.toISOString(),
         updatedAt: BASE.toISOString(),
       },
@@ -319,8 +328,11 @@ describe("dispatcher watchdog evaluate", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const firstIncident = first.openedIncidentId!;
+    const outageClaim = await repo.tryAcquireOutagePushClaim(firstIncident);
+    assert.equal(outageClaim.status, "acquired");
     await repo.recordOutagePushOutcome({
       incidentId: firstIncident,
+      claimNonce: outageClaim.claimNonce,
       pushDelivered: 1,
       now: atMinuteOffset(16),
     });

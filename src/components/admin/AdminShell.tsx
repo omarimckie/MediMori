@@ -30,6 +30,12 @@ export function AdminShell({
               Marketing Autopilot
             </Link>
             <Link
+              href="/admin/orders"
+              className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal transition hover:bg-cream-deep"
+            >
+              Orders
+            </Link>
+            <Link
               href="/admin"
               className="inline-flex h-10 items-center rounded-xl border border-brand-brown/20 bg-white px-4 text-sm font-bold text-brand-charcoal transition hover:bg-cream-deep"
             >

@@ -6,6 +6,8 @@ import {
   createFakeWatchdogPgHarness,
   type FakeWatchdogPgStore,
 } from "./fake-pg-harness";
+import type { WatchdogRepository } from "./repository";
+import type { PushClaimAcquireResult } from "./types";
 
 const BASE = new Date("2026-10-12T12:07:00.000Z");
 
@@ -30,6 +32,46 @@ async function activateQstash(
     verifiedAt: now.toISOString(),
     attestationId: "test-attestation",
   });
+}
+
+async function mustAcquireOutage(
+  repo: WatchdogRepository,
+  incidentId: string,
+): Promise<string> {
+  const result = await repo.tryAcquireOutagePushClaim(incidentId);
+  assert.equal(result.status, "acquired");
+  return result.claimNonce;
+}
+
+async function mustAcquireRecovery(
+  repo: WatchdogRepository,
+  incidentId: string,
+): Promise<string> {
+  const result = await repo.tryAcquireRecoveryPushClaim(incidentId);
+  assert.equal(result.status, "acquired");
+  return result.claimNonce;
+}
+
+async function deliverOutageNotification(
+  repo: WatchdogRepository,
+  incidentId: string,
+  now: Date,
+  pushDelivered = 1,
+) {
+  const claimNonce = await mustAcquireOutage(repo, incidentId);
+  return repo.recordOutagePushOutcome({
+    incidentId,
+    claimNonce,
+    pushDelivered,
+    now,
+  });
+}
+
+function sortedAcquireStatuses(
+  a: PushClaimAcquireResult,
+  b: PushClaimAcquireResult,
+): string[] {
+  return [a.status, b.status].sort();
 }
 
 describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
@@ -355,8 +397,7 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       repo.tryAcquireOutagePushClaim(incidentId),
       repo.tryAcquireOutagePushClaim(incidentId),
     ]);
-    const results = [a, b].sort();
-    assert.deepEqual(results, ["acquired", "blocked"]);
+    assert.deepEqual(sortedAcquireStatuses(a, b), ["acquired", "blocked"]);
   });
 
   it("21 ambiguous outage claim deduplication", async () => {
@@ -371,14 +412,18 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const incidentId = opened.openedIncidentId!;
-    assert.equal(await repo.tryAcquireOutagePushClaim(incidentId), "acquired");
+    const claimNonce = await mustAcquireOutage(repo, incidentId);
     await repo.recordOutagePushOutcome({
       incidentId,
+      claimNonce,
       pushDelivered: 0,
       ambiguous: true,
       now: atMinuteOffset(16),
     });
-    assert.equal(await repo.tryAcquireOutagePushClaim(incidentId), "blocked");
+    assert.equal(
+      (await repo.tryAcquireOutagePushClaim(incidentId)).status,
+      "blocked",
+    );
   });
 
   it("22 recovery claim gating without outage notification", async () => {
@@ -393,7 +438,10 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const incidentId = opened.openedIncidentId!;
-    assert.equal(await repo.tryAcquireRecoveryPushClaim(incidentId), "blocked");
+    assert.equal(
+      (await repo.tryAcquireRecoveryPushClaim(incidentId)).status,
+      "blocked",
+    );
   });
 
   it("23 recovery claim after outage notification", async () => {
@@ -408,12 +456,11 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const incidentId = opened.openedIncidentId!;
-    await repo.recordOutagePushOutcome({
-      incidentId,
-      pushDelivered: 1,
-      now: atMinuteOffset(16),
-    });
-    assert.equal(await repo.tryAcquireRecoveryPushClaim(incidentId), "acquired");
+    await deliverOutageNotification(repo, incidentId, atMinuteOffset(16));
+    assert.equal(
+      (await repo.tryAcquireRecoveryPushClaim(incidentId)).status,
+      "acquired",
+    );
   });
 
   it("24 ambiguous recovery deduplication", async () => {
@@ -428,19 +475,19 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const incidentId = opened.openedIncidentId!;
-    await repo.recordOutagePushOutcome({
-      incidentId,
-      pushDelivered: 1,
-      now: atMinuteOffset(16),
-    });
-    assert.equal(await repo.tryAcquireRecoveryPushClaim(incidentId), "acquired");
+    await deliverOutageNotification(repo, incidentId, atMinuteOffset(16));
+    const recoveryNonce = await mustAcquireRecovery(repo, incidentId);
     await repo.finalizeRecoveryPushClaim({
       incidentId,
+      claimNonce: recoveryNonce,
       pushDelivered: 0,
       ambiguous: true,
       now: atMinuteOffset(17),
     });
-    assert.equal(await repo.tryAcquireRecoveryPushClaim(incidentId), "blocked");
+    assert.equal(
+      (await repo.tryAcquireRecoveryPushClaim(incidentId)).status,
+      "blocked",
+    );
   });
 
   it("25 definite failure handling for outage claim", async () => {
@@ -455,14 +502,18 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const incidentId = opened.openedIncidentId!;
-    assert.equal(await repo.tryAcquireOutagePushClaim(incidentId), "acquired");
+    const claimNonce = await mustAcquireOutage(repo, incidentId);
     const failed = await repo.recordOutagePushOutcome({
       incidentId,
+      claimNonce,
       pushDelivered: 0,
       now: atMinuteOffset(16),
     });
     assert.equal(failed?.outagePushClaimStatus, "failed");
-    assert.equal(await repo.tryAcquireOutagePushClaim(incidentId), "acquired");
+    assert.equal(
+      (await repo.tryAcquireOutagePushClaim(incidentId)).status,
+      "acquired",
+    );
   });
 
   it("26 maintenance suppresses outage notification eligibility", async () => {
@@ -569,11 +620,7 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
       primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
     });
     const firstIncident = first.openedIncidentId!;
-    await repo.recordOutagePushOutcome({
-      incidentId: firstIncident,
-      pushDelivered: 1,
-      now: atMinuteOffset(16),
-    });
+    await deliverOutageNotification(repo, firstIncident, atMinuteOffset(16));
     await repo.commitObservation({
       now: atMinuteOffset(30),
       primaryLastSeenAt: freshLastSeen(atMinuteOffset(30)),
@@ -591,5 +638,32 @@ describe("dispatcher watchdog postgres repository (isolated fake pg)", () => {
     assert.equal(notif?.outagePushClaimStatus, "none");
     const prior = await repo.getIncidentNotification(firstIncident);
     assert.equal(prior?.outagePushClaimStatus, "delivered");
+  });
+
+  it("31 recovery begin after resolved episode (T17 postgres path)", async () => {
+    const { repo } = createFakeWatchdogPgHarness();
+    await activateQstash(repo, atMinuteOffset(0));
+    await repo.commitObservation({
+      now: atMinuteOffset(0),
+      primaryLastSeenAt: staleLastSeen(atMinuteOffset(0)),
+    });
+    const opened = await repo.commitObservation({
+      now: atMinuteOffset(15),
+      primaryLastSeenAt: staleLastSeen(atMinuteOffset(15)),
+    });
+    const incidentId = opened.openedIncidentId!;
+    await deliverOutageNotification(repo, incidentId, atMinuteOffset(16));
+    await repo.commitObservation({
+      now: atMinuteOffset(30),
+      primaryLastSeenAt: freshLastSeen(atMinuteOffset(30)),
+    });
+    const recovery = await repo.tryAcquireRecoveryPushClaim(incidentId);
+    assert.equal(recovery.status, "acquired");
+    const began = await repo.beginRecoveryPushAttempt({
+      incidentId,
+      claimNonce: recovery.claimNonce,
+      now: atMinuteOffset(31),
+    });
+    assert.equal(began.ok, true);
   });
 });
