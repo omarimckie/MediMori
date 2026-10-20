@@ -13,6 +13,7 @@ import {
   uploadPrivateMarketingFile,
   uploadPublicMarketingFile,
 } from "./marketing-blob";
+import { assertMarketingPreviewAllowsMutations } from "./preview-readonly";
 import { privateBlobPathFromAsset } from "./resource-assets";
 import type { MarketingStore } from "./store";
 import type { MarketingAsset } from "./types";
@@ -98,6 +99,7 @@ export async function updateMarketingAssetMetadata(
   assetId: string,
   patch: MarketingAssetMetadataPatch,
 ): Promise<MarketingAsset> {
+  assertMarketingPreviewAllowsMutations();
   const asset = await store.getAsset(assetId);
   if (!asset) throw new MarketingAssetUpdateError("Asset not found.", 404);
   assertEditableManualUploadAsset(asset);

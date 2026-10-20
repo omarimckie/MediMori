@@ -1,4 +1,4 @@
-import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
+import { jsonError, requireMarketingAdminMutation } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
 import { assertImageUpload, sanitizeUploadFilename } from "@/lib/marketing/file-validation";
 import {
@@ -34,7 +34,7 @@ function parseAudience(value: string | undefined): AudienceId | undefined {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireMarketingAdmin();
+  const auth = await requireMarketingAdminMutation();
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";

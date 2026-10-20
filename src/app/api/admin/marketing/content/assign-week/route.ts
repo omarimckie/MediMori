@@ -1,4 +1,4 @@
-import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
+import { jsonError, requireMarketingAdminMutation } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
 import {
   assignContentToWeeklyPlan,
@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const auth = await requireMarketingAdmin();
+  const auth = await requireMarketingAdminMutation();
   if (!auth.ok) return auth.response;
 
   let body: { contentIds?: unknown; weeklyPlanId?: unknown } = {};

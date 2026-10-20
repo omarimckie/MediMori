@@ -1,3 +1,8 @@
+import {
+  assertMarketingPreviewAllowsMutations,
+  MarketingPreviewReadonlyError,
+  MARKETING_PREVIEW_READONLY_MESSAGE,
+} from "../preview-readonly";
 import type { MarketingStore } from "../store";
 import type { MarketingPublication } from "../types";
 import type { ReliabilitySweepResult } from "./sweep";
@@ -5,7 +10,7 @@ import type { ReliabilitySweepResult } from "./sweep";
 export type MarketingPublishCronAuth = { ok: boolean; reason: string };
 
 export type MarketingPublishCronResult =
-  | { ok: false; status: 401; body: { error: string } }
+  | { ok: false; status: 401 | 403; body: { error: string } }
   | {
       ok: true;
       status: 200;
@@ -36,6 +41,15 @@ export async function handleMarketingPublishCron(
   request: Request,
   deps: MarketingPublishCronDeps,
 ): Promise<MarketingPublishCronResult> {
+  try {
+    assertMarketingPreviewAllowsMutations();
+  } catch (error) {
+    if (error instanceof MarketingPreviewReadonlyError) {
+      return { ok: false, status: 403, body: { error: MARKETING_PREVIEW_READONLY_MESSAGE } };
+    }
+    throw error;
+  }
+
   const auth = await deps.authorize(request);
   if (!auth.ok) {
     return { ok: false, status: 401, body: { error: "Unauthorized." } };

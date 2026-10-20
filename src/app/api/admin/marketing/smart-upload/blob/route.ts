@@ -1,4 +1,4 @@
-import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
+import { jsonError, requireMarketingAdminMutation } from "@/lib/marketing/http";
 import { hasMarketingBlobToken } from "@/lib/marketing/marketing-blob";
 import { smartUploadClientUploadTokenConstraints } from "@/lib/marketing/smart-client-upload";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
   let blobTokenAdmin: string | null = null;
   if (body.type === "blob.generate-client-token") {
-    const auth = await requireMarketingAdmin();
+    const auth = await requireMarketingAdminMutation();
     if (!auth.ok) return auth.response;
     blobTokenAdmin = auth.username;
   }

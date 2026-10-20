@@ -1,4 +1,8 @@
-import { jsonError } from "./http";
+import { jsonError, marketingPreviewReadonlyResponse } from "./http";
+import {
+  assertMarketingPreviewAllowsMutations,
+  MarketingPreviewReadonlyError,
+} from "./preview-readonly";
 import { runApprovalAction } from "./workflow";
 import type { MarketingStore } from "./store";
 import { NextResponse } from "next/server";
@@ -35,12 +39,16 @@ export async function executeMarketingContentPostAction(
   input: ContentPostActionInput,
 ) {
   try {
+    assertMarketingPreviewAllowsMutations();
     const result = await runApprovalAction(store, {
       ...input,
       confirmPermanentDelete: input.confirmPermanentDelete,
     });
     return NextResponse.json({ result });
   } catch (error) {
+    if (error instanceof MarketingPreviewReadonlyError) {
+      return marketingPreviewReadonlyResponse();
+    }
     const message = error instanceof Error ? error.message : "Action failed.";
     return jsonError(message, contentActionFailureStatus(message));
   }

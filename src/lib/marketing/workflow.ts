@@ -20,6 +20,7 @@ import { allowMarketingDemoSeed, isMockMode } from "./config";
 import { generateWeeklyContent } from "./content-engine";
 import { logMarketing } from "./logger";
 import { buildWeeklyPlan, createCampaignFromObjective, getChannelQuotas } from "./planner";
+import { assertMarketingPreviewAllowsMutations } from "./preview-readonly";
 import { generateRecommendations } from "./recommendations";
 import { buildWeeklyReport } from "./report";
 import type { MarketingStore } from "./store";
@@ -143,6 +144,7 @@ export async function runApprovalAction(
     actor?: string | null;
   },
 ) {
+  assertMarketingPreviewAllowsMutations();
   switch (input.action) {
     case "approve":
       if (!input.contentId) throw new Error("contentId required");
