@@ -32,6 +32,16 @@ export type RuntimeDbProbeDeps = {
   fetchIdentity?: () => Promise<RuntimeDatabaseIdentity>;
 };
 
+/**
+ * Temporary Preview probe.
+ *
+ * Order (auth before diagnostic preflight codes):
+ * 1. enabled
+ * 2. bearer configured → reason bearer_missing
+ * 3. bearer verify → 401 (no env diagnostics)
+ * 4. preflight → reason codes (authenticated only)
+ * 5. identity SQL → mismatch message or reason db_runtime
+ */
 export async function centralAgentRuntimeDbProbeGet(
   request: Request,
   deps: RuntimeDbProbeDeps = {},
@@ -47,17 +57,17 @@ export async function centralAgentRuntimeDbProbeGet(
     return probeDisabledResponse();
   }
 
-  const preflightFailure = evaluatePreflight();
-  if (preflightFailure) {
-    return probeGuardFailureResponse(preflightFailure);
-  }
-
   if (!isBearerConfigured()) {
-    return probeUnavailableResponse();
+    return probeUnavailableResponse("bearer_missing");
   }
 
   if (!verifyBearer(request)) {
     return probeUnauthorizedResponse();
+  }
+
+  const preflightFailure = evaluatePreflight();
+  if (preflightFailure) {
+    return probeGuardFailureResponse(preflightFailure);
   }
 
   try {
@@ -82,7 +92,7 @@ export async function centralAgentRuntimeDbProbeGet(
     if (error instanceof RuntimeDatabaseIdentityError) {
       return probeIdentityMismatchResponse();
     }
-    return probeUnavailableResponse();
+    return probeUnavailableResponse("db_runtime");
   }
 }
 

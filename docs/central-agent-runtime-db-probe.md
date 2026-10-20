@@ -28,12 +28,16 @@ Keep **`CENTRAL_AGENT_STATUS_ENDPOINT_ENABLED=false`** and do not add `CENTRAL_A
 ## Guards
 
 1. Probe enabled flag exactly `true`.
-2. `VERCEL_ENV === preview` (fail closed otherwise).
-3. `VERCEL_GIT_COMMIT_REF` equals the fixed release ref.
-4. Configured allowed git ref matches the fixed release ref.
-5. Configured expected branch matches fixed staging branch only.
-6. Valid `Authorization: Bearer …` header (never query parameters).
-7. Read-only identity SQL via existing `DATABASE_URL`.
+2. Probe bearer env configured; otherwise **503** `{ "error": "…unavailable.", "reason": "bearer_missing" }`.
+3. Valid `Authorization: Bearer …` header (never query parameters). Wrong/missing header → **401** with **no** diagnostic `reason` (does not reveal env/preflight state).
+4. After authentication only — fail-closed preflight with non-secret `reason` codes:
+   - `vercel_env` — `VERCEL_ENV` is not `preview`
+   - `git_commit_ref` — `VERCEL_GIT_COMMIT_REF` missing or not the fixed release ref
+   - `allowed_git_ref` — configured allowlist missing or not the fixed release ref
+   - `expected_branch_id` — configured expected Neon branch missing or not staging
+5. Read-only identity SQL via existing `DATABASE_URL`. Identity mismatch → **503** `"Branch identity mismatch."` (no `reason`). Unexpected DB/runtime errors → **503** `reason: "db_runtime"`.
+
+Diagnostic `reason` values never include env values, secrets, stack traces, or SQL results.
 
 Deployment Protection stays enabled; use Vercel SSO plus bearer header.
 
