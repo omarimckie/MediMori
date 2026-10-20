@@ -1,5 +1,3 @@
-import { marketingAdminAssetImageApiPath } from "./marketing-admin-asset-image";
-
 /** Browser-safe Content Queue preview: admin session proxy only (never raw blob URLs). */
 export function isSafeAdminContentPreviewUrl(url: string | null | undefined): boolean {
   if (!url?.trim()) return false;
@@ -17,5 +15,3 @@ export function contentQueueRejectConfirmMessage(title: string | null, platform:
   const label = title?.trim() || "this post";
   return `Reject ${label} (${platform})? It will move to rejected and will not be scheduled or published.`;
 }
-
-export { marketingAdminAssetImageApiPath };
