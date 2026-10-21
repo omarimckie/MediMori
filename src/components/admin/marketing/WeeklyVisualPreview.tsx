@@ -26,6 +26,7 @@ export function WeeklyVisualPreview({ review, title }: WeeklyVisualPreviewProps)
             height={1200}
             className="h-auto max-h-80 w-full object-contain"
             unoptimized
+            loading="eager"
           />
         </div>
       </div>
