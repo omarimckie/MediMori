@@ -1,9 +1,9 @@
 # Independent publishing-health watchdog (verified QStash primary signal only).
 # Does NOT invoke marketing-publish or publishDue.
-# On the default branch this workflow is manual-only (workflow_dispatch) until owner-approved
-# production activation. The */15 schedule is intentionally absent here so merge does not start
-# GitHub cron ticks before schema deploy, QStash evidence, and recordPrimaryQstashActivation.
-# Re-add an on.schedule block (15-minute cadence) only after that activation gate is complete.
+# On the default branch, GitHub runs this workflow every 15 minutes and workflow_dispatch
+# remains available. Scheduled workflows run only from the default branch, so this schedule
+# stays inactive until the change is merged. GitHub may delay or skip a cron run; a delayed
+# tick is not itself an outage. Staleness follows the verified QStash heartbeat age.
 # Observation slots are durable in Postgres (15-minute buckets) once ticks run.
 # Healthchecks.io success ping runs only after a confirmed HTTP 200 tick response — it does not prove
 # marketing-publish ran, that QStash primary is fresh, or that phone push delivery succeeded.
@@ -12,10 +12,13 @@ name: Marketing dispatcher watchdog
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
 
+# Scheduled and manual runs share one queue. A tick that has started is not cancelled.
 concurrency:
   group: marketing-dispatcher-watchdog
   cancel-in-progress: false

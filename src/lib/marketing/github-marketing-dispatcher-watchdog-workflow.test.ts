@@ -13,10 +13,16 @@ const PUBLISH_WORKFLOW = join(
   ".github/workflows/marketing-publish-dispatch.yml",
 );
 
-test("dispatcher watchdog workflow dispatch-only gate, auth, and healthchecks contract", () => {
+test("dispatcher watchdog workflow schedule, manual dispatch, auth, and healthchecks contract", () => {
   const source = readFileSync(WATCHDOG_WORKFLOW, "utf8");
-  assert.doesNotMatch(source, /^\s*schedule:/m);
   assert.match(source, /workflow_dispatch:/);
+  assert.match(source, /schedule:/);
+  assert.match(source, /cron:\s*"\*\/15 \* \* \* \*"/);
+  const cron = source.match(/cron:\s*"([^"]+)"/);
+  assert.ok(cron);
+  const fields = cron[1].trim().split(/\s+/);
+  assert.deepEqual(fields, ["*/15", "*", "*", "*", "*"]);
+  assert.equal(fields.length, 5);
   assert.match(source, /\/api\/cron\/marketing-dispatcher-watchdog/);
   assert.match(source, /secrets\.DISPATCHER_WATCHDOG_SECRET/);
   assert.match(source, /vars\.MARKETING_DISPATCHER_WATCHDOG_BASE_URL/);
