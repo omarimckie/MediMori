@@ -121,9 +121,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Optional until the owner configures the ping URL. A configured URL that fails still fails this step.
+          # This step runs only after the watchdog tick step succeeds.
           if [ -z "${HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL}" ]; then
-            echo "::error::Set repository secret HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL (Healthchecks.io ping URL; value not logged)."
-            exit 1
+            echo "Healthchecks ping skipped (HEALTHCHECKS_DISPATCHER_WATCHDOG_PING_URL is not configured)."
+            exit 0
           fi
 
           echo "Sending Healthchecks.io success ping (URL not logged)."
