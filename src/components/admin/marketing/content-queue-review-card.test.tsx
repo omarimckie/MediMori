@@ -83,6 +83,48 @@ test("raw blob preview URL is not rendered; unavailable fallback shown", () => {
   assert.doesNotMatch(html, /Q7Bbz4IQuVq0GO24/);
 });
 
+const publicBlob =
+  "https://q7bbz4iquvq0go24.public.blob.vercel-storage.com/marketing/public/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
+
+test("preview read-only card renders an explicit public Blob URL", () => {
+  const html = renderToStaticMarkup(
+    <ContentQueueReviewCard
+      item={baseItem}
+      previewUrl={publicBlob}
+      showVisualPreview
+      allowPublicBlobPreview
+      plans={[]}
+      currentWeekPlanId={null}
+      busy={false}
+      onApprove={noop}
+      onReject={noop}
+      onAddToWeek={noop}
+    />,
+  );
+  assert.match(html, new RegExp(publicBlob.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, /referrerPolicy="no-referrer"/i);
+  assert.doesNotMatch(html, /api\/admin\/marketing\/assets\//);
+});
+
+test("invalid public Blob URL stays on the review fallback when preview images are allowed", () => {
+  const html = renderToStaticMarkup(
+    <ContentQueueReviewCard
+      item={baseItem}
+      previewUrl="https://example.com/marketing/public/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+      showVisualPreview
+      allowPublicBlobPreview
+      plans={[]}
+      currentWeekPlanId={null}
+      busy={false}
+      onApprove={noop}
+      onReject={noop}
+      onAddToWeek={noop}
+    />,
+  );
+  assert.match(html, /Preview unavailable/);
+  assert.doesNotMatch(html, /example\.com/);
+});
+
 test("caption line breaks are preserved in markup", () => {
   const html = renderToStaticMarkup(
     <ContentQueueReviewCard

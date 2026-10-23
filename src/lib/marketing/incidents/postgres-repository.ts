@@ -1,5 +1,10 @@
 import { getSql } from "@/lib/db";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
+import {
+  connectPreviewAwarePoolClient,
+  previewDatabaseGuardDecision,
+  PreviewDatabaseGuardError,
+} from "@/lib/marketing/preview-db-guard";
 import { sanitizeEventPayload } from "./sanitize";
 import type {
   MarketingIncidentEventRecord,
@@ -26,6 +31,7 @@ import {
 } from "./validate";
 
 let incidentPool: Pool | null = null;
+let incidentPoolFactory: ((connectionString: string) => Pool) | null = null;
 
 function getIncidentPool(): Pool {
   const connectionString = process.env.DATABASE_URL?.trim();
@@ -33,9 +39,25 @@ function getIncidentPool(): Pool {
     throw new Error("DATABASE_URL is not configured.");
   }
   if (!incidentPool) {
-    incidentPool = new Pool({ connectionString });
+    incidentPool = incidentPoolFactory
+      ? incidentPoolFactory(connectionString)
+      : new Pool({ connectionString });
   }
   return incidentPool;
+}
+
+/** Test hook. Production constructs the Neon pool from DATABASE_URL. */
+export function setIncidentPoolFactoryForTests(
+  factory: ((connectionString: string) => Pool) | null,
+): void {
+  incidentPoolFactory = factory;
+  incidentPool = null;
+}
+
+/** Test hook. Drops the cached incident pool. */
+export function resetIncidentPoolForTests(): void {
+  incidentPool = null;
+  incidentPoolFactory = null;
 }
 
 export function mapIncidentRow(row: Record<string, unknown>): MarketingIncidentRecord {
@@ -272,14 +294,28 @@ function createRepoForPoolClient(client: PoolClient): PostgresMarketingIncidentR
 }
 
 async function withPoolTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await getIncidentPool().connect();
+  const decision = previewDatabaseGuardDecision(process.env);
+  if (decision === "reject") {
+    throw new PreviewDatabaseGuardError("ambiguous-scope");
+  }
+  const client = await connectPreviewAwarePoolClient({
+    connect: () => getIncidentPool().connect(),
+  });
+  let began = false;
   try {
     await client.query("BEGIN");
+    began = true;
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (began || decision === "skip") {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original failure. The client is released below.
+      }
+    }
     throw error;
   } finally {
     client.release();

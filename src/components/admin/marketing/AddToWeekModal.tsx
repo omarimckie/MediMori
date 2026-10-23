@@ -1,11 +1,12 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { contentBodyExcerpt } from "@/lib/marketing/content-client-utils";
 import type { SmartUploadPairResolution } from "@/lib/marketing/content-assign-week";
 import { formatWeekPlanSelectorLabel } from "@/lib/marketing/content-client-utils";
+import { resolveReviewCardImageSrc } from "@/lib/marketing/content-queue-review";
+import { ReviewPreviewImage } from "./ReviewPreviewImage";
 import { Card, PrimaryButton, SecondaryButton } from "./ui";
 
 type WeeklyPlanOption = {
@@ -20,6 +21,7 @@ type AddToWeekModalProps = {
   anchorTitle: string | null;
   anchorBody: string;
   previewUrl: string | null;
+  allowPublicBlobPreview?: boolean;
   plans: WeeklyPlanOption[];
   initialWeeklyPlanId: string | null;
   modalTitle?: string;
@@ -35,6 +37,7 @@ export function AddToWeekModal({
   anchorTitle,
   anchorBody,
   previewUrl,
+  allowPublicBlobPreview = false,
   plans,
   initialWeeklyPlanId,
   modalTitle = "Add to Week",
@@ -71,6 +74,8 @@ export function AddToWeekModal({
       }
     })();
   }, [open, anchorContentId, initialWeeklyPlanId, plans]);
+
+  const previewImage = resolveReviewCardImageSrc(previewUrl, allowPublicBlobPreview);
 
   if (!open) return null;
 
@@ -120,14 +125,18 @@ export function AddToWeekModal({
         ) : (
           <>
             <div className="mt-4 flex gap-3">
-              {previewUrl ? (
+              {previewImage ? (
                 <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-brand-brown/15 bg-cream-deep">
-                  <Image
-                    src={previewUrl}
+                  <ReviewPreviewImage
+                    kind={previewImage.kind}
+                    src={previewImage.src}
                     alt=""
-                    fill
-                    className="object-cover"
-                    unoptimized
+                    fill={previewImage.kind !== "public-blob"}
+                    className={
+                      previewImage.kind === "public-blob"
+                        ? "h-full w-full object-cover"
+                        : "object-cover"
+                    }
                   />
                 </div>
               ) : null}

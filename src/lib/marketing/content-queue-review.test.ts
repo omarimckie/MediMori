@@ -6,7 +6,9 @@ import { buildContentListPreviewById } from "./content-list-preview";
 import {
   contentQueueRejectConfirmMessage,
   contentQueueShowsApproveReject,
+  explicitPublicMarketingBlobReviewUrl,
   isSafeAdminContentPreviewUrl,
+  resolveReviewCardImageSrc,
 } from "./content-queue-review";
 import { isMarketingAssetPublicImageEligible } from "./marketing-asset-public-image";
 import { MemoryMarketingStore } from "./memory-store";
@@ -49,6 +51,47 @@ test("isSafeAdminContentPreviewUrl accepts only admin asset image paths", () => 
   );
   assert.equal(isSafeAdminContentPreviewUrl("/api/marketing/assets/" + id + "/image"), false);
   assert.equal(isSafeAdminContentPreviewUrl(null), false);
+});
+
+test("explicit public Blob review URLs accept only the stored public image shape", () => {
+  const accepted = explicitPublicMarketingBlobReviewUrl(BLOB_URL);
+  assert.equal(accepted, BLOB_URL);
+  assert.equal(isSafeAdminContentPreviewUrl(BLOB_URL), false);
+  assert.equal(isSafeAdminContentPreviewUrl(BLOB_URL, { allowExplicitPublicBlob: true }), true);
+  assert.deepEqual(resolveReviewCardImageSrc(BLOB_URL, false), null);
+  assert.deepEqual(resolveReviewCardImageSrc(BLOB_URL, true), {
+    kind: "public-blob",
+    src: BLOB_URL,
+  });
+
+  const rejected = [
+    "http://store.public.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "https://store.private.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "https://store.public.blob.vercel-storage.com/marketing/private/cccccccccccccccccccccccccccccccc.png",
+    "https://store.public.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png?token=1",
+    "https://user:secret@store.public.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "https://store.public.blob.vercel-storage.com/marketing/public/%2e%2e/private/cccccccccccccccccccccccccccccccc.png",
+    "https://evil.public.blob.vercel-storage.com.example.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "https://public.blob.vercel-storage.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "https://example.com/marketing/public/cccccccccccccccccccccccccccccccc.png",
+    "javascript:alert(1)",
+    null,
+  ];
+  for (const url of rejected) {
+    assert.equal(explicitPublicMarketingBlobReviewUrl(url), null, String(url));
+    assert.equal(
+      isSafeAdminContentPreviewUrl(url, { allowExplicitPublicBlob: true }),
+      false,
+      String(url),
+    );
+  }
+
+  const mixedCase =
+    "https://Q7Bbz4IQuVq0GO24.public.blob.vercel-storage.com/marketing/public/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
+  assert.equal(
+    explicitPublicMarketingBlobReviewUrl(mixedCase),
+    "https://q7bbz4iquvq0go24.public.blob.vercel-storage.com/marketing/public/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+  );
 });
 
 test("contentQueueShowsApproveReject only for needs_review", () => {

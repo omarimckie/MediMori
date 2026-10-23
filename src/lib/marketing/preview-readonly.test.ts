@@ -100,6 +100,7 @@ test("mutation path matrix blocks marketing writes and cron triggers", () => {
     ["/api/admin/marketing/recommendations", "POST"],
     ["/api/admin/marketing/seed", "POST"],
     ["/api/admin/marketing/settings", "POST"],
+    ["/api/admin/marketing/preview-db-identity", "POST"],
     ["/api/admin/marketing/smart-upload/blob", "POST"],
     ["/api/admin/marketing/smart-upload/discard-preview", "POST"],
     ["/api/admin/marketing/smart-upload/finalize", "POST"],
@@ -136,6 +137,14 @@ test("read paths remain unblocked by path classifier", () => {
   assert.equal(
     isMarketingPreviewReadonlyMutationRequest("/api/admin/marketing/settings", "GET"),
     false,
+  );
+  assert.equal(
+    isMarketingPreviewReadonlyMutationRequest("/api/admin/marketing/preview-db-identity", "GET"),
+    false,
+  );
+  assert.equal(
+    isMarketingPreviewReadonlyMutationRequest("/api/admin/marketing/preview-db-identity", "POST"),
+    true,
   );
   assert.equal(
     isMarketingPreviewReadonlyMutationRequest(

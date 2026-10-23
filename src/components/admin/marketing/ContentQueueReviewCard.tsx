@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState } from "react";
 import {
   contentDisplayTitle,
@@ -10,8 +9,9 @@ import {
 import {
   contentQueueRejectConfirmMessage,
   contentQueueShowsApproveReject,
-  isSafeAdminContentPreviewUrl,
+  resolveReviewCardImageSrc,
 } from "@/lib/marketing/content-queue-review";
+import { ReviewPreviewImage } from "./ReviewPreviewImage";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 export type ContentQueueReviewItem = {
@@ -33,6 +33,7 @@ type Props = {
   item: ContentQueueReviewItem;
   previewUrl: string | null;
   showVisualPreview: boolean;
+  allowPublicBlobPreview?: boolean;
   plans: PlanOption[];
   currentWeekPlanId: string | null;
   busy: boolean;
@@ -49,6 +50,7 @@ export function ContentQueueReviewCard({
   item,
   previewUrl,
   showVisualPreview,
+  allowPublicBlobPreview = false,
   plans,
   currentWeekPlanId,
   busy,
@@ -57,10 +59,9 @@ export function ContentQueueReviewCard({
   onAddToWeek,
 }: Props) {
   const [imageFailed, setImageFailed] = useState(false);
-  const safePreviewUrl = isSafeAdminContentPreviewUrl(previewUrl) ? previewUrl : null;
-  const showImage = Boolean(showVisualPreview && safePreviewUrl && !imageFailed);
-  const showUnavailable =
-    showVisualPreview && (!safePreviewUrl || imageFailed);
+  const safePreview = resolveReviewCardImageSrc(previewUrl, allowPublicBlobPreview);
+  const showImage = Boolean(showVisualPreview && safePreview && !imageFailed);
+  const showUnavailable = showVisualPreview && (!safePreview || imageFailed);
   const displayTitle = contentDisplayTitle(item.title, item.body);
   const week = formatContentWeekLabel(item.weeklyPlanId, plans);
   const onCurrentWeek =
@@ -89,21 +90,18 @@ export function ContentQueueReviewCard({
             <h3 className="text-lg font-extrabold text-brand-charcoal">{displayTitle}</h3>
           ) : null}
 
-          {showImage && safePreviewUrl ? (
+          {showImage && safePreview ? (
             <div className="max-w-md overflow-hidden rounded-2xl border border-brand-brown/15 bg-cream-deep">
               <div className="relative max-h-80 w-full">
-                <Image
-                  src={safePreviewUrl}
+                <ReviewPreviewImage
+                  kind={safePreview.kind}
+                  src={safePreview.src}
                   alt={
                     displayTitle
                       ? `Creative preview for ${displayTitle}`
                       : `${item.platform} creative preview`
                   }
-                  width={800}
-                  height={1200}
                   className="h-auto max-h-80 w-full object-contain"
-                  unoptimized
-                  loading="lazy"
                   onError={() => setImageFailed(true)}
                 />
               </div>

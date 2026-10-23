@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { pickOperationalWeeklyPlanId } from "@/lib/marketing/content-client-utils";
-import { isSafeAdminContentPreviewUrl } from "@/lib/marketing/content-queue-review";
 import { AddToWeekModal } from "./AddToWeekModal";
 import {
   ContentQueueReviewCard,
@@ -32,6 +31,7 @@ export function ContentClient() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [weekModal, setWeekModal] = useState<ContentQueueReviewItem | null>(null);
+  const [allowPublicBlobPreview, setAllowPublicBlobPreview] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -46,6 +46,7 @@ export function ContentClient() {
     const data = (await contentRes.json()) as {
       content?: ContentQueueReviewItem[];
       previewByContentId?: PreviewById;
+      previewReadonlyImages?: boolean;
       error?: string;
     };
     if (!contentRes.ok) {
@@ -53,6 +54,7 @@ export function ContentClient() {
     }
     setItems(data.content ?? []);
     setPreviewByContentId(data.previewByContentId ?? {});
+    setAllowPublicBlobPreview(data.previewReadonlyImages === true);
     if (settingsRes.ok) {
       const settings = (await settingsRes.json()) as { plans?: WeeklyPlanOption[] };
       const planList = settings.plans ?? [];
@@ -175,6 +177,7 @@ export function ContentClient() {
             item={item}
             previewUrl={preview?.previewUrl ?? null}
             showVisualPreview={preview?.showVisualPreview ?? false}
+            allowPublicBlobPreview={allowPublicBlobPreview}
             plans={plans}
             currentWeekPlanId={currentWeekPlanId}
             busy={busy}
@@ -203,11 +206,8 @@ export function ContentClient() {
           anchorContentId={weekModal.id}
           anchorTitle={weekModal.title}
           anchorBody={weekModal.body}
-          previewUrl={
-            isSafeAdminContentPreviewUrl(previewByContentId[weekModal.id]?.previewUrl ?? null)
-              ? previewByContentId[weekModal.id]!.previewUrl
-              : null
-          }
+          previewUrl={previewByContentId[weekModal.id]?.previewUrl ?? null}
+          allowPublicBlobPreview={allowPublicBlobPreview}
           plans={plans}
           initialWeeklyPlanId={
             weekModal.weeklyPlanId ?? pickOperationalWeeklyPlanId(plans)

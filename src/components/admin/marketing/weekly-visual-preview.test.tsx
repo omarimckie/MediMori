@@ -37,6 +37,21 @@ test("WeeklyVisualPreview renders nothing for non-visual review", () => {
   assert.equal(html, "");
 });
 
+test("WeeklyVisualPreview renders a public Blob URL only when preview images are allowed", () => {
+  const blob =
+    "https://store.public.blob.vercel-storage.com/marketing/public/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
+  const review = { ...visualReview, previewUrl: blob, dimensionsLabel: null, visualSuitabilityWarning: null };
+  const blocked = renderToStaticMarkup(
+    <WeeklyVisualPreview review={review} title="Amara" />,
+  );
+  assert.equal(blocked, "");
+  const allowed = renderToStaticMarkup(
+    <WeeklyVisualPreview review={review} title="Amara" allowPublicBlobPreview />,
+  );
+  assert.match(allowed, /store\.public\.blob\.vercel-storage\.com/);
+  assert.match(allowed, /referrerPolicy="no-referrer"/i);
+});
+
 test("WeeklyVisualPreview renders nothing when visual but URL missing", () => {
   const html = renderToStaticMarkup(
     <WeeklyVisualPreview
