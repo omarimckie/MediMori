@@ -1,3 +1,6 @@
+import { validationPreparationOperations } from "./validation-source-populate";
+import { preparationFailureClasses } from "./validation-diagnostics";
+
 const stages = new Set([
   "implementation", "review", "worker", "configuration", "scratch_preflight",
   "database_identity", "source_export", "initialization", "post_apply_verification",
@@ -44,6 +47,8 @@ export function safeBlockDiagnostic(action: unknown, diagnostic: unknown) {
   if (typeof value.code === "string" && value.code.length <= 80 && codes.has(value.code)) safe.code = value.code;
   if (typeof value.stage === "string" && value.stage.length <= 80 && stages.has(value.stage)) safe.stage = value.stage;
   if (typeof value.validationStage === "string" && value.validationStage.length <= 80 && validationStages.has(value.validationStage)) safe.validationStage = value.validationStage;
+  if (typeof value.validationPreparationOperation === "string" && (validationPreparationOperations as readonly string[]).includes(value.validationPreparationOperation)) safe.validationPreparationOperation = value.validationPreparationOperation;
+  if (typeof value.preparationFailureClass === "string" && (preparationFailureClasses as readonly string[]).includes(value.preparationFailureClass)) safe.preparationFailureClass = value.preparationFailureClass;
   return Object.keys(safe).length ? safe : undefined;
 }
 

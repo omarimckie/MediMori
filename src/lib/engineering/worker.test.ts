@@ -346,6 +346,27 @@ test("post-apply preparation failures persist their bounded category and never s
     assert.equal(JSON.stringify(block).includes("private"),false);
   }finally{await f.close();}
 });
+test("a preparation error raised from validation keeps its operation and failure class",async()=>{
+  const f=await fixture();try{
+    let current=revision,calls=0;
+    const workspace:IsolatedWorkspace={snapshot:async()=>({revision:current,changedFiles:current===revision?[]:plan.files,files:{"README.md":richSource}}),apply:async(_replacements,rev)=>{assert.equal(rev,current);current="c".repeat(40);return proposalEvidence(current);},prepareValidationEnvironment:async()=>{},validate:async()=>{throw new ValidationPreparationError("validation_source_prepare_failed","source_volume","docker_populate_workspace",false,"subprocess_nonzero_exit");}};
+    await assert.rejects(runWorker(f.ingress,workspace,async(body)=>{calls++;return{id:"gate-prep",model:"gpt-6-luna",service_tier:"default",usage:{input_tokens:100,output_tokens:100},text:proposalFor(body)};}),(error:unknown)=>{
+      assert.ok(error instanceof WorkerExitError);
+      assert.equal(error.report.primary.code,"validation_source_prepare_failed");
+      assert.equal(error.report.primary.validationStage,"source_volume");
+      assert.equal(error.report.primary.validationPreparationOperation,"docker_populate_workspace");
+      assert.equal(error.report.primary.preparationFailureClass,"subprocess_nonzero_exit");
+      assert.equal(error.report.primary.validationGate,"test");
+      assert.notEqual(error.report.primary.code,"sandbox_cleanup_failed");
+      return true;
+    });
+    assert.equal(calls,1);
+    const block=(await f.db.query<{details:Record<string,unknown>}>("SELECT details FROM engineering_events WHERE task_id=$1 AND action='block'",[f.task.id])).rows[0].details.diagnostic as Record<string,unknown>;
+    assert.equal(block.code,"validation_source_prepare_failed");assert.equal(block.validationStage,"source_volume");assert.equal(block.operation,"prepare_validation_environment");
+    assert.equal(block.validationPreparationOperation,"docker_populate_workspace");assert.equal(block.preparationFailureClass,"subprocess_nonzero_exit");assert.equal(block.validationGate,"test");
+    assert.equal((await f.db.query("SELECT * FROM engineering_validations WHERE run_id=$1::uuid",[f.run])).rows.length,0);
+  }finally{await f.close();}
+});
 test("failed validation diagnostics are durably bounded and supplied to the authorized repair call",async()=>{
   const f=await fixture();try {
     let current=revision,content=richSource,calls=0;

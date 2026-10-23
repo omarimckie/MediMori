@@ -32,6 +32,13 @@ test("event details independently omit invalid operation, category, and cleanup 
   assert.deepEqual(safeBlockDiagnostic("block", { ...base, cleanupOutcome: "failed;secret" }), base);
 });
 
+test("event details independently omit invalid preparation operation and failure class", () => {
+  const base = { code: "validation_source_prepare_failed", stage: "worker", validationStage: "source_volume", operation: "prepare_validation_environment", category: "validation_failure" };
+  assert.deepEqual(safeBlockDiagnostic("block", { ...base, validationPreparationOperation: "docker_populate_workspace;secret" }), base);
+  assert.deepEqual(safeBlockDiagnostic("block", { ...base, preparationFailureClass: "subprocess_timeout;secret" }), base);
+  assert.deepEqual(safeAdminEventDiagnostic("block", { diagnostic: { ...base, validationPreparationOperation: "not_allowlisted", preparationFailureClass: "not_allowlisted" } }), { diagnostic: base });
+});
+
 test("authenticated admin GET diagnostic projection retains safe classifications only", () => {
   const projected = safeAdminEventDiagnostic("block", { diagnostic: { operation: "workspace_cleanup", category: "cleanup_failure", cleanupOutcome: "failed", code: "sandbox_cleanup_failed", stage: "worker", cleanupFailures: [{ resourceType: "source-volume", category: "resource_in_use" }], message: "private-sentinel", stack: "private-stack" } });
   assert.deepEqual(projected, { diagnostic: { operation: "workspace_cleanup", category: "cleanup_failure", cleanupOutcome: "failed", code: "sandbox_cleanup_failed", stage: "worker" } });

@@ -1,11 +1,11 @@
 import { DockerCleanupError } from "./docker-ownership";
 import { EngineeringInputError } from "./policy";
-import { ValidationPreparationError, type ValidationPreparationStage } from "./validation-diagnostics";
+import { classifyPreparationFailure, ValidationPreparationError, type ValidationPreparationStage } from "./validation-diagnostics";
 import type { WorkerDiagnostic } from "./worker";
 
 type PrepareWorkerDiagnostic = Pick<
   WorkerDiagnostic,
-  "stage" | "operation" | "category" | "code" | "validationStage" | "validationRevision" | "validationPreparationOperation" | "cleanupOutcome" | "cleanupFailures"
+  "stage" | "operation" | "category" | "code" | "validationStage" | "validationRevision" | "validationPreparationOperation" | "preparationFailureClass" | "cleanupOutcome" | "cleanupFailures"
 >;
 
 /** Maps prepareValidationEnvironment failures to bounded worker diagnostics. */
@@ -19,6 +19,7 @@ export function prepareValidationEnvironmentDiagnostic(error: unknown, validatio
       validationStage: error.stage,
       validationRevision,
       ...(error.operation ? { validationPreparationOperation: error.operation } : {}),
+      ...(error.failureClass ? { preparationFailureClass: error.failureClass } : {}),
       ...(error.stagingCleanupFailed ? { cleanupOutcome: "failed" as const } : {}),
     };
   }
@@ -43,6 +44,7 @@ export function prepareValidationEnvironmentDiagnostic(error: unknown, validatio
       code: mapped.code,
       validationStage: mapped.validationStage,
       validationRevision,
+      preparationFailureClass: mapped.failureClass,
     };
   }
   return {
@@ -52,18 +54,19 @@ export function prepareValidationEnvironmentDiagnostic(error: unknown, validatio
     code: "validation_source_prepare_failed",
     validationStage: "source_volume",
     validationRevision,
+    preparationFailureClass: classifyPreparationFailure(error),
   };
 }
 
-function mapEngineeringInputPrepareFailure(message: string): { code: PrepareWorkerDiagnostic["code"]; validationStage: ValidationPreparationStage | "validation_environment_prepare" } {
+function mapEngineeringInputPrepareFailure(message: string): { code: PrepareWorkerDiagnostic["code"]; validationStage: ValidationPreparationStage | "validation_environment_prepare"; failureClass: "preparation_failure" } {
   if (message === "Validation revision changed before environment preparation.") {
-    return { code: "post_apply_revision_mismatch", validationStage: "validation_environment_prepare" };
+    return { code: "post_apply_revision_mismatch", validationStage: "validation_environment_prepare", failureClass: "preparation_failure" };
   }
   if (message === "Workspace changed before volume population.") {
-    return { code: "validation_source_prepare_failed", validationStage: "source_volume" };
+    return { code: "validation_source_prepare_failed", validationStage: "source_volume", failureClass: "preparation_failure" };
   }
   if (message === "Unsafe exported path." || message === "Unsafe Next.js declaration file." || message === "Secret detected; context export refused." || message === "Next.js declaration file differs from the approved source revision.") {
-    return { code: "validation_source_prepare_failed", validationStage: "source_volume" };
+    return { code: "validation_source_prepare_failed", validationStage: "source_volume", failureClass: "preparation_failure" };
   }
-  return { code: "validation_source_prepare_failed", validationStage: "source_volume" };
+  return { code: "validation_source_prepare_failed", validationStage: "source_volume", failureClass: "preparation_failure" };
 }

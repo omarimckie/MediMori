@@ -1,4 +1,5 @@
 import { commandArgs } from "./worker-policy";
+import { validationPreparationOperations, type ValidationPreparationOperation } from "./validation-source-populate";
 import { boundedValidationExcerpt, sanitizeValidationLabel } from "../../../scripts/validation-diagnostic-excerpt.mjs";
 
 export { sanitizeValidationLabel, boundedValidationExcerpt };
@@ -21,25 +22,52 @@ export const validationPreparationCodes = [
 ] as const;
 export type ValidationPreparationCode = typeof validationPreparationCodes[number];
 export type ValidationPreparationStage = "docker_preflight" | "image_check" | "dependency_check" | "source_volume" | "next_env_overlay";
-export type ValidationPreparationOperation = import("./validation-source-populate").ValidationPreparationOperation;
+export type { ValidationPreparationOperation };
+export const preparationFailureClasses = [
+  "subprocess_nonzero_exit",
+  "subprocess_timeout",
+  "filesystem_operation_failed",
+  "docker_process_failed",
+  "preparation_failure",
+] as const;
+export type PreparationFailureClass = typeof preparationFailureClasses[number];
+const filesystemErrorCodes = new Set(["EBUSY", "EACCES", "EEXIST", "EINVAL", "EIO", "EISDIR", "ELOOP", "EMFILE", "ENAMETOOLONG", "ENOENT", "ENOSPC", "ENOTDIR", "EPERM", "EROFS"]);
+
+/** Classifies a caught preparation error from its code only. Messages, stderr, and paths are ignored. */
+export function classifyPreparationFailure(error: unknown): PreparationFailureClass {
+  if (!error || typeof error !== "object") return "preparation_failure";
+  const code = "code" in error ? error.code : undefined;
+  const killed = "killed" in error ? error.killed : undefined;
+  if (code === "ETIMEDOUT" || killed === true) return "subprocess_timeout";
+  if (code === "DOCKER_POPULATE_FAILED") return "docker_process_failed";
+  if (code === "TAR_FAILED" || typeof code === "number" && Number.isInteger(code) && code !== 0) return "subprocess_nonzero_exit";
+  if (typeof code === "string" && filesystemErrorCodes.has(code)) return "filesystem_operation_failed";
+  return "preparation_failure";
+}
+
 export class ValidationPreparationError extends Error {
+  readonly operation?: ValidationPreparationOperation;
   readonly stagingCleanupFailed: boolean;
+  readonly failureClass?: PreparationFailureClass;
   constructor(
     readonly code: ValidationPreparationCode,
     readonly stage: ValidationPreparationStage,
-    readonly operation?: ValidationPreparationOperation,
+    operation?: ValidationPreparationOperation,
     stagingCleanupFailed = false,
+    failureClass?: PreparationFailureClass,
   ) {
     super("Validation environment preparation failed.");
     this.name = "ValidationPreparationError";
+    this.operation = operation && (validationPreparationOperations as readonly string[]).includes(operation) ? operation : undefined;
     this.stagingCleanupFailed = stagingCleanupFailed;
+    this.failureClass = failureClass && (preparationFailureClasses as readonly string[]).includes(failureClass) ? failureClass : undefined;
   }
 }
 
 /** Keeps the primary preparation failure when disposable staging cleanup also fails. */
 export function withStagingCleanupFailure(primary: ValidationPreparationError): ValidationPreparationError {
   if (primary.stagingCleanupFailed) return primary;
-  return new ValidationPreparationError(primary.code, primary.stage, primary.operation, true);
+  return new ValidationPreparationError(primary.code, primary.stage, primary.operation, true, primary.failureClass);
 }
 export type ValidationEvidence = {
   revision: string;

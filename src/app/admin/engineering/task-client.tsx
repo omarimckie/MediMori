@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ExecutionAttempt, Task } from "@/lib/engineering/store";
 import { protectedOperations, validationCommands } from "@/lib/engineering/policy";
 import { TaskSubmissionController } from "@/lib/engineering/task-submission";
+import { executionAuthorizationDisabled } from "@/lib/engineering/admin-execution-authorization";
 import { attemptPresentation } from "@/lib/engineering/attempt-presentation";
 
 type TaskView = Task & {
@@ -275,7 +276,7 @@ export function EngineeringClient() {
         {targetError && <p role="alert">Execution authorization is blocked: {targetError}</p>}
         {!targetError && !planTarget && <p role="status">Loading the current target to confirm the approved binding remains fresh.</p>}
         {policy?.workerEnabled !== true && <p role="status">Execution authorization is unavailable because the worker is disabled.</p>}
-        <button type="button" disabled={busy || policy?.workerEnabled !== true || !task.preparedAttempt || !planTarget || planTarget.baseSha !== task.preparedAttempt.targetBaseSha || task.preparedAttempt.planVersion !== task.version || task.preparedAttempt.sourceSelectionPolicyVersion !== 2} onClick={() => void authorizeExecution(task)}>Authorize execution</button>
+        <button type="button" disabled={executionAuthorizationDisabled({ busy, workerEnabled: policy?.workerEnabled, taskVersion: task.version, preparedAttempt: task.preparedAttempt, planTarget })} onClick={() => void authorizeExecution(task)}>Authorize execution</button>
       </section>}
       <button type="button" className="underline" disabled={historyLoading === task.id} onClick={() => void showHistory(task.id)}>{historyLoading === task.id ? "Loading audit history…" : historyByTask[task.id] ? "Hide task audit history" : "Show task audit history"}</button>
       {historyByTask[task.id] && <TaskHistoryView data={historyByTask[task.id]!} />}

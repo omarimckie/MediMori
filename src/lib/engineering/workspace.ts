@@ -9,7 +9,7 @@ import { cleanupOwnedDockerResources, dockerOwnershipArgs, DockerCleanupError, v
 import type { IsolatedWorkspace, ProposalEvidence, Snapshot } from "./worker";
 import { anchorLimits, issuedAnchorId, sha256, verifyAnchorIdentity, type AnchorReplacement } from "./replacement-anchors";
 import { allowlistedSystemCode, relativePathHash, WorkspaceExportError, type WorkspaceExportCode } from "./workspace-export-diagnostics";
-import { makeValidationEvidence, ValidationPreparationError, withStagingCleanupFailure, type ValidationPreparationCode, type ValidationPreparationStage, type ValidationEvidence } from "./validation-diagnostics";
+import { classifyPreparationFailure, makeValidationEvidence, ValidationPreparationError, withStagingCleanupFailure, type ValidationPreparationCode, type ValidationPreparationStage, type ValidationEvidence } from "./validation-diagnostics";
 import { initializeNextEnvPrivateOverlayCommand, validationVolumeMountArgs } from "./validation-volume-policy";
 import { populateHelperEntrypointCommand, sourceVolumePopulateTimeoutMs, streamTarDirectoryIntoDockerExec, type ValidationPreparationOperation } from "./validation-source-populate";
 import { resolveCanonicalSourceManifest, verifyCanonicalSourceCheckout, copyCanonicalSourceManifest, SOURCE_SELECTION_LIMITS, SOURCE_SELECTION_POLICY_VERSION, type CanonicalSourceManifest } from "./source-manifest";
@@ -247,7 +247,7 @@ export class DockerWorkspace implements IsolatedWorkspace {
     let helper = "";
     let failureCode: ValidationPreparationCode = "validation_source_prepare_failed";
     let failureStage: ValidationPreparationStage = "source_volume";
-    let failureOperation: ValidationPreparationOperation = "local_staging_export";
+    let failureOperation: ValidationPreparationOperation | undefined;
     let deferredError: unknown;
     try {
       failureCode = "validation_executor_unavailable"; failureStage = "docker_preflight";
@@ -315,9 +315,9 @@ export class DockerWorkspace implements IsolatedWorkspace {
       this.volumesReady = true;
     } catch (error) {
       if (helper) await exec("docker", ["rm", "--force", helper], { timeout: 10000, windowsHide: true }).catch(() => {});
-      deferredError = error instanceof ValidationPreparationError || error instanceof EngineeringInputError
+      deferredError = error instanceof ValidationPreparationError
         ? error
-        : new ValidationPreparationError(failureCode, failureStage, failureOperation);
+        : new ValidationPreparationError(failureCode, failureStage, failureOperation, false, error instanceof EngineeringInputError ? "preparation_failure" : classifyPreparationFailure(error));
       try { await this.cleanupVolumes(); }
       catch (cleanupError) {
         if (cleanupError instanceof DockerCleanupError) {
@@ -328,10 +328,10 @@ export class DockerWorkspace implements IsolatedWorkspace {
     } finally {
       if (staging) {
         try { await rm(staging, { recursive: true, force: true }); }
-        catch {
+        catch (cleanupError) {
           if (!this.volumesReady) {
             if (deferredError instanceof ValidationPreparationError) deferredError = withStagingCleanupFailure(deferredError);
-            else if (!deferredError) deferredError = new ValidationPreparationError("validation_source_prepare_failed", "source_volume", "staging_cleanup");
+            else if (!deferredError) deferredError = new ValidationPreparationError("validation_source_prepare_failed", "source_volume", "staging_cleanup", false, classifyPreparationFailure(cleanupError));
           }
         }
       }
