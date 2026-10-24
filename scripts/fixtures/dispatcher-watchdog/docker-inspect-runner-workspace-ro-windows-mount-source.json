@@ -1,0 +1,32 @@
+[
+  {
+    "Name": "/tf-watchdog-runner-run-abc123",
+    "HostConfig": {
+      "NetworkMode": "tf-watchdog-net-run-abc123",
+      "PortBindings": {},
+      "Binds": [
+        "C:\\Users\\runner\\AppData\\Local\\Temp\\tf-watchdog-runner-run-abc123:/work:ro"
+      ],
+      "Privileged": false,
+      "RestartPolicy": { "Name": "no" }
+    },
+    "NetworkSettings": {
+      "Ports": {},
+      "Networks": {
+        "tf-watchdog-net-run-abc123": {
+          "IPAddress": "172.28.0.3"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "bind",
+        "Source": "C:\\Users\\runner\\AppData\\Local\\Temp\\tf-watchdog-runner-run-abc123",
+        "Destination": "/work",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+      }
+    ]
+  }
+]

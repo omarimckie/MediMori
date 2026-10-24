@@ -91,6 +91,12 @@ export function createIncidentNotificationState(
     outagePushClaimStatus: "none",
     recoveryPushClaimStatus: "none",
     outagePushSentAt: null,
+    outagePushClaimNonce: null,
+    outagePushAttemptStartedAt: null,
+    outagePushAdminNotificationId: null,
+    recoveryPushClaimNonce: null,
+    recoveryPushAttemptStartedAt: null,
+    recoveryPushAdminNotificationId: null,
     createdAt: nowIso,
     updatedAt: nowIso,
   };

@@ -28,6 +28,25 @@ test("WeeklyVisualPreview renders selected asset src and dimensions", () => {
   assert.match(html, /covers\/sickle-cell\.png/);
   assert.match(html, /1009 × 1024/);
   assert.match(html, /not suitable/);
+  assert.match(html, /loading="eager"/);
+  assert.doesNotMatch(html, /loading="lazy"/);
+  assert.doesNotMatch(html, /blob\.vercel-storage/);
+});
+
+test("WeeklyVisualPreview keeps the authenticated image proxy and loads it eagerly", () => {
+  const proxy = "/api/admin/marketing/assets/a87843a4-2f77-4626-880d-ddda9445ab09/image";
+  const html = renderToStaticMarkup(
+    <WeeklyVisualPreview
+      review={{ ...visualReview, previewUrl: proxy }}
+      title="Amara"
+    />,
+  );
+  assert.match(html, /\/api\/admin\/marketing\/assets\/a87843a4-2f77-4626-880d-ddda9445ab09\/image/);
+  assert.match(html, /width="800"/);
+  assert.match(html, /height="1200"/);
+  assert.match(html, /loading="eager"/);
+  assert.doesNotMatch(html, /loading="lazy"/);
+  assert.doesNotMatch(html, /blob\.vercel-storage/);
 });
 
 test("WeeklyVisualPreview renders nothing for non-visual review", () => {
