@@ -144,16 +144,18 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
     id: "analytics",
     title: "Analytics",
     purpose:
-      "Internal marketing metrics, tracked-link clicks, and purchase attribution tied to marketing activity.",
+      "Measured marketing analytics: tracked /api/m link clicks, on-site landing paths, publications, resource downloads, and purchase attribution.",
     actions: [
-      "Review rolled-up impressions, engagements, clicks, sessions, and book page views from stored metrics.",
-      "Inspect purchase attribution and recent tracked clicks.",
+      "Switch daily, weekly, or monthly views (marketing timezone).",
+      "Review platform and campaign attribution aligned with PR #7 UTM parameters.",
+      "Inspect post-level tracked clicks; platform engagement only when source=platform metrics exist.",
+      "Read connection and partial-data warnings before interpreting totals.",
     ],
     notes: [
       "This does not ingest live Facebook or Instagram Meta Insights (likes, comments, reach, saves, shares, etc.).",
-      "Impressions and engagements shown here are not live Meta performance data.",
-      "Full website behavioral analytics (complete visitor journeys) is not implemented.",
-      "The publish-due control on this page only triggers the dispatcher; it does not change how metrics are collected.",
+      "Mock marketing_metrics rows are isolated and labeled; they are not live platform performance.",
+      "Visited pages reflect tracked marketing clicks only, not full-site behavioral analytics.",
+      "Prior-day analytics summary is available for morning brief / push preview at /api/admin/marketing/analytics/prior-day (no auto-send).",
     ],
   },
   recommendations: {
