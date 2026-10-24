@@ -46,6 +46,7 @@ export function WeeklyVisualPreview({
               src={image.src}
               alt={title?.trim() ? `Selected creative for ${title}` : "Selected creative"}
               className="h-auto max-h-80 w-full object-contain"
+              loading="eager"
             />
           </div>
         </div>

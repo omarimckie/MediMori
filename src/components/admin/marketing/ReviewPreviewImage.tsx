@@ -10,6 +10,7 @@ type Props = {
   width?: number;
   height?: number;
   fill?: boolean;
+  loading?: "lazy" | "eager";
   onError?: () => void;
 };
 
@@ -26,6 +27,7 @@ export function ReviewPreviewImage({
   width = 800,
   height = 1200,
   fill = false,
+  loading = "lazy",
   onError,
 }: Props) {
   if (kind === "public-blob") {
@@ -37,7 +39,7 @@ export function ReviewPreviewImage({
         className={className}
         width={fill ? undefined : width}
         height={fill ? undefined : height}
-        loading="lazy"
+        loading={loading}
         decoding="async"
         referrerPolicy="no-referrer"
         onError={onError}
@@ -57,7 +59,7 @@ export function ReviewPreviewImage({
       height={height}
       className={className}
       unoptimized
-      loading="lazy"
+      loading={loading}
       onError={onError}
     />
   );
