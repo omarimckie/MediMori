@@ -15,9 +15,9 @@ import {
 import { MemoryMarketingStore } from "./memory-store";
 
 const BLOB_URL =
-  "https://example.test/marketing/public/dddddddddddddddddddddddddddddd.png";
+  "https://store.public.blob.vercel-storage.com/marketing/public/dddddddddddddddddddddddddddddddd.png";
 
-async function seedNeedsReviewSmartUpload(store: MemoryMarketingStore) {
+async function seedNeedsReviewSmartUpload(store: MemoryMarketingStore, url = BLOB_URL) {
   const assetId = "b3a88242-2e91-4127-960f-43b047152aa9";
   await store.createAsset({
     id: assetId,
@@ -34,7 +34,7 @@ async function seedNeedsReviewSmartUpload(store: MemoryMarketingStore) {
     imageHeight: 1080,
     mimeType: "image/png",
     tags: ["smart_upload"],
-    url: BLOB_URL,
+    url,
     altText: "alt",
     isDemo: true,
   });
@@ -66,6 +66,28 @@ async function seedNeedsReviewSmartUpload(store: MemoryMarketingStore) {
     isDemo: true,
   });
   return { assetId, contentId };
+}
+
+async function withEnv(
+  env: Record<string, string | undefined>,
+  run: () => Promise<void>,
+) {
+  const previous = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    MARKETING_PREVIEW_READONLY: process.env.MARKETING_PREVIEW_READONLY,
+  };
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 test("admin preview enrichment returns admin image route for needs_review Smart Upload", async () => {
@@ -151,6 +173,55 @@ test("approved content still uses public proxy for publish URL resolution", asyn
   assert.ok(asset);
   const publishUrl = resolvePublishableMarketingAssetUrl(asset, "approved");
   assert.match(publishUrl, /\/api\/marketing\/assets\//);
+});
+
+test("preview readonly review uses the stored public Blob URL", async () => {
+  await withEnv(
+    { VERCEL_ENV: "preview", MARKETING_PREVIEW_READONLY: "true" },
+    async () => {
+      const store = new MemoryMarketingStore();
+      const { contentId } = await seedNeedsReviewSmartUpload(store);
+      const content = await store.getContent(contentId);
+      assert.ok(content);
+      const previewUrl = await resolveAdminContentPreviewImageUrl(store, content);
+      assert.equal(previewUrl, BLOB_URL);
+      assert.doesNotMatch(previewUrl ?? "", /\/api\/admin\/marketing\/assets\//);
+    },
+  );
+});
+
+test("production keeps the admin image proxy when the preview flag is set", async () => {
+  await withEnv(
+    { VERCEL_ENV: "production", MARKETING_PREVIEW_READONLY: "true" },
+    async () => {
+      const store = new MemoryMarketingStore();
+      const { assetId, contentId } = await seedNeedsReviewSmartUpload(store);
+      const content = await store.getContent(contentId);
+      assert.ok(content);
+      const previewUrl = await resolveAdminContentPreviewImageUrl(store, content);
+      assert.equal(previewUrl, marketingAdminAssetImageApiPath(assetId));
+    },
+  );
+});
+
+test("preview readonly rejects private, signed, and non-blob review URLs", async () => {
+  const rejected = [
+    "https://store.private.blob.vercel-storage.com/marketing/public/dddddddddddddddddddddddddddddddd.png",
+    "https://store.public.blob.vercel-storage.com/marketing/public/dddddddddddddddddddddddddddddddd.png?token=secret",
+    "http://store.public.blob.vercel-storage.com/marketing/public/dddddddddddddddddddddddddddddddd.png",
+  ];
+  await withEnv(
+    { VERCEL_ENV: "preview", MARKETING_PREVIEW_READONLY: "true" },
+    async () => {
+      for (const url of rejected) {
+        const store = new MemoryMarketingStore();
+        const { contentId } = await seedNeedsReviewSmartUpload(store, url);
+        const content = await store.getContent(contentId);
+        assert.ok(content);
+        assert.equal(await resolveAdminContentPreviewImageUrl(store, content), null, url);
+      }
+    },
+  );
 });
 
 test("Content thumbnail expected src path shape", () => {

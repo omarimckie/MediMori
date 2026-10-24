@@ -1,40 +1,31 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import {
-  contentBodyExcerpt,
-  contentDisplayTitle,
-  formatContentCreatedAt,
-  formatContentWeekLabel,
-  pickOperationalWeeklyPlanId,
-} from "@/lib/marketing/content-client-utils";
+import { pickOperationalWeeklyPlanId } from "@/lib/marketing/content-client-utils";
 import { AddToWeekModal } from "./AddToWeekModal";
-import { Card, SecondaryButton, StatusPill } from "./ui";
-
-type ContentItem = {
-  id: string;
-  platform: string;
-  category: string;
-  audience: string;
-  status: string;
-  title: string | null;
-  body: string;
-  cta: string | null;
-  weeklyPlanId: string | null;
-  createdAt: string;
-};
+import {
+  ContentQueueReviewCard,
+  type ContentQueueReviewItem,
+} from "./ContentQueueReviewCard";
+import { Card, SecondaryButton } from "./ui";
 
 type WeeklyPlanOption = {
   id: string;
   weekStart: string;
 };
 
-type PreviewById = Record<string, { previewUrl: string | null; showVisualPreview: boolean }>;
+type PreviewById = Record<
+  string,
+  {
+    previewUrl: string | null;
+    showVisualPreview: boolean;
+    websiteDestination?: import("@/lib/marketing/marketing-website-destination").MarketingWebsiteDestinationReview;
+  }
+>;
 
 export function ContentClient() {
-  const [items, setItems] = useState<ContentItem[]>([]);
+  const [items, setItems] = useState<ContentQueueReviewItem[]>([]);
   const [previewByContentId, setPreviewByContentId] = useState<PreviewById>({});
   const [plans, setPlans] = useState<WeeklyPlanOption[]>([]);
   const [currentWeekPlanId, setCurrentWeekPlanId] = useState<string | null>(null);
@@ -46,7 +37,8 @@ export function ContentClient() {
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [weekModal, setWeekModal] = useState<ContentItem | null>(null);
+  const [weekModal, setWeekModal] = useState<ContentQueueReviewItem | null>(null);
+  const [allowPublicBlobPreview, setAllowPublicBlobPreview] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -59,11 +51,17 @@ export function ContentClient() {
       fetch("/api/admin/marketing/settings"),
     ]);
     const data = (await contentRes.json()) as {
-      content?: ContentItem[];
+      content?: ContentQueueReviewItem[];
       previewByContentId?: PreviewById;
+      previewReadonlyImages?: boolean;
+      error?: string;
     };
+    if (!contentRes.ok) {
+      throw new Error(data.error || "Could not load content.");
+    }
     setItems(data.content ?? []);
     setPreviewByContentId(data.previewByContentId ?? {});
+    setAllowPublicBlobPreview(data.previewReadonlyImages === true);
     if (settingsRes.ok) {
       const settings = (await settingsRes.json()) as { plans?: WeeklyPlanOption[] };
       const planList = settings.plans ?? [];
@@ -74,7 +72,7 @@ export function ContentClient() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void load();
+      void load().catch((error: Error) => setMessage(error.message));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
@@ -103,11 +101,40 @@ export function ContentClient() {
     }
   }
 
+  async function runReviewAction(
+    contentId: string,
+    body: { action: "approve" | "reject"; feedback?: string },
+  ) {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/marketing/content/${contentId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setMessage(json.error ?? "Review action failed.");
+        return;
+      }
+      setMessage(body.action === "approve" ? "Approved. Not scheduled or published." : "Rejected.");
+      await load();
+    } catch {
+      setMessage("Network error while updating review status.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
         <p className="text-sm text-brand-charcoal/70">
-          Marketing content inventory. Assign items to a weekly plan to include them on{" "}
+          Review marketing content with authenticated image previews and full captions. Approving
+          marks a post ready for later scheduling — it does not schedule or publish. Assign items to
+          a weekly plan for{" "}
           <Link href="/admin/marketing/week" className="font-bold text-brand-navy underline">
             Your week
           </Link>{" "}
@@ -144,87 +171,33 @@ export function ContentClient() {
       </Card>
 
       {message ? (
-        <p className="text-sm font-semibold text-brand-orange-deep" role="status">{message}</p>
+        <p className="text-sm font-semibold text-brand-orange-deep" role="status">
+          {message}
+        </p>
       ) : null}
 
       {items.map((item) => {
         const preview = previewByContentId[item.id];
-        const previewUrl = preview?.previewUrl ?? null;
-        const week = formatContentWeekLabel(item.weeklyPlanId, plans);
-        const onCurrentWeek =
-          item.weeklyPlanId && currentWeekPlanId && item.weeklyPlanId === currentWeekPlanId;
-        const displayTitle = contentDisplayTitle(item.title, item.body);
-
         return (
-          <Card key={item.id}>
-            <div className="flex flex-col gap-4 sm:flex-row">
-              {previewUrl ? (
-                <div className="relative h-28 w-full shrink-0 overflow-hidden rounded-2xl border border-brand-brown/15 bg-cream-deep sm:h-28 sm:w-28">
-                  <Image
-                    src={previewUrl}
-                    alt=""
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                </div>
-              ) : (
-                <div
-                  className="flex h-28 w-full shrink-0 items-center justify-center rounded-2xl border border-dashed border-brand-brown/20 bg-cream-deep/50 text-xs text-brand-charcoal/45 sm:w-28"
-                  aria-hidden
-                >
-                  No preview
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill status={item.status} />
-                  <StatusPill status={item.platform} />
-                  <StatusPill status={item.category} />
-                  <StatusPill status={item.audience} />
-                </div>
-                {displayTitle ? (
-                  <h3 className="mt-2 text-lg font-extrabold">{displayTitle}</h3>
-                ) : (
-                  <p className="mt-2 text-sm font-semibold text-brand-charcoal whitespace-pre-wrap">
-                    {contentBodyExcerpt(item.body)}
-                  </p>
-                )}
-                {displayTitle ? (
-                  <p className="mt-2 text-sm text-brand-charcoal/80 whitespace-pre-wrap">
-                    {contentBodyExcerpt(item.body)}
-                  </p>
-                ) : null}
-                {item.cta?.trim() ? (
-                  <p className="mt-2 text-xs font-semibold text-brand-navy">CTA: {item.cta.trim()}</p>
-                ) : null}
-                <p className="mt-2 text-xs text-brand-charcoal/55">
-                  Created {formatContentCreatedAt(item.createdAt)}
-                </p>
-                <p className="mt-1 text-xs text-brand-charcoal/55">
-                  Week: <span className="font-semibold">{week.label}</span>
-                  {item.weeklyPlanId && !onCurrentWeek ? (
-                    <span className="text-brand-charcoal/45">
-                      {" "}
-                      (not the plan shown on Your week — switch or generate that week to review here)
-                    </span>
-                  ) : null}
-                  {onCurrentWeek ? (
-                    <span className="text-brand-charcoal/45"> · visible on Your week now</span>
-                  ) : null}
-                </p>
-                <div className="mt-3">
-                  <SecondaryButton
-                    type="button"
-                    disabled={busy || plans.length === 0}
-                    onClick={() => setWeekModal(item)}
-                  >
-                    {item.weeklyPlanId ? "Change Week" : "Add to Week"}
-                  </SecondaryButton>
-                </div>
-              </div>
-            </div>
-          </Card>
+          <ContentQueueReviewCard
+            key={item.id}
+            item={item}
+            previewUrl={preview?.previewUrl ?? null}
+            showVisualPreview={preview?.showVisualPreview ?? false}
+            websiteDestination={preview?.websiteDestination ?? null}
+            allowPublicBlobPreview={allowPublicBlobPreview}
+            plans={plans}
+            currentWeekPlanId={currentWeekPlanId}
+            busy={busy}
+            onApprove={() => void runReviewAction(item.id, { action: "approve" })}
+            onReject={() =>
+              void runReviewAction(item.id, {
+                action: "reject",
+                feedback: "Rejected from content queue.",
+              })
+            }
+            onAddToWeek={() => setWeekModal(item)}
+          />
         );
       })}
 
@@ -242,6 +215,7 @@ export function ContentClient() {
           anchorTitle={weekModal.title}
           anchorBody={weekModal.body}
           previewUrl={previewByContentId[weekModal.id]?.previewUrl ?? null}
+          allowPublicBlobPreview={allowPublicBlobPreview}
           plans={plans}
           initialWeeklyPlanId={
             weekModal.weeklyPlanId ?? pickOperationalWeeklyPlanId(plans)

@@ -2,6 +2,7 @@ import { del, get, put } from "@vercel/blob";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
+import { assertMarketingPreviewAllowsMutations } from "./preview-readonly";
 
 export const MARKETING_SIGNED_URL_TTL_MS = 10 * 60 * 1000;
 
@@ -132,6 +133,7 @@ export async function uploadPrivateMarketingPublicImage(
   extension: string,
   referenceBlobUrl: string,
 ): Promise<PublicUploadResult> {
+  assertMarketingPreviewAllowsMutations();
   const pathname = `marketing/public/${randomSegment()}${extension}`;
   if (hasBlobToken()) {
     await put(pathname, buffer, {
@@ -162,6 +164,7 @@ export async function uploadPublicMarketingFile(
   mime: string,
   extension: string,
 ): Promise<PublicUploadResult> {
+  assertMarketingPreviewAllowsMutations();
   const pathname = `marketing/public/${randomSegment()}${extension}`;
   if (hasBlobToken()) {
     const blob = await put(pathname, buffer, {
@@ -184,6 +187,7 @@ export async function uploadPrivateMarketingFile(
   mime: string,
   extension: string,
 ): Promise<PrivateUploadResult> {
+  assertMarketingPreviewAllowsMutations();
   const pathname = `marketing/private/${randomSegment()}${extension}`;
   if (hasBlobToken()) {
     await put(pathname, buffer, {
@@ -226,6 +230,7 @@ export function tryResolveMarketingBlobPathnameFromUrl(url: string | null): stri
 }
 
 export async function deleteMarketingBlob(pathname: string): Promise<void> {
+  assertMarketingPreviewAllowsMutations();
   if (pathname.startsWith("local-public/")) {
     const fileName = pathname.replace("local-public/", "");
     try {

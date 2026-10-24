@@ -5,8 +5,10 @@ import {
   parseMarketingAssetPublicImageId,
   type MarketingAssetPublicImageResult,
 } from "./marketing-asset-public-image";
+import { explicitPublicMarketingBlobReviewUrl } from "./content-queue-review";
 import { readMarketingBlobBuffer } from "./marketing-blob";
 import { resolvePublishableMarketingAssetUrl } from "./marketing-asset-public-image-url";
+import { isMarketingPreviewReadonly } from "./preview-readonly";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
@@ -33,8 +35,10 @@ async function readBlobBuffer(pathname: string): Promise<Buffer> {
 }
 
 /**
- * Admin UI preview URL: same-origin proxy for private blob-backed assets;
- * publish/catalog resolution unchanged for non-blob assets.
+ * Admin UI preview URL.
+ * Outside Preview read-only mode, blob-backed images use the same-origin admin proxy.
+ * In Preview read-only mode, an already-public Blob URL is returned instead of the proxy.
+ * Non-blob assets keep publish/catalog resolution.
  */
 export async function resolveAdminContentPreviewImageUrl(
   store: MarketingStore,
@@ -48,6 +52,9 @@ export async function resolveAdminContentPreviewImageUrl(
       isBlobBackedMarketingPublicImageAsset(asset) &&
       marketingPublicImagePathnameFromAsset(asset)
     ) {
+      if (isMarketingPreviewReadonly()) {
+        return explicitPublicMarketingBlobReviewUrl(asset.url);
+      }
       const parsedId = parseMarketingAssetPublicImageId(asset.id);
       if (parsedId) return marketingAdminAssetImageApiPath(parsedId);
     }

@@ -4,6 +4,7 @@ import { buildContentListPreviewById } from "@/lib/marketing/content-list-previe
 import { buildWeeklyItemReview } from "@/lib/marketing/weekly-review";
 import { parseExcludeStatusQuery } from "@/lib/marketing/content-week-queue";
 import { latestRejectionFeedback } from "@/lib/marketing/content-lifecycle";
+import { isMarketingPreviewReadonly } from "@/lib/marketing/preview-readonly";
 import type { ContentFilters } from "@/lib/marketing/types";
 import { NextResponse } from "next/server";
 
@@ -33,7 +34,11 @@ export async function GET(request: Request) {
   const enrich = url.searchParams.get("enrich");
   if (enrich === "preview") {
     const previewByContentId = await buildContentListPreviewById(store, content);
-    return NextResponse.json({ content, previewByContentId });
+    return NextResponse.json({
+      content,
+      previewByContentId,
+      previewReadonlyImages: isMarketingPreviewReadonly(),
+    });
   }
   if (enrich === "weekly") {
     const reviewByContentId: Record<string, Awaited<ReturnType<typeof buildWeeklyItemReview>>> =
@@ -50,6 +55,7 @@ export async function GET(request: Request) {
       content,
       reviewByContentId,
       rejectionFeedbackByContentId,
+      previewReadonlyImages: isMarketingPreviewReadonly(),
     });
   }
   return NextResponse.json({ content });

@@ -4,6 +4,7 @@ import { afterEach, test } from "node:test";
 import { NextResponse } from "next/server";
 import { publishDue, retryPublication } from "./approval";
 import { MemoryMarketingStore } from "./memory-store";
+import { SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN } from "./marketing-social-tracking-test-token";
 import { ensureCatalogAssets } from "./assets";
 import { handleAdminPublicationRetryRequest } from "./publication-retry-http";
 import {
@@ -76,7 +77,7 @@ async function seedFailedInstagramPublication(store: MemoryMarketingStore) {
     needsNewAsset: false,
     warnings: [],
     safetyFlags: [],
-    trackingToken: null,
+    trackingToken: SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN,
     originalBody: null,
     bookId: "book-one",
     metadata: {},

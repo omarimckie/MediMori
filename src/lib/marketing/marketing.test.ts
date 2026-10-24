@@ -11,7 +11,7 @@ import { inferPreferenceSignals } from "./preference-signals";
 import { MockSocialPublisher } from "./publishers";
 import { scanMarketingText } from "./safety";
 import { seedMarketing } from "./seed";
-import { buildTrackingRedirect, persistMarketingClick } from "./tracking";
+import { buildTrackingRedirect, persistMarketingClick, trackingDestinationPath } from "./tracking";
 import {
   approveContent,
   editContent,
@@ -276,7 +276,7 @@ test("repeated tracking clicks record and redirect even if persist fails", async
   assert.equal(clicks.filter((click) => click.token === item.trackingToken).length, 2);
 
   const redirect = buildTrackingRedirect("http://localhost:3000/api/m/token", item);
-  assert.equal(redirect.pathname, `/books/${item.bookId}`);
+  assert.equal(redirect.pathname, trackingDestinationPath(item));
   assert.equal(redirect.searchParams.get("utm_medium"), "marketing_autopilot");
 
   const failingStore = {
@@ -290,7 +290,7 @@ test("repeated tracking clicks record and redirect even if persist fails", async
   const persisted = await persistMarketingClick(failingStore, item, item.trackingToken);
   assert.equal(persisted, false);
   const stillRedirects = buildTrackingRedirect("http://localhost:3000/api/m/token", item);
-  assert.equal(stillRedirects.pathname, `/books/${item.bookId}`);
+  assert.equal(stillRedirects.pathname, trackingDestinationPath(item));
 });
 
 test("metric upsert updates the same content/date/source row", async () => {

@@ -15,6 +15,7 @@ import {
   scheduleApproved,
 } from "@/lib/marketing/approval";
 import { MemoryMarketingStore } from "@/lib/marketing/memory-store";
+import { SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN } from "@/lib/marketing/marketing-social-tracking-test-token";
 import type { MarketingContent } from "@/lib/marketing/types";
 
 const noop = () => {};
@@ -198,9 +199,9 @@ async function seedPublishedInstagram(store: MemoryMarketingStore) {
     needsNewAsset: false,
     warnings: [],
     safetyFlags: [],
-    trackingToken: null,
+    trackingToken: SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN,
     originalBody: null,
-    bookId: null,
+    bookId: "book-one",
     metadata: {},
     isDemo: false,
     createdAt: new Date().toISOString(),

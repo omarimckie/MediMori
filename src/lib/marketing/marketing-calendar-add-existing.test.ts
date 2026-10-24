@@ -14,6 +14,7 @@ import {
   marketingDatetimeLocalToIso,
 } from "./marketing-scheduling";
 import { MemoryMarketingStore } from "./memory-store";
+import { SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN } from "./marketing-social-tracking-test-token";
 import {
   recycleIdempotencyKey,
   recyclePublished,
@@ -41,7 +42,7 @@ function sampleContent(overrides: Partial<MarketingContent> = {}): MarketingCont
     needsNewAsset: false,
     warnings: [],
     safetyFlags: [],
-    trackingToken: null,
+    trackingToken: SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN,
     originalBody: null,
     bookId: null,
     metadata: {},

@@ -1,11 +1,11 @@
 import { logMarketing } from "./logger";
 import { absoluteUrl } from "@/lib/site";
+import { resolveMarketingWebsiteDestinationPath } from "./marketing-website-destination";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
 export function trackingDestinationPath(content: MarketingContent | null): string {
-  if (!content) return "/books";
-  return content.bookId ? `/books/${content.bookId}` : "/books";
+  return resolveMarketingWebsiteDestinationPath(content);
 }
 
 /** Public HTTPS link for social pin destinations (via /api/m tracking redirect). */

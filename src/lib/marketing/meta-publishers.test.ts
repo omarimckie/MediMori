@@ -11,9 +11,9 @@ import { INSTAGRAM_MEDIA_PUBLISH_NOT_READY_MAX_ATTEMPTS } from "./instagram-medi
 import {
   INSTAGRAM_CONTAINER_POLL_MAX_REQUESTS,
   classifyMetaHttpError,
-  composePublishCaption,
   redactSecrets,
 } from "./meta";
+import { composeSocialPublishCaption } from "./marketing-social-website-link";
 import {
   FacebookPagePublisher,
   InstagramPublisher,
@@ -230,7 +230,7 @@ test("Instagram publisher polls IN_PROGRESS then FINISHED before media_publish",
   );
   assert.equal(
     calls[0]?.body?.get("caption"),
-    composePublishCaption("Warm bedtime copy", "Read the book"),
+    composeSocialPublishCaption(sampleContent()),
   );
   assert.ok(!calls[0]?.url.includes(SECRET_TOKEN));
   assert.ok(!publishCall?.url.includes(SECRET_TOKEN));
@@ -532,6 +532,7 @@ test("Facebook publisher uses photos for images and feed for text", async () => 
   assert.equal(photo.externalId, "page_post_1");
   assert.equal(calls[0]?.url, "https://graph.facebook.com/v22.0/page-id/photos");
   assert.equal(calls[0]?.body.get("url"), "https://twilight-feather.vercel.app/covers/asthma.png");
+  assert.ok(calls[0]?.body.get("caption")?.includes("/api/m/abc"));
 
   const text = await new FacebookPagePublisher({ fetch: fetchImpl, credentials }).publish({
     content: sampleContent({ platform: "facebook" }),
@@ -546,6 +547,7 @@ test("Facebook publisher uses photos for images and feed for text", async () => 
   assert.equal(text.externalId, "page_post_text");
   assert.equal(calls[1]?.url, "https://graph.facebook.com/v22.0/page-id/feed");
   assert.match(calls[1]?.body.get("message") ?? "", /Warm bedtime copy/);
+  assert.ok(calls[1]?.body.get("link")?.includes("/api/m/abc"));
 });
 
 test("missing Meta credentials fail without publishing", async () => {

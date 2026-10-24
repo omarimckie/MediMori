@@ -1,4 +1,8 @@
-import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
+import {
+  jsonError,
+  requireMarketingAdmin,
+  requireMarketingAdminMutation,
+} from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
 import {
   DEFAULT_CHANNEL_QUOTAS,
@@ -31,7 +35,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireMarketingAdmin();
+  const auth = await requireMarketingAdminMutation();
   if (!auth.ok) return auth.response;
   let body: { quotas?: unknown } = {};
   try {

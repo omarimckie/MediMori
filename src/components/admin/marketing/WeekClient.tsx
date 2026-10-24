@@ -6,6 +6,7 @@ import { pickPrimaryPublication } from "@/lib/marketing/publication-selection";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
 import type { MarketingPublication } from "@/lib/marketing/types";
 import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
+import { WebsiteDestinationReview } from "./WebsiteDestinationReview";
 import { runMarketingWeekPostAction } from "./week-client-act";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
@@ -96,6 +97,7 @@ export function WeekClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [showUploadPost, setShowUploadPost] = useState(false);
   const [showUploadResource, setShowUploadResource] = useState(false);
+  const [allowPublicBlobPreview, setAllowPublicBlobPreview] = useState(false);
   const [scheduleItem, setScheduleItem] = useState<ContentItem | null>(null);
   const [recycleItem, setRecycleItem] = useState<ContentItem | null>(null);
   const [rejectedContent, setRejectedContent] = useState<ContentItem[]>([]);
@@ -156,6 +158,9 @@ export function WeekClient() {
     ]);
     setContent(activeData.content ?? []);
     setReviewByContentId(activeData.reviewByContentId ?? {});
+    setAllowPublicBlobPreview(
+      activeData.previewReadonlyImages === true || rejectedData.previewReadonlyImages === true,
+    );
     setRejectedContent(rejectedData.content ?? []);
     setRejectedReviewByContentId(rejectedData.reviewByContentId ?? {});
     setRejectionFeedbackByContentId(rejectedData.rejectionFeedbackByContentId ?? {});
@@ -433,7 +438,11 @@ export function WeekClient() {
                             {review.channelLabel}
                           </p>
                         ) : null}
-                        <WeeklyVisualPreview review={review} title={item.title} />
+                        <WeeklyVisualPreview
+                          review={review}
+                          title={item.title}
+                          allowPublicBlobPreview={allowPublicBlobPreview}
+                        />
                         <div className="mt-2 flex flex-wrap gap-2">
                           <StatusPill status="rejected" />
                           <StatusPill status={item.platform} />
@@ -494,7 +503,11 @@ export function WeekClient() {
                       {review.channelLabel}
                     </p>
                   ) : null}
-                  <WeeklyVisualPreview review={review} title={item.title} />
+                  <WeeklyVisualPreview
+                    review={review}
+                    title={item.title}
+                    allowPublicBlobPreview={allowPublicBlobPreview}
+                  />
                   <div className="mt-2 flex flex-wrap gap-2">
                     <StatusPill
                       status={
@@ -535,7 +548,9 @@ export function WeekClient() {
                       ))}
                     </ul>
                   ) : null}
-                  {item.trackingToken ? (
+                  {review?.websiteDestination ? (
+                    <WebsiteDestinationReview review={review.websiteDestination} />
+                  ) : item.trackingToken ? (
                     <p className="mt-2 text-xs text-brand-charcoal/55">
                       Tracking link: /api/m/{item.trackingToken}
                     </p>
