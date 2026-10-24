@@ -218,6 +218,8 @@ export type MarketingContentMetadata = {
   slug?: string;
   relatedCondition?: string | null;
   resourcePublishedAt?: string | null;
+  /** Optional admin override; must pass approved on-site path validation. */
+  websiteDestinationPath?: string | null;
 };
 
 export type MarketingContent = {

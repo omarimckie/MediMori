@@ -5,6 +5,7 @@ import { setMarketingIncidentRepositoryForTests } from "./incidents/runtime-repo
 import { publishPublication, scheduleApproved } from "./approval";
 import { ensureCatalogAssets } from "./assets";
 import { MemoryMarketingStore } from "./memory-store";
+import { SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN } from "./marketing-social-tracking-test-token";
 import { seedMarketing } from "./seed";
 import { INSTAGRAM_MEDIA_PUBLISH_NOT_READY_MAX_ATTEMPTS } from "./instagram-media-publish";
 import { InstagramPublisher } from "./publishers";
@@ -75,7 +76,7 @@ async function seedInstagramContent(store: MemoryMarketingStore, contentId = "co
     needsNewAsset: false,
     warnings: [],
     safetyFlags: [],
-    trackingToken: null,
+    trackingToken: SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN,
     originalBody: null,
     bookId: "book-one",
     metadata: {},

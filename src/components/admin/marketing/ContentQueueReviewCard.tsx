@@ -11,7 +11,9 @@ import {
   contentQueueShowsApproveReject,
   resolveReviewCardImageSrc,
 } from "@/lib/marketing/content-queue-review";
+import type { MarketingWebsiteDestinationReview } from "@/lib/marketing/marketing-website-destination";
 import { ReviewPreviewImage } from "./ReviewPreviewImage";
+import { WebsiteDestinationReview } from "./WebsiteDestinationReview";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 
 export type ContentQueueReviewItem = {
@@ -34,6 +36,7 @@ type Props = {
   previewUrl: string | null;
   showVisualPreview: boolean;
   allowPublicBlobPreview?: boolean;
+  websiteDestination?: MarketingWebsiteDestinationReview | null;
   plans: PlanOption[];
   currentWeekPlanId: string | null;
   busy: boolean;
@@ -51,6 +54,7 @@ export function ContentQueueReviewCard({
   previewUrl,
   showVisualPreview,
   allowPublicBlobPreview = false,
+  websiteDestination = null,
   plans,
   currentWeekPlanId,
   busy,
@@ -127,6 +131,8 @@ export function ContentQueueReviewCard({
           {item.cta?.trim() ? (
             <p className="text-xs font-semibold text-brand-navy">CTA field: {item.cta.trim()}</p>
           ) : null}
+
+          {websiteDestination ? <WebsiteDestinationReview review={websiteDestination} /> : null}
 
           <p className="text-xs text-brand-charcoal/55">
             Created {formatContentCreatedAt(item.createdAt)}

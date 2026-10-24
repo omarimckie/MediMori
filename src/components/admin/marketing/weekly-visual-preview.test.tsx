@@ -4,12 +4,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
 
+const websiteDestinationStub = {
+  destinationPath: "/books/book-one",
+  sitePageUrl: "https://twilight-feather.com/books/book-one",
+  trackingLink: "https://twilight-feather.com/api/m/tok",
+  platformNavigationSummary: "Pinterest pin link uses the tracked /api/m URL.",
+  warnings: [] as string[],
+};
+
 const visualReview: WeeklyItemReview = {
   channelLabel: "Pinterest · Pin · Vertical",
   showVisualPreview: true,
   previewUrl: "https://twilight-feather.com/covers/sickle-cell.png",
   dimensionsLabel: "1009 × 1024 · 1009:1024",
   visualSuitabilityWarning: "Visual is not suitable for Pinterest · Pin · Vertical.",
+  websiteDestination: websiteDestinationStub,
 };
 
 test("WeeklyVisualPreview renders selected asset src and dimensions", () => {
@@ -30,6 +39,7 @@ test("WeeklyVisualPreview renders nothing for non-visual review", () => {
         previewUrl: null,
         dimensionsLabel: null,
         visualSuitabilityWarning: null,
+        websiteDestination: websiteDestinationStub,
       }}
       title="Newsletter"
     />,
@@ -61,6 +71,7 @@ test("WeeklyVisualPreview renders nothing when visual but URL missing", () => {
         previewUrl: null,
         dimensionsLabel: null,
         visualSuitabilityWarning: null,
+        websiteDestination: websiteDestinationStub,
       }}
       title="Post"
     />,

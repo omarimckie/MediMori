@@ -9,12 +9,13 @@ import {
 import { publishInstagramMediaAfterContainerReady } from "./instagram-media-publish";
 import {
   buildMetaGraphUrl,
-  composePublishCaption,
   postMetaForm,
   publicImageUrlError,
   waitForInstagramContainerReady,
   type MetaErrorCode,
 } from "./meta";
+import { composeSocialPublishCaption } from "./marketing-social-website-link";
+import { buildPublishTrackingLink } from "./tracking";
 import { PinterestPublisher } from "./pinterest-publisher";
 import type { MarketingContent, MarketingPublication, Platform } from "./types";
 
@@ -168,7 +169,7 @@ export class InstagramPublisher implements SocialPublisher {
 
     const fetchImpl = this.options.fetch ?? fetch;
     const secrets = [credentials.accessToken];
-    const caption = composePublishCaption(request.content.body, request.content.cta);
+    const caption = composeSocialPublishCaption(request.content);
     const mediaUrl = buildMetaGraphUrl(
       "https://graph.instagram.com",
       credentials.graphVersion,
@@ -303,7 +304,8 @@ export class FacebookPagePublisher implements SocialPublisher {
 
     const fetchImpl = this.options.fetch ?? fetch;
     const secrets = [credentials.pageAccessToken];
-    const caption = composePublishCaption(request.content.body, request.content.cta);
+    const caption = composeSocialPublishCaption(request.content);
+    const trackingLink = buildPublishTrackingLink(request.content);
 
     if (request.imageUrl) {
       const imageError = publicImageUrlError(request.imageUrl);
@@ -366,12 +368,16 @@ export class FacebookPagePublisher implements SocialPublisher {
       credentials.graphVersion,
       `/${credentials.pageId}/feed`,
     );
+    const feedBody: Record<string, string> = {
+      message: caption,
+      access_token: credentials.pageAccessToken,
+    };
+    if (trackingLink) {
+      feedBody.link = trackingLink;
+    }
     const feed = await postMetaForm<{ id?: string }>(
       feedUrl,
-      {
-        message: caption,
-        access_token: credentials.pageAccessToken,
-      },
+      feedBody,
       secrets,
       fetchImpl,
     );

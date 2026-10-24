@@ -15,7 +15,14 @@ type WeeklyPlanOption = {
   weekStart: string;
 };
 
-type PreviewById = Record<string, { previewUrl: string | null; showVisualPreview: boolean }>;
+type PreviewById = Record<
+  string,
+  {
+    previewUrl: string | null;
+    showVisualPreview: boolean;
+    websiteDestination?: import("@/lib/marketing/marketing-website-destination").MarketingWebsiteDestinationReview;
+  }
+>;
 
 export function ContentClient() {
   const [items, setItems] = useState<ContentQueueReviewItem[]>([]);
@@ -177,6 +184,7 @@ export function ContentClient() {
             item={item}
             previewUrl={preview?.previewUrl ?? null}
             showVisualPreview={preview?.showVisualPreview ?? false}
+            websiteDestination={preview?.websiteDestination ?? null}
             allowPublicBlobPreview={allowPublicBlobPreview}
             plans={plans}
             currentWeekPlanId={currentWeekPlanId}

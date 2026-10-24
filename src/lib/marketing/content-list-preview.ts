@@ -5,6 +5,9 @@ import type { MarketingContent } from "./types";
 export type ContentListPreview = {
   previewUrl: string | null;
   showVisualPreview: boolean;
+  websiteDestination: Awaited<
+    ReturnType<typeof buildWeeklyItemReview>
+  >["websiteDestination"];
 };
 
 export async function buildContentListPreviewById(
@@ -17,6 +20,7 @@ export async function buildContentListPreviewById(
     previewByContentId[item.id] = {
       previewUrl: review.previewUrl,
       showVisualPreview: review.showVisualPreview,
+      websiteDestination: review.websiteDestination,
     };
   }
   return previewByContentId;

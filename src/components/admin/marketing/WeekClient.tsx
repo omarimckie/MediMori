@@ -6,6 +6,7 @@ import { pickPrimaryPublication } from "@/lib/marketing/publication-selection";
 import { formatPublicationStatusLabel, publishDueButtonLabel } from "@/lib/marketing/publication-display";
 import type { MarketingPublication } from "@/lib/marketing/types";
 import type { WeeklyItemReview } from "@/lib/marketing/weekly-review";
+import { WebsiteDestinationReview } from "./WebsiteDestinationReview";
 import { runMarketingWeekPostAction } from "./week-client-act";
 import { WeeklyVisualPreview } from "./WeeklyVisualPreview";
 import { UploadPostModal, UploadResourceModal } from "./ManualUploadModals";
@@ -547,7 +548,9 @@ export function WeekClient() {
                       ))}
                     </ul>
                   ) : null}
-                  {item.trackingToken ? (
+                  {review?.websiteDestination ? (
+                    <WebsiteDestinationReview review={review.websiteDestination} />
+                  ) : item.trackingToken ? (
                     <p className="mt-2 text-xs text-brand-charcoal/55">
                       Tracking link: /api/m/{item.trackingToken}
                     </p>

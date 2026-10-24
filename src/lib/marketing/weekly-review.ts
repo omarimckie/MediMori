@@ -8,6 +8,8 @@ import {
   isAssetSuitableForPlatform,
 } from "./platform-suitability";
 import * as resourcePreviewUrl from "./resource-preview-url";
+import { buildMarketingWebsiteDestinationReview } from "./marketing-website-destination";
+import type { MarketingWebsiteDestinationReview } from "./marketing-website-destination";
 import { runPublishPreflight } from "./publish-preflight";
 import type { MarketingStore } from "./store";
 import type { ContentFormat, MarketingContent, Platform } from "./types";
@@ -19,6 +21,7 @@ export type WeeklyItemReview = {
   previewUrl: string | null;
   dimensionsLabel: string | null;
   visualSuitabilityWarning: string | null;
+  websiteDestination: MarketingWebsiteDestinationReview;
 };
 
 function humanizeFormat(format: ContentFormat): string {
@@ -66,6 +69,10 @@ export async function buildWeeklyItemReview(
     contentFormatUsesSocialImage(content.platform, content.format) ||
     isFreeResourceContent(content);
 
+  const websiteDestination = buildMarketingWebsiteDestinationReview(content, {
+    hasImagePost: showVisualPreview,
+  });
+
   if (!showVisualPreview) {
     return {
       channelLabel,
@@ -73,6 +80,7 @@ export async function buildWeeklyItemReview(
       previewUrl: null,
       dimensionsLabel: null,
       visualSuitabilityWarning: null,
+      websiteDestination,
     };
   }
 
@@ -112,5 +120,6 @@ export async function buildWeeklyItemReview(
     previewUrl,
     dimensionsLabel,
     visualSuitabilityWarning,
+    websiteDestination,
   };
 }

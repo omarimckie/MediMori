@@ -9,7 +9,11 @@ import {
   isAssetSuitableForPlatform,
   platformImageRule,
 } from "./platform-suitability";
-import { buildPublishTrackingLink } from "./tracking";
+import {
+  platformRequiresTrackedWebsiteLink,
+  socialContentGrandfatheredWithoutTrackedLink,
+  validateTrackedWebsiteDestinationForPublish,
+} from "./marketing-website-destination";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
@@ -18,6 +22,7 @@ export type PreflightErrorCode =
   | "image_unreadable"
   | "invalid_aspect_ratio"
   | "invalid_asset"
+  | "tracking_link_required"
   | "unsupported_platform_asset";
 
 export type PublishPreflightResult =
@@ -43,14 +48,21 @@ export async function runPublishPreflight(
   store: MarketingStore,
   content: MarketingContent,
 ): Promise<PublishPreflightResult> {
-  if (content.platform === "pinterest") {
-    if (!buildPublishTrackingLink(content)) {
+  if (
+    platformRequiresTrackedWebsiteLink(content.platform)
+    && !socialContentGrandfatheredWithoutTrackedLink(content)
+  ) {
+    const linkCheck = validateTrackedWebsiteDestinationForPublish(content);
+    if (!linkCheck.ok) {
       return {
         ok: false,
-        code: "invalid_asset",
-        message: "Pinterest pin requires a tracking token for the destination link.",
+        code: "tracking_link_required",
+        message: linkCheck.message,
       };
     }
+  }
+
+  if (content.platform === "pinterest") {
     if (!isMockMode() && !isPinterestLiveConfigured()) {
       return {
         ok: false,
