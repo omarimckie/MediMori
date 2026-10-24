@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import type { NeonQueryFunction } from "@neondatabase/serverless";
+import { resetSqlCacheForTests, setSqlFactoryForTests } from "../db";
 import {
   parsePreviewDbIdentityRows,
   previewDbIdentityResponse,
   previewDbIdentitySql,
+  queryPreviewDatabaseIdentity,
 } from "./preview-db-identity";
 
 const identityRow = {
@@ -46,7 +49,7 @@ test("unauthenticated preview identity requests do not query the database", asyn
     isPreviewReadonly: () => true,
     queryIdentity: async () => {
       queried = true;
-      return [identityRow];
+      return identityRow;
     },
   });
   assert.equal(queried, false);
@@ -66,7 +69,7 @@ test("authentication failures fail closed", async () => {
     isPreviewReadonly: () => true,
     queryIdentity: async () => {
       queried = true;
-      return [identityRow];
+      return identityRow;
     },
   });
   assert.equal(queried, false);
@@ -80,7 +83,7 @@ test("authorized preview identity returns only role, database, and INSERT permis
   const response = await previewDbIdentityResponse({
     isAuthenticated: async () => true,
     isPreviewReadonly: () => true,
-    queryIdentity: async () => [identityRow],
+    queryIdentity: async () => identityRow,
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
@@ -102,7 +105,7 @@ test("identity diagnostic is disabled outside preview read-only mode", async () 
     isPreviewReadonly: () => false,
     queryIdentity: async () => {
       queried = true;
-      return [identityRow];
+      return identityRow;
     },
   });
   assert.equal(queried, false);
@@ -129,6 +132,35 @@ test("database errors fail closed without sensitive details", async () => {
   assert.doesNotMatch(raw, /postgres:\/\//);
   assert.doesNotMatch(raw, /s3cret/);
   assert.doesNotMatch(raw, /current_user/);
+});
+
+test("route wiring: queryPreviewDatabaseIdentity through previewDbIdentityResponse", async () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "postgres://example/neondb";
+  let parseCount = 0;
+  setSqlFactoryForTests(() => {
+    const client = (async () => []) as unknown as NeonQueryFunction<false, false>;
+    client.query = (async () => {
+      parseCount += 1;
+      return [identityRow];
+    }) as unknown as NeonQueryFunction<false, false>["query"];
+    return client;
+  });
+  try {
+    const response = await previewDbIdentityResponse({
+      isAuthenticated: async () => true,
+      isPreviewReadonly: () => true,
+      queryIdentity: () => queryPreviewDatabaseIdentity(),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(parseCount, 1);
+    const body = await response.json();
+    assert.deepEqual(body, identityRow);
+  } finally {
+    resetSqlCacheForTests();
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = originalDatabaseUrl;
+  }
 });
 
 test("unexpected identity rows fail closed", () => {

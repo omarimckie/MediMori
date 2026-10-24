@@ -64,7 +64,7 @@ const noStore = { "Cache-Control": PREVIEW_DB_IDENTITY_CACHE_CONTROL };
 export async function previewDbIdentityResponse(deps: {
   isAuthenticated: () => Promise<boolean>;
   isPreviewReadonly: () => boolean;
-  queryIdentity: () => Promise<unknown>;
+  queryIdentity: () => Promise<PreviewDbIdentity>;
 }): Promise<NextResponse> {
   try {
     if (!(await deps.isAuthenticated())) {
@@ -79,7 +79,7 @@ export async function previewDbIdentityResponse(deps: {
   }
 
   try {
-    const identity = parsePreviewDbIdentityRows(await deps.queryIdentity());
+    const identity = await deps.queryIdentity();
     return NextResponse.json(identity, { status: 200, headers: noStore });
   } catch {
     return NextResponse.json(
