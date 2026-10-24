@@ -10,6 +10,13 @@ const websiteDestinationStub = {
   trackingLink: "https://twilight-feather.com/api/m/tok",
   platformNavigationSummary: "Pinterest pin link uses the tracked /api/m URL.",
   warnings: [] as string[],
+  readiness: "ready" as const,
+  publishBlocked: false,
+  issues: [],
+  recoveryHints: [],
+  platformLinkBehavior: "clickable_destination" as const,
+  trackingTokenPresent: true,
+  grandfatheredWithoutTrackedLink: false,
 };
 
 const visualReview: WeeklyItemReview = {

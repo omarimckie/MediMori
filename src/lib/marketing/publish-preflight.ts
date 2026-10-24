@@ -14,6 +14,7 @@ import {
   socialContentGrandfatheredWithoutTrackedLink,
   validateTrackedWebsiteDestinationForPublish,
 } from "./marketing-website-destination";
+import { formatPreflightErrorWithRecovery } from "./marketing-publish-operator-guidance";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
@@ -23,6 +24,8 @@ export type PreflightErrorCode =
   | "invalid_aspect_ratio"
   | "invalid_asset"
   | "tracking_link_required"
+  | "destination_path_invalid"
+  | "asset_not_ready"
   | "unsupported_platform_asset";
 
 export type PublishPreflightResult =
@@ -44,10 +47,26 @@ async function resolvePrimaryAsset(
  * Validates publish readiness without calling external APIs.
  * Shared by scheduling and publishing (defense in depth).
  */
+function mapTrackedDestinationPreflightCode(
+  issue: "tracking_token_missing" | "destination_path_invalid" | "tracking_url_build_failed",
+): PreflightErrorCode {
+  if (issue === "destination_path_invalid") return "destination_path_invalid";
+  return "tracking_link_required";
+}
+
 export async function runPublishPreflight(
   store: MarketingStore,
   content: MarketingContent,
 ): Promise<PublishPreflightResult> {
+  if (content.needsNewAsset) {
+    return {
+      ok: false,
+      code: "asset_not_ready",
+      message:
+        "This content is marked as needing a new approved asset before it can be scheduled or published.",
+    };
+  }
+
   if (
     platformRequiresTrackedWebsiteLink(content.platform)
     && !socialContentGrandfatheredWithoutTrackedLink(content)
@@ -56,7 +75,7 @@ export async function runPublishPreflight(
     if (!linkCheck.ok) {
       return {
         ok: false,
-        code: "tracking_link_required",
+        code: mapTrackedDestinationPreflightCode(linkCheck.code),
         message: linkCheck.message,
       };
     }
@@ -149,5 +168,5 @@ export async function runPublishPreflight(
 }
 
 export function formatPreflightError(result: PublishPreflightResult & { ok: false }): string {
-  return `${result.code}: ${result.message}`;
+  return formatPreflightErrorWithRecovery(result.code, result.message);
 }

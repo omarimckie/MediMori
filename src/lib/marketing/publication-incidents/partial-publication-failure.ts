@@ -22,6 +22,7 @@ import {
   type PartialPublicationPairSuccess,
 } from "./partial-publication-pairing";
 import { PARTIAL_PUBLICATION_FAILURE_RULE_VERSION } from "./partial-publication-failure-config";
+import { partialPublicationFailureOperatorGuidance } from "../marketing-publish-operator-guidance";
 import { publicationIncidentSanitizedError } from "./evidence";
 
 const PARTIAL_PERMITTED_ACTIONS = ["investigate_read_only"] as const;
@@ -63,8 +64,11 @@ export async function recordPartialPublicationFailureIncident(
       dedupeKey: partialPublicationFailureIncidentDedupeKey(batchId, failedPublication.id),
       errorClass: "partial_publication_failure",
       errorMessage:
-        `${pair.publishedPublication.platform} published; ` +
-        `${failedPublication.platform} failed after shared schedule. ` +
+        partialPublicationFailureOperatorGuidance(
+          pair.publishedPublication.platform,
+          failedPublication.platform,
+        ) +
+        " Provider detail: " +
         publicationIncidentSanitizedError(failedPublication),
       retrySafety: "unknown_requires_verification",
       permittedActions: [...PARTIAL_PERMITTED_ACTIONS],

@@ -6,8 +6,21 @@ import {
   isFreeResourceContent,
   isPublicFreeResourceSlug,
 } from "./content-metadata";
+import {
+  buildWebsiteDestinationDiagnostics,
+  type PlatformLinkBehavior,
+  type WebsiteDestinationIssue,
+  type WebsiteDestinationReadiness,
+} from "./marketing-website-destination-diagnostics";
 import { buildPublishTrackingLink } from "./tracking";
 import type { ContentCategory, MarketingContent, Platform } from "./types";
+
+export type {
+  MarketingWebsiteDestinationDiagnostics,
+  PlatformLinkBehavior,
+  WebsiteDestinationIssue,
+  WebsiteDestinationReadiness,
+} from "./marketing-website-destination-diagnostics";
 
 const KNOWN_BOOK_IDS = new Set(getBooks().map((book) => book.id));
 const KNOWN_BLOG_SLUGS = new Set(
@@ -27,6 +40,13 @@ export type MarketingWebsiteDestinationReview = {
   trackingLink: string | null;
   platformNavigationSummary: string;
   warnings: string[];
+  readiness: WebsiteDestinationReadiness;
+  publishBlocked: boolean;
+  issues: WebsiteDestinationIssue[];
+  recoveryHints: string[];
+  platformLinkBehavior: PlatformLinkBehavior;
+  trackingTokenPresent: boolean;
+  grandfatheredWithoutTrackedLink: boolean;
 };
 
 function normalizeInternalPath(path: string): string | null {
@@ -128,13 +148,27 @@ export function platformRequiresTrackedWebsiteLink(platform: Platform): boolean 
   return TRACKED_SOCIAL_PLATFORMS.has(platform);
 }
 
+export type TrackedDestinationPublishIssueCode =
+  | "tracking_token_missing"
+  | "destination_path_invalid"
+  | "tracking_url_build_failed";
+
+export function marketingDestinationOverrideRejected(content: MarketingContent): boolean {
+  const raw = content.metadata?.websiteDestinationPath;
+  if (typeof raw !== "string" || !raw.trim()) return false;
+  return metadataDestinationOverride(content) === null;
+}
+
 export function validateTrackedWebsiteDestinationForPublish(
   content: MarketingContent,
-): { ok: true } | { ok: false; message: string } {
+):
+  | { ok: true }
+  | { ok: false; code: TrackedDestinationPublishIssueCode; message: string } {
   const token = content.trackingToken?.trim();
   if (!token) {
     return {
       ok: false,
+      code: "tracking_token_missing",
       message:
         "A tracking token is required before this post can be scheduled or published with a website link. Approve weekly content that includes tracking, or restore a token on this row.",
     };
@@ -143,6 +177,7 @@ export function validateTrackedWebsiteDestinationForPublish(
   if (!isApprovedMarketingDestinationPath(destinationPath)) {
     return {
       ok: false,
+      code: "destination_path_invalid",
       message:
         "The resolved website destination is not on the approved Twilight Feather path allowlist. Use a valid book, blog slug, free resource, or homepage category mapping.",
     };
@@ -150,6 +185,7 @@ export function validateTrackedWebsiteDestinationForPublish(
   if (!buildPublishTrackingLink(content)) {
     return {
       ok: false,
+      code: "tracking_url_build_failed",
       message: "Could not build the public /api/m tracking URL for this content.",
     };
   }
@@ -167,29 +203,18 @@ export function buildMarketingWebsiteDestinationReview(
     options?.hasImagePost ??
     (content.platform === "facebook" || content.platform === "instagram");
 
-  const warnings: string[] = [];
-  if (!trackingLink) {
-    warnings.push("No tracking token — publish will not include a tracked website link.");
-  }
-  const override = content.metadata?.websiteDestinationPath?.trim();
-  if (override && !metadataDestinationOverride(content)) {
-    warnings.push(
-      "Custom websiteDestinationPath was rejected (must be an approved on-site path without query strings).",
-    );
-  }
-  if (!isApprovedMarketingDestinationPath(destinationPath)) {
-    warnings.push("Resolved destination path is not on the approved Twilight Feather allowlist.");
-  }
-  if (content.platform === "instagram") {
-    warnings.push(
-      "Instagram feed captions do not support clickable URLs; viewers must copy the link or use your profile bio.",
-    );
-  }
-  if (content.platform === "facebook" && hasImage) {
-    warnings.push(
-      "Facebook image posts rely on caption link text; link preview attachment is only used for text-only feed posts.",
-    );
-  }
+  const diagnostics = buildWebsiteDestinationDiagnostics({
+    content,
+    hasImagePost: hasImage,
+    destinationPath,
+    destinationAllowlisted: isApprovedMarketingDestinationPath(destinationPath),
+    trackingLink,
+    overrideRejected: marketingDestinationOverrideRejected(content),
+    grandfatheredWithoutTrackedLink: socialContentGrandfatheredWithoutTrackedLink(content),
+  });
+  const warnings = diagnostics.issues
+    .filter((issue) => issue.severity !== "info")
+    .map((issue) => issue.message);
 
   return {
     destinationPath,
@@ -197,5 +222,12 @@ export function buildMarketingWebsiteDestinationReview(
     trackingLink,
     platformNavigationSummary: platformWebsiteNavigationSummary(content.platform, hasImage),
     warnings,
+    readiness: diagnostics.readiness,
+    publishBlocked: diagnostics.publishBlocked,
+    issues: diagnostics.issues,
+    recoveryHints: diagnostics.recoveryHints,
+    platformLinkBehavior: diagnostics.platformLinkBehavior,
+    trackingTokenPresent: diagnostics.trackingTokenPresent,
+    grandfatheredWithoutTrackedLink: diagnostics.grandfatheredWithoutTrackedLink,
   };
 }

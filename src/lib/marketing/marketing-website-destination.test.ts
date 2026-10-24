@@ -88,10 +88,48 @@ test("validateTrackedWebsiteDestinationForPublish requires token and approved pa
   const missing = validateTrackedWebsiteDestinationForPublish(sample({ trackingToken: null }));
   assert.equal(missing.ok, false);
   if (missing.ok) throw new Error("expected failure");
+  assert.equal(missing.code, "tracking_token_missing");
   assert.match(missing.message, /tracking token/i);
 
   const ok = validateTrackedWebsiteDestinationForPublish(sample());
   assert.equal(ok.ok, true);
+});
+
+test("buildMarketingWebsiteDestinationReview exposes readiness diagnostics", () => {
+  const blocked = buildMarketingWebsiteDestinationReview(
+    sample({ trackingToken: null, status: "approved" }),
+  );
+  assert.equal(blocked.readiness, "blocked");
+  assert.equal(blocked.publishBlocked, true);
+  assert.ok(blocked.recoveryHints.length > 0);
+});
+
+test("platform link behavior distinguishes Facebook text feed link vs image caption", () => {
+  const textPost = buildMarketingWebsiteDestinationReview(
+    sample({ platform: "facebook", format: "post" }),
+    { hasImagePost: false },
+  );
+  assert.equal(textPost.platformLinkBehavior, "feed_link_field");
+  assert.match(textPost.platformNavigationSummary, /feed link/i);
+
+  const imagePost = buildMarketingWebsiteDestinationReview(
+    sample({ platform: "facebook", format: "post" }),
+    { hasImagePost: true },
+  );
+  assert.equal(imagePost.platformLinkBehavior, "caption_text_only");
+  assert.ok(imagePost.issues.some((i) => i.code === "facebook_image_caption_link"));
+});
+
+test("grandfathered published and scheduled rows are not publish-blocked in diagnostics", () => {
+  for (const status of ["scheduled", "published"] as const) {
+    const review = buildMarketingWebsiteDestinationReview(
+      sample({ trackingToken: null, status, platform: "instagram" }),
+      { hasImagePost: true },
+    );
+    assert.equal(review.grandfatheredWithoutTrackedLink, true);
+    assert.equal(review.publishBlocked, false);
+    assert.equal(review.readiness, "warning");
+  }
 });
 
 test("invalid metadata override surfaces a warning", () => {

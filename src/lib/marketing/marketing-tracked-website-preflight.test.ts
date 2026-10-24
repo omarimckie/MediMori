@@ -61,6 +61,36 @@ test("scheduleApproved rejects new approved content missing tracking token", asy
   );
 });
 
+test("needsNewAsset fails preflight before tracking gate", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const content = socialContent({
+    trackingToken: "abcd1234abcd1234",
+    needsNewAsset: true,
+  });
+  await store.createContent(content);
+  const preflight = await runPublishPreflight(store, content);
+  assert.equal(preflight.ok, false);
+  if (preflight.ok) throw new Error("expected failure");
+  assert.equal(preflight.code, "asset_not_ready");
+});
+
+test("legacy published social content without token skips tracking gate", async () => {
+  process.env.MARKETING_MOCK_MODE = "true";
+  const store = new MemoryMarketingStore();
+  const content = socialContent({
+    status: "published",
+    trackingToken: null,
+    scheduledFor: new Date().toISOString(),
+  });
+  assert.equal(socialContentGrandfatheredWithoutTrackedLink(content), true);
+  await store.createContent(content);
+  const preflight = await runPublishPreflight(store, content);
+  if (!preflight.ok) {
+    assert.notEqual(preflight.code, "tracking_link_required");
+  }
+});
+
 test("legacy scheduled social content without token skips tracking gate", async () => {
   process.env.MARKETING_MOCK_MODE = "true";
   const store = new MemoryMarketingStore();
