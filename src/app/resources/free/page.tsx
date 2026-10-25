@@ -6,6 +6,8 @@ import { SITE_NAME } from "@/lib/seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 const FREE_RESOURCES_DESCRIPTION =
   "Free downloadable activity sheets, coloring pages, and worksheets from Twilight Feather — for families, caregivers, and educators.";
 

@@ -32,7 +32,13 @@
     "security:check": "node scripts/check-secrets.mjs",
     "newsletter:migration-dry-run": "tsx scripts/newsletter-migration-dry-run.ts",
     "newsletter:migration": "tsx scripts/newsletter-migration.ts",
-    "test:newsletter-migration": "tsx --test src/lib/newsletter-migration-cutover.test.ts src/lib/newsletter-migration-cutover-route.test.ts"
+    "test:newsletter-migration": "tsx --test src/lib/newsletter-migration-cutover.test.ts src/lib/newsletter-migration-cutover-route.test.ts",
+    "test:engineering": "tsx --test src/lib/engineering/*.test.ts",
+    "test:engineering:http": "node scripts/engineering-http-smoke.mjs",
+    "engineering:preflight": "tsx scripts/engineering-preflight.ts",
+    "docs:engineering:check": "node scripts/check-engineering-runbook.mjs",
+    "engineering:worker": "node scripts/engineering-worker-launch.mjs",
+    "engineering:merge": "node scripts/engineering-merge-executor-launch.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -60,7 +66,8 @@
     "playwright": "^1.61.1",
     "tailwindcss": "^4",
     "tsx": "^4.20.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@electric-sql/pglite": "^0.5.8"
   },
   "overrides": {
     "undici": "6.28.1",

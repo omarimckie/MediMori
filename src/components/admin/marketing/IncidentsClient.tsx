@@ -44,7 +44,10 @@ export function IncidentsClient() {
   }, [mode]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   return (
