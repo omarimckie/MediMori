@@ -8,7 +8,7 @@ import type { MarketingStore } from "./store";
 import { NextResponse } from "next/server";
 
 export function contentActionFailureStatus(message: string): number {
-  return /^(invalid_|image_|tracking_link_required)|invalid_schedule_time|not found|Only approved|Only published|already published|cannot be recycled|No published publication|required|Unknown action|Only rejected|Permanent deletion|Cannot delete|explicit confirmation|tracking token is required|website destination/i.test(
+  return /^(invalid_|image_|tracking_link_required|destination_path_invalid|asset_not_ready)|invalid_schedule_time|not found|Only approved|Only published|already published|cannot be recycled|No published publication|required|Unknown action|Only rejected|Permanent deletion|Cannot delete|explicit confirmation|tracking token is required|website destination|needing a new approved asset/i.test(
       message,
     )
     ? 400

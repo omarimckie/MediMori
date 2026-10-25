@@ -108,7 +108,13 @@ export async function recordMockMetrics(store: MarketingStore, campaignId: strin
   }
 }
 
-export async function loadPurchaseSnapshots(): Promise<PurchaseSnapshot[]> {
+export type PurchaseSnapshotLoadResult = {
+  snapshots: PurchaseSnapshot[];
+  /** True when the purchases query ran; false when the DB layer failed. */
+  storeReachable: boolean;
+};
+
+export async function loadPurchaseSnapshotsWithStatus(): Promise<PurchaseSnapshotLoadResult> {
   try {
     const { getSql } = await import("@/lib/db");
     const sql = getSql();
@@ -119,13 +125,21 @@ export async function loadPurchaseSnapshots(): Promise<PurchaseSnapshot[]> {
       ORDER BY purchased_at DESC
       LIMIT 200
     `;
-    return rows.map((row) => ({
-      id: String(row.id),
-      bookId: String(row.book_id),
-      purchasedAt: new Date(String(row.purchased_at)).toISOString(),
-      amountCents: row.amount_cents == null ? null : Number(row.amount_cents),
-    }));
+    return {
+      storeReachable: true,
+      snapshots: rows.map((row) => ({
+        id: String(row.id),
+        bookId: String(row.book_id),
+        purchasedAt: new Date(String(row.purchased_at)).toISOString(),
+        amountCents: row.amount_cents == null ? null : Number(row.amount_cents),
+      })),
+    };
   } catch {
-    return [];
+    return { snapshots: [], storeReachable: false };
   }
+}
+
+export async function loadPurchaseSnapshots(): Promise<PurchaseSnapshot[]> {
+  const result = await loadPurchaseSnapshotsWithStatus();
+  return result.snapshots;
 }

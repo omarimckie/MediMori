@@ -1,3 +1,12 @@
+import {
+  buildPriorDayAnalyticsSummary,
+  formatPriorDayAnalyticsSummaryBlock,
+  type PriorDayAnalyticsSummary,
+} from "../analytics/prior-day-analytics-summary";
+import {
+  calendarDayInTimezone,
+  previousCalendarDayKey,
+} from "../analytics/analytics-time";
 import { loadPurchaseSnapshots } from "../attribution";
 import { getMarketingTimezone } from "../config";
 import type { MarketingStore } from "../store";
@@ -16,6 +25,7 @@ export type MorningMarketingBrief = {
   today: MorningBriefMetricLine[];
   needsAttention: string[];
   excludedSyntheticMetrics: string[];
+  priorDayAnalytics: PriorDayAnalyticsSummary;
   payload: MarketingNotificationPayload;
 };
 
@@ -23,18 +33,7 @@ function isoDayKey(iso: string, timeZone: string): string {
   return calendarDayInTimezone(new Date(iso), timeZone);
 }
 
-export function calendarDayInTimezone(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(date);
-}
-
-function previousCalendarDayKey(dayKey: string): string {
-  const [y, m, d] = dayKey.split("-").map(Number);
-  const prev = new Date(Date.UTC(y, m - 1, d - 1));
-  const yy = prev.getUTCFullYear();
-  const mm = String(prev.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(prev.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
+export { calendarDayInTimezone } from "../analytics/analytics-time";
 
 export async function buildMorningMarketingBrief(
   store: MarketingStore,
@@ -137,6 +136,8 @@ export async function buildMorningMarketingBrief(
     needsAttention.push("None");
   }
 
+  const priorDayAnalytics = await buildPriorDayAnalyticsSummary(store, now);
+
   const excludedSyntheticMetrics = [
     "marketing_metrics impressions/engagements (often mock-derived)",
     "website sessions / book page views from recordMockMetrics",
@@ -151,6 +152,8 @@ export async function buildMorningMarketingBrief(
     ...(yesterdayLines.length
       ? yesterdayLines.map((line) => `• ${line.value} ${line.label}`)
       : ["• No recorded activity"]),
+    "",
+    formatPriorDayAnalyticsSummaryBlock(priorDayAnalytics),
     "",
     "Today",
     ...(todayLines.length
@@ -175,6 +178,7 @@ export async function buildMorningMarketingBrief(
     today: todayLines,
     needsAttention,
     excludedSyntheticMetrics,
+    priorDayAnalytics,
     payload,
   };
 }

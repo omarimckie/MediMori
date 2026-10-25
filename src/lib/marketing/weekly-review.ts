@@ -107,6 +107,13 @@ export async function buildWeeklyItemReview(
     }
   }
 
+  if (!visualSuitabilityWarning && websiteDestination.publishBlocked) {
+    const hint = websiteDestination.recoveryHints[0];
+    visualSuitabilityWarning = hint
+      ? `Website destination is not ready for publish. ${hint}`
+      : "Website destination is not ready for publish. Fix tracking and destination allowlist issues on this card.";
+  }
+
   if (!visualSuitabilityWarning) {
     const preflight = await runPublishPreflight(store, content);
     if (!preflight.ok) {
