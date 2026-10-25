@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -9,19 +10,31 @@ import { readTargetRefSha, TargetAncestryError, verifyTargetAncestryInIsolatedGr
 import { computeImplementationSourceRevision } from "./source-binding";
 
 async function gitRepository() {
+  const identity = randomUUID();
   const root = await mkdtemp(join(tmpdir(), "engineering-target-graph-"));
   const git = (args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore", windowsHide: true });
   git(["init", "--initial-branch=main"]);
   git(["config", "user.name", "Engineering target test"]);
   git(["config", "user.email", "target@example.invalid"]);
-  await writeFile(join(root, "README.md"), "baseline\n");
-  git(["add", "README.md"]); git(["commit", "-m", "target baseline"]);
+  await writeFile(join(root, "README.md"), `baseline ${identity}\n`);
+  git(["add", "README.md"]); git(["commit", "-m", `target baseline ${identity}`]);
   const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   await writeFile(join(root, "followup.md"), "followup\n");
   git(["add", "followup.md"]); git(["commit", "-m", "target followup"]);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   return { root, git, base, head };
 }
+
+test("synthetic target repositories do not reuse commit identities across fixtures", async () => {
+  const first = await gitRepository();
+  const second = await gitRepository();
+  try {
+    assert.notEqual(first.base, second.base, "identical first commits would let implementation cat-file observe target objects");
+    assert.notEqual(first.head, second.head);
+  } finally {
+    await Promise.all([rm(first.root, { recursive: true, force: true }), rm(second.root, { recursive: true, force: true })]);
+  }
+});
 
 function localGitEnvironment(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV ?? "test", GIT_TERMINAL_PROMPT: "0" };

@@ -143,17 +143,26 @@ export async function verifyTargetAncestryInIsolatedGraph(targetBaseSha: string,
       });
       return { verified: true as const, targetBaseSha, currentTargetSha };
     } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === 1) {
-        try {
-          const shallow = await exec("git", targetGitArgs(args(["rev-parse", "--is-shallow-repository"])), { cwd: temporary, env, timeout: 15000, maxBuffer: 8192, windowsHide: true });
-          if (shallow.stdout.trim() === "true") throw new TargetAncestryError("target_fetch_failed");
-        } catch (checkError) {
-          if (checkError instanceof TargetAncestryError) throw checkError;
-          throw new TargetAncestryError("target_fetch_failed");
-        }
-        throw new TargetAncestryError("target_not_ancestor");
+      const exitCode = error && typeof error === "object" && "code" in error ? Number(error.code) : NaN;
+      if (exitCode !== 1) {
+        throw new TargetAncestryError("target_fetch_failed");
       }
-      throw new TargetAncestryError("target_fetch_failed");
+      // When both endpoints are already present in the temporary graph, a merge-base
+      // exit code of 1 means there is no common history (definitive non-ancestor).
+      try {
+        await exec("git", targetGitArgs(args(["merge-base", targetBaseSha, `refs/remotes/origin/${branch}`])), {
+          cwd: temporary, env, timeout: 15000, maxBuffer: 8192, windowsHide: true,
+        });
+        throw new TargetAncestryError("target_fetch_failed");
+      } catch (mergeBaseError) {
+        const mergeBaseExit = mergeBaseError && typeof mergeBaseError === "object" && "code" in mergeBaseError
+          ? Number(mergeBaseError.code)
+          : NaN;
+        if (mergeBaseExit === 1) {
+          throw new TargetAncestryError("target_not_ancestor");
+        }
+        throw new TargetAncestryError("target_fetch_failed");
+      }
     }
   } finally {
     await rm(temporary, { recursive: true, force: true });
