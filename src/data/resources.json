@@ -1,0 +1,58 @@
+{
+  "resources": [
+    {
+      "id": "aap-ask-the-pediatrician",
+      "category": "Parenting & Health",
+      "title": "Ask the Pediatrician",
+      "description": "Trusted answers to common child-health questions from pediatricians and pediatric specialists, covering topics families encounter as children grow.",
+      "source": "American Academy of Pediatrics",
+      "cta": "Read more →",
+      "url": "https://www.healthychildren.org/English/tips-tools/ask-the-pediatrician/Pages/default.aspx"
+    },
+    {
+      "id": "cdc-act-early",
+      "category": "Child Development",
+      "title": "Learn the Signs. Act Early.",
+      "description": "Free, parent-friendly tools from the CDC to help families track developmental milestones and know when to talk with a healthcare professional.",
+      "source": "Centers for Disease Control and Prevention",
+      "cta": "Explore the resource →",
+      "url": "https://www.cdc.gov/act-early/"
+    },
+    {
+      "id": "medlineplus-childrens-health",
+      "category": "Children's Health",
+      "title": "Children's Health",
+      "description": "A broad collection of trusted children's health information covering prevention, nutrition, development, common conditions, treatments, and more.",
+      "source": "MedlinePlus — U.S. National Library of Medicine",
+      "cta": "Explore the resource →",
+      "url": "https://medlineplus.gov/childrenshealth.html"
+    },
+    {
+      "id": "usda-healthy-eating-kids",
+      "category": "Nutrition & Health",
+      "title": "Healthy Eating for Kids",
+      "description": "Simple nutrition guidance from USDA MyPlate to help families offer children a variety of nutritious foods and build healthy eating habits.",
+      "source": "USDA MyPlate",
+      "cta": "Explore the resource →",
+      "url": "https://www.myplate.gov/tip-sheet/healthy-eating-kids"
+    },
+    {
+      "id": "poison-control",
+      "category": "Safety",
+      "title": "Poison Control",
+      "description": "Free expert guidance for families when a child may have been exposed to a potentially poisonous substance, with online and phone support.",
+      "source": "Poison Control",
+      "cta": "Get help →",
+      "url": "https://www.poison.org/how-to-get-help-from-poison-control"
+    },
+    {
+      "id": "aap-childhood-nutrition",
+      "category": "Nutrition",
+      "title": "Childhood Nutrition",
+      "description": "American Academy of Pediatrics guidance on children's nutrition, healthy eating, and the role food plays in healthy growth and development.",
+      "source": "American Academy of Pediatrics",
+      "cta": "Read more →",
+      "url": "https://www.healthychildren.org/English/healthy-living/nutrition/Pages/Childhood-Nutrition.aspx"
+    }
+  ]
+}

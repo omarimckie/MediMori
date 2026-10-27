@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Offline acceptance — run on homelab BEFORE enabling live runner.
+set -euo pipefail
+export CURSOR_BRIDGE_RUNNER_OFFLINE_FAKE_TRANSPORT=true
+export CENTRAL_AGENT_MANAGER_CURSOR_BRIDGE_RUNNER_ENABLED=false
+cd /opt/medimori
+npm run test:central-agent-manager -- --test-name-pattern "cursor-bridge-offline-e2e"
+echo "Fake-transport offline suite passed. Live runner remains disabled."

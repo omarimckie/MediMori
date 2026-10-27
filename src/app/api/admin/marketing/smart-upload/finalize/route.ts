@@ -1,0 +1,140 @@
+import { jsonError, requireMarketingAdminMutation } from "@/lib/marketing/http";
+import { getMarketingStore } from "@/lib/marketing/context";
+import { assertImageUpload, sanitizeUploadFilename } from "@/lib/marketing/file-validation";
+import {
+  parseSmartUploadFinalizeBody,
+  resolveParsedSmartUploadFinalizeCaptions,
+  smartUploadErrorStatus,
+  validationIssuesFromError,
+} from "@/lib/marketing/smart-upload-api";
+import { parseSmartUploadDestinationsFormValue } from "@/lib/marketing/smart-upload-multipart";
+import {
+  finalizeSmartUploadFromBlob,
+  finalizeSmartUploadFromBuffer,
+} from "@/lib/marketing/smart-upload";
+import { AUDIENCES, CONTENT_CATEGORIES, type AudienceId, type ContentCategory } from "@/lib/marketing/types";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+
+function parseCategory(value: string | undefined): ContentCategory | undefined {
+  if (!value) return undefined;
+  if (!CONTENT_CATEGORIES.includes(value as ContentCategory)) {
+    throw new Error("Unsupported category.");
+  }
+  return value as ContentCategory;
+}
+
+function parseAudience(value: string | undefined): AudienceId | undefined {
+  if (!value) return undefined;
+  if (!AUDIENCES.includes(value as AudienceId)) {
+    throw new Error("Unsupported audience.");
+  }
+  return value as AudienceId;
+}
+
+export async function POST(request: Request) {
+  const auth = await requireMarketingAdminMutation();
+  if (!auth.ok) return auth.response;
+
+  const contentType = request.headers.get("content-type") ?? "";
+  const store = getMarketingStore();
+
+  try {
+    if (contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const caption = String(form.get("caption") ?? "").trim();
+      const facebookCaption = String(form.get("facebookCaption") ?? "").trim() || null;
+      const instagramCaption = String(form.get("instagramCaption") ?? "").trim() || null;
+      if (facebookCaption || instagramCaption) {
+        if (!facebookCaption || !instagramCaption) {
+          return jsonError("facebookCaption and instagramCaption must both be provided.", 400);
+        }
+      }
+      const captionFields = resolveParsedSmartUploadFinalizeCaptions({
+        caption,
+        facebookCaption,
+        instagramCaption,
+      });
+      const batchId = String(form.get("batchId") ?? "").trim();
+      const finalizeKey = String(form.get("finalizeKey") ?? "").trim();
+      if (!batchId || !finalizeKey) {
+        return jsonError("batchId and finalizeKey are required.", 400);
+      }
+      const imageEntry = form.get("image");
+      if (!(imageEntry instanceof File)) {
+        return jsonError("Expected one image file.", 400);
+      }
+      const buffer = Buffer.from(await imageEntry.arrayBuffer());
+      assertImageUpload(buffer);
+      const destinations = parseSmartUploadDestinationsFormValue(form.get("destinations"));
+      const pinterestTitle = String(form.get("pinterestTitle") ?? "").trim() || null;
+      const pinterestDescription = String(form.get("pinterestDescription") ?? "").trim() || null;
+      const result = await finalizeSmartUploadFromBuffer(store, {
+        ...captionFields,
+        batchId,
+        finalizeKey,
+        weeklyPlanId: String(form.get("weeklyPlanId") ?? "").trim() || null,
+        campaignId: String(form.get("campaignId") ?? "").trim() || null,
+        bookId: String(form.get("bookId") ?? "").trim() || null,
+        category: parseCategory(String(form.get("category") ?? "").trim() || undefined),
+        audience: parseAudience(String(form.get("audience") ?? "").trim() || undefined),
+        actor: auth.username,
+        imageBuffer: buffer,
+        imageFilename: sanitizeUploadFilename(imageEntry.name || "upload.jpg"),
+        destinations,
+        pinterestTitle,
+        pinterestDescription,
+      });
+      return NextResponse.json(result);
+    }
+
+    let record: Record<string, unknown>;
+    try {
+      record = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return jsonError("Expected JSON body.", 400);
+    }
+
+    const parsed = parseSmartUploadFinalizeBody(record);
+    if (!parsed.uploadIntent || !parsed.pathname || !parsed.publicUrl) {
+      return jsonError("uploadIntent, pathname, and publicUrl are required for blob finalize.", 400);
+    }
+
+    const captionFields = resolveParsedSmartUploadFinalizeCaptions(parsed);
+    const result = await finalizeSmartUploadFromBlob(store, {
+      ...captionFields,
+      batchId: parsed.batchId,
+      finalizeKey: parsed.finalizeKey,
+      weeklyPlanId: parsed.weeklyPlanId,
+      campaignId: parsed.campaignId,
+      bookId: parsed.bookId,
+      category: parseCategory(parsed.category),
+      audience: parseAudience(parsed.audience),
+      actor: auth.username,
+      uploadIntent: parsed.uploadIntent!,
+      pathname: parsed.pathname!,
+      publicUrl: parsed.publicUrl!,
+      imageFilename: parsed.imageFilename,
+      fix: parsed.fix,
+      destinations: parsed.destinations,
+      pinterestTitle: parsed.pinterestTitle,
+      pinterestDescription: parsed.pinterestDescription,
+      pinterestOutput: parsed.pinterestOutput,
+    });
+    return NextResponse.json(result);
+  } catch (error) {
+    const issues = validationIssuesFromError(error);
+    if (issues) {
+      return NextResponse.json(
+        {
+          error: issues.map((item) => item.message).join(" "),
+          issues,
+        },
+        { status: 422 },
+      );
+    }
+    const message = error instanceof Error ? error.message : "Finalize failed.";
+    return jsonError(message, smartUploadErrorStatus(message));
+  }
+}

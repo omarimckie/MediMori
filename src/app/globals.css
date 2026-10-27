@@ -1,0 +1,375 @@
+@import "tailwindcss";
+
+/* =========================================================
+   Twilight Feather — Global Design Foundation (Phase 1)
+   Section layouts are intentionally untouched in this phase.
+   ========================================================= */
+
+:root {
+  /* —— Approved palette (source of truth) —— */
+  --cream: #fdf6e3; /* Warm Storybook Cream */
+  --navy: #1f2a44; /* Twilight Navy */
+  --gold: #e8c547; /* Morning Gold */
+  --lavender: #c8b6e6; /* Soft Lavender */
+  --sky: #a8cbe6; /* Sky Blue */
+  --sage: #6fa46a; /* Meadow / Sage Green */
+  --warm-white: #ffffff; /* Warm White */
+
+  /* Supporting surface / text tones (compatible with existing UI) */
+  --cream-deep: #f3ead4;
+  --cream-section: #fdf6ed;
+  --white: var(--warm-white);
+  --charcoal: #2c3540;
+  --brown: #8a7a7c;
+
+  /* —— Compatibility aliases (existing class names keep working) —— */
+  --section-navy: var(--navy);
+  --yellow: var(--gold);
+  --yellow-bright: #f5d56a;
+  --blue: var(--sky);
+  --blue-deep: #6f9fc4;
+  /* Historically named "green" in this codebase = Soft Lavender accents */
+  --green: var(--lavender);
+  --green-deep: #7050a5;
+  --orange: #d99b9b;
+  --orange-deep: #a86a6a;
+
+  /* —— Spacing scale (Phase 1.5: more editorial breathing room) —— */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-28: 7rem;
+  --space-32: 8rem;
+
+  /* —— Layout scale —— */
+  --page-max: 80rem; /* ~max-w-7xl */
+  --page-gutter: 1rem;
+  --section-y: 3rem;
+  --card-pad: 1.25rem;
+  --cover-max: 14rem; /* mobile-friendly cover scale */
+
+  /* —— Type scale —— */
+  --text-body: 1.0625rem;
+  --text-body-lg: 1.125rem;
+  --leading-body: 1.7;
+
+  /* —— Shape / elevation —— */
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 1.75rem;
+  --shadow-soft: 0 8px 24px rgba(31, 42, 68, 0.06);
+  --shadow-card: 0 6px 18px rgba(31, 42, 68, 0.05);
+  --border-soft: color-mix(in srgb, var(--brown) 18%, transparent);
+
+  /* —— Focus —— */
+  --focus-ring: color-mix(in srgb, var(--navy) 45%, var(--lavender));
+}
+
+@theme inline {
+  --color-cream: var(--cream);
+  --color-cream-deep: var(--cream-deep);
+  --color-cream-section: var(--cream-section);
+  --color-section-navy: var(--section-navy);
+  --color-warm-white: var(--warm-white);
+  --color-brand-navy: var(--navy);
+  --color-brand-gold: var(--gold);
+  --color-brand-lavender: var(--lavender);
+  --color-brand-sky: var(--sky);
+  --color-brand-sage: var(--sage);
+  --color-brand-blue: var(--blue);
+  --color-brand-blue-deep: var(--blue-deep);
+  --color-brand-green: var(--green);
+  --color-brand-green-deep: var(--green-deep);
+  --color-brand-orange: var(--orange);
+  --color-brand-orange-deep: var(--orange-deep);
+  --color-brand-brown: var(--brown);
+  --color-brand-charcoal: var(--charcoal);
+  --color-brand-yellow: var(--yellow);
+  --color-brand-yellow-bright: var(--yellow-bright);
+
+  --font-sans: var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-cormorant), ui-serif, Georgia, "Times New Roman", serif;
+
+  --radius-tf-sm: var(--radius-sm);
+  --radius-tf-md: var(--radius-md);
+  --radius-tf-lg: var(--radius-lg);
+  --radius-tf-xl: var(--radius-xl);
+  --radius-tf-2xl: var(--radius-2xl);
+
+  --shadow-tf-soft: var(--shadow-soft);
+  --shadow-tf-card: var(--shadow-card);
+}
+
+/* —— Base —— */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --page-gutter: 1.75rem;
+    --section-y: 5rem;
+    --card-pad: 1.75rem;
+    --cover-max: 18.25rem;
+  }
+}
+
+/* Desktop: slightly larger root so rem-based UI feels less compressed */
+@media (min-width: 1024px) {
+  html {
+    font-size: 106.25%; /* 17px */
+  }
+
+  :root {
+    --page-gutter: 2.5rem;
+    --section-y: 7.5rem;
+    --card-pad: 2.25rem;
+    --cover-max: 20rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  html {
+    font-size: 112.5%; /* 18px */
+  }
+
+  :root {
+    --page-gutter: 3rem;
+    --section-y: 8.5rem;
+  }
+}
+
+body {
+  background: var(--cream);
+  color: var(--charcoal);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  overflow-x: hidden;
+}
+
+@media (min-width: 1024px) {
+  body {
+    font-size: var(--text-body-lg);
+  }
+}
+
+/* Editorial headings use Cormorant Garamond globally.
+   Color is left to section utilities (e.g. text-white on navy). */
+h1,
+h2,
+.tf-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Strengthen major heading presence without rewriting section markup */
+@media (min-width: 1024px) {
+  main h1 {
+    font-size: clamp(2.75rem, 4.2vw, 4rem);
+  }
+
+  main h2 {
+    font-size: clamp(2rem, 2.8vw, 2.85rem);
+  }
+}
+
+/* Accessible focus defaults for interactive controls */
+:where(a, button, input, textarea, select, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================================================
+   Reusable UI language (use in later section phases)
+   ========================================================= */
+
+/* Buttons */
+.tf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    filter 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.tf-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.tf-btn-primary {
+  background: var(--navy);
+  color: var(--warm-white);
+}
+
+.tf-btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.tf-btn-secondary {
+  background: color-mix(in srgb, var(--lavender) 28%, var(--warm-white));
+  color: var(--navy);
+  border-color: color-mix(in srgb, var(--lavender) 55%, transparent);
+}
+
+.tf-btn-secondary:hover {
+  background: color-mix(in srgb, var(--lavender) 40%, var(--warm-white));
+}
+
+.tf-btn-accent {
+  background: var(--gold);
+  color: var(--navy);
+}
+
+.tf-btn-accent:hover {
+  filter: brightness(0.97);
+}
+
+.tf-btn-ghost {
+  background: color-mix(in srgb, var(--warm-white) 70%, transparent);
+  color: var(--navy);
+  border-color: color-mix(in srgb, var(--navy) 18%, transparent);
+}
+
+.tf-btn-ghost:hover {
+  background: var(--warm-white);
+}
+
+/* Cards */
+.tf-card {
+  background: var(--warm-white);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-pad);
+}
+
+.tf-card-cream {
+  background: color-mix(in srgb, var(--cream) 88%, var(--warm-white));
+}
+
+/* Soft page atmosphere (quiet; sections opt in later) */
+.tf-atmosphere {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 70% 45% at 12% 18%, color-mix(in srgb, var(--lavender) 16%, transparent), transparent 60%),
+    radial-gradient(ellipse 55% 40% at 88% 12%, color-mix(in srgb, var(--sky) 14%, transparent), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 70% 88%, color-mix(in srgb, var(--sage) 8%, transparent), transparent 60%),
+    var(--cream);
+}
+
+.tf-atmosphere::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, color-mix(in srgb, var(--gold) 55%, transparent), transparent),
+    radial-gradient(1.5px 1.5px at 78% 18%, color-mix(in srgb, var(--navy) 25%, transparent), transparent),
+    radial-gradient(1.2px 1.2px at 64% 42%, color-mix(in srgb, var(--lavender) 45%, transparent), transparent),
+    radial-gradient(1.2px 1.2px at 28% 68%, color-mix(in srgb, var(--gold) 40%, transparent), transparent);
+}
+
+.tf-atmosphere > * {
+  position: relative;
+  z-index: 1;
+}
+
+.tf-wash-lavender {
+  background-image: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    color-mix(in srgb, var(--lavender) 12%, transparent),
+    transparent 70%
+  );
+}
+
+.tf-wash-sky {
+  background-image: radial-gradient(
+    ellipse 70% 55% at 80% 20%,
+    color-mix(in srgb, var(--sky) 14%, transparent),
+    transparent 65%
+  );
+}
+
+/* Typography helpers */
+.tf-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--navy) 70%, var(--lavender));
+}
+
+.tf-lede {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-lg);
+  line-height: var(--leading-body);
+  color: color-mix(in srgb, var(--charcoal) 80%, transparent);
+}
+
+.tf-container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+  max-width: var(--page-max);
+}
+
+.tf-section-space {
+  padding-block: var(--section-y);
+}
+
+/* Shared page chrome width used by header/footer/section defaults */
+.tf-page-width {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+}

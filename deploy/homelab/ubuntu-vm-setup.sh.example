@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# DISABLED TEMPLATE — do not run from CI. Operator copies to homelab VM when authorized.
+set -euo pipefail
+echo "This script is a template only. Enable after Phase 5c owner sign-off."
+exit 1
+
+# --- intended steps (commented) ---
+# adduser --system --group --home /opt/medimori medimori
+# mkdir -p /opt/medimori/app /var/lib/medimori /var/log/medimori /etc/medimori
+# chown medimori:medimori /opt/medimori /var/lib/medimori /var/log/medimori
+# chmod 750 /var/lib/medimori /var/log/medimori
+# install -o root -g medimori -m 0600 deploy/homelab/cam-bridge.env.example /etc/medimori/cam-bridge.env
+# cp deploy/homelab/cam-bridge-runner.service.example /etc/systemd/system/cam-bridge-runner.service
+# systemctl daemon-reload
+# systemctl enable --now cam-bridge-runner  # ONLY after offline acceptance passes

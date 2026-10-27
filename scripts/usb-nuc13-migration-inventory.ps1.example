@@ -1,0 +1,37 @@
+# READ-ONLY inventory template — copy to operator machine; does not modify repos.
+# Usage: pwsh -File scripts/usb-nuc13-migration-inventory.ps1.example -OutFile migration-inventory.json
+param(
+  [string[]]$SearchRoots = @("C:\CodeWork", "D:\CodeWork", "E:\CodeWork"),
+  [string]$OutFile = "migration-inventory.json"
+)
+
+$ErrorActionPreference = "SilentlyContinue"
+$repos = @()
+foreach ($root in $SearchRoots) {
+  if (-not (Test-Path $root)) { continue }
+  Get-ChildItem -Path $root -Directory | ForEach-Object {
+    $git = Join-Path $_.FullName ".git"
+    if (-not (Test-Path $git)) { return }
+    Push-Location $_.FullName
+    $branch = git rev-parse --abbrev-ref HEAD 2>$null
+    $dirty = (git status --porcelain 2>$null | Measure-Object).Count
+    $worktrees = git worktree list --porcelain 2>$null
+    $sizeMb = [math]::Round((Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+    $repos += [ordered]@{
+      name = $_.Name
+      path = $_.FullName
+      branch = $branch
+      dirtyFileCount = $dirty
+      approximateSizeMb = $sizeMb
+      worktreeLines = ($worktrees | Measure-Object -Line).Lines
+      envFilesPresent = @(
+        (Test-Path (Join-Path $_.FullName ".env")),
+        (Test-Path (Join-Path $_.FullName ".env.local")),
+        (Test-Path (Join-Path $_.FullName ".local"))
+      )
+    }
+    Pop-Location
+  }
+}
+@{ generatedAt = (Get-Date).ToUniversalTime().ToString("o"); repositories = $repos } | ConvertTo-Json -Depth 5 | Set-Content $OutFile
+Write-Host "Wrote $OutFile ($($repos.Count) repos)"

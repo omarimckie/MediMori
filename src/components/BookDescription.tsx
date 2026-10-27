@@ -1,0 +1,243 @@
+import type { Book } from "@/lib/books";
+import type { ReactNode } from "react";
+
+type DescriptionBlock =
+  | { kind: "paragraph"; nodes: ReactNode[]; bold?: boolean }
+  | { kind: "list"; title?: string; items: string[]; marker: "bullet" | "dash" };
+
+function decodeHtmlEntities(text: string) {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function leftoverPlainText(html: string) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function paragraphPlainText(nodes: ReactNode[]) {
+  return nodes
+    .map((node) => (typeof node === "string" ? node : ""))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pushList(
+  blocks: DescriptionBlock[],
+  items: string[],
+  marker: "bullet" | "dash",
+) {
+  const previous = blocks.at(-1);
+  if (previous?.kind === "paragraph") {
+    const title = paragraphPlainText(previous.nodes);
+    if (title.endsWith(":")) {
+      blocks.pop();
+      blocks.push({ kind: "list", title, items, marker });
+      return;
+    }
+  }
+
+  blocks.push({ kind: "list", items, marker });
+}
+
+function stripTags(html: string) {
+  return decodeHtmlEntities(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+}
+
+function parseInlineAmazonHtml(html: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const pattern =
+    /<span[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/span>|<span>([\s\S]*?)<\/span>/gi;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html)) !== null) {
+    if (match.index > lastIndex) {
+      const leftover = leftoverPlainText(html.slice(lastIndex, match.index));
+      if (leftover) {
+        parts.push(leftover);
+      }
+    }
+
+    const classes = match[1] ?? "";
+    const text = decodeHtmlEntities(match[2] ?? match[3] ?? "");
+
+    if (classes.includes("a-text-bold")) {
+      parts.push(<strong key={match.index}>{text}</strong>);
+    } else if (classes.includes("a-text-italic")) {
+      parts.push(<em key={match.index}>{text}</em>);
+    } else {
+      parts.push(text);
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < html.length) {
+    const leftover = leftoverPlainText(html.slice(lastIndex));
+    if (leftover) {
+      parts.push(leftover);
+    }
+  }
+
+  return parts.length ? parts : [stripTags(html)];
+}
+
+function parseLegacyParagraph(inner: string): DescriptionBlock {
+  const boldOnly = inner.match(
+    /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>$/i,
+  );
+  if (boldOnly) {
+    return {
+      kind: "paragraph",
+      nodes: [stripTags(boldOnly[1])],
+      bold: true,
+    };
+  }
+
+  const normalized = inner.replace(/<\/?span[^>]*>/gi, "");
+  const rawLines = normalized
+    .split(/<br\s*\/?>/i)
+    .map(stripTags)
+    .filter(Boolean);
+
+  if (rawLines.length === 1) {
+    return { kind: "paragraph", nodes: parseInlineAmazonHtml(inner) };
+  }
+
+  const title = rawLines[0];
+  const items = rawLines.slice(1).map((line) => line.replace(/^[•\-]\s*/, "").trim());
+
+  return { kind: "list", title, items, marker: "bullet" };
+}
+
+export function parseAmazonDescriptionHtml(html: string): DescriptionBlock[] {
+  const blocks: DescriptionBlock[] = [];
+  let remaining = html.trim();
+
+  while (remaining.length > 0) {
+    const boldSpan = remaining.match(
+      /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    );
+    if (boldSpan) {
+      blocks.push({
+        kind: "paragraph",
+        nodes: [stripTags(boldSpan[1])],
+        bold: true,
+      });
+      remaining = remaining.slice(boldSpan[0].length);
+      continue;
+    }
+
+    const paragraph = remaining.match(/^<p[^>]*>([\s\S]*?)<\/p>/i);
+    if (paragraph) {
+      const inner = paragraph[1];
+      const boldParagraph = inner.match(
+        /^<span[^>]*class="[^"]*a-text-bold[^"]*"[^>]*>([\s\S]*?)<\/span>$/i,
+      );
+      if (boldParagraph) {
+        blocks.push({
+          kind: "paragraph",
+          nodes: [stripTags(boldParagraph[1])],
+          bold: true,
+        });
+      } else if (/<br\s*\/?>/i.test(inner)) {
+        blocks.push(parseLegacyParagraph(inner));
+      } else {
+        blocks.push({
+          kind: "paragraph",
+          nodes: parseInlineAmazonHtml(inner),
+        });
+      }
+      remaining = remaining.slice(paragraph[0].length);
+      continue;
+    }
+
+    const list = remaining.match(/^<ul[^>]*>([\s\S]*?)<\/ul>/i);
+    if (list) {
+      const items = [...list[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+        .map((item) => stripTags(item[1]))
+        .filter(Boolean);
+
+      pushList(blocks, items, "bullet");
+      remaining = remaining.slice(list[0].length);
+      continue;
+    }
+
+    break;
+  }
+
+  if (blocks.length) {
+    return blocks;
+  }
+
+  return [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)].map((match) =>
+    parseLegacyParagraph(match[1]),
+  );
+}
+
+type Props = {
+  book: Book;
+  className?: string;
+};
+
+export function BookDescription({ book, className = "" }: Props) {
+  const proseClass =
+    "text-sm leading-relaxed text-brand-charcoal/85 sm:text-[0.95rem]";
+
+  if (book.descriptionHtml) {
+    const blocks = parseAmazonDescriptionHtml(book.descriptionHtml);
+
+    return (
+      <div className={`space-y-4 ${proseClass} ${className}`.trim()}>
+        {blocks.map((block, index) => {
+          if (block.kind === "paragraph") {
+            return (
+              <p
+                key={index}
+                className={block.bold ? "font-bold text-brand-charcoal" : undefined}
+              >
+                {block.nodes}
+              </p>
+            );
+          }
+
+          return (
+            <div key={index}>
+              {block.title ? (
+                <p className="font-semibold text-brand-charcoal">{block.title}</p>
+              ) : null}
+              <ul
+                className={
+                  block.marker === "dash"
+                    ? `${block.title ? "mt-2" : ""} list-none space-y-1`
+                    : `${block.title ? "mt-2" : ""} list-disc space-y-1 pl-5`
+                }
+              >
+                {block.items.map((item) => (
+                  <li key={item}>
+                    {block.marker === "dash" ? `- ${item}` : item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return <p className={`${proseClass} ${className}`.trim()}>{book.description}</p>;
+}

@@ -1,0 +1,25 @@
+[
+  {
+    "Name": "/tf-watchdog-pg-run-abc123",
+    "HostConfig": {
+      "NetworkMode": "bridge",
+      "PortBindings": {
+        "5432/tcp": [{ "HostIp": "0.0.0.0", "HostPort": "55432" }]
+      },
+      "Binds": null,
+      "Privileged": false,
+      "RestartPolicy": { "Name": "no" }
+    },
+    "NetworkSettings": {
+      "Ports": {
+        "5432/tcp": [{ "HostIp": "0.0.0.0", "HostPort": "55432" }]
+      },
+      "Networks": {
+        "bridge": {
+          "IPAddress": "172.17.0.2"
+        }
+      }
+    },
+    "Mounts": []
+  }
+]

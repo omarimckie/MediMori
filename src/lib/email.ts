@@ -1,0 +1,422 @@
+import { getBookById } from "@/lib/books";
+import { getNewsletterDiscountCode } from "@/lib/newsletter-constants";
+import type { PhysicalOrderRow, ShippingAddressSnapshot } from "@/lib/physical-orders";
+import { Resend } from "resend";
+
+export type NewsletterContactResult = {
+  ok: boolean;
+  contactCreated: boolean;
+  segmentAttached: boolean;
+  message?: string;
+};
+
+function getResendClient(): Resend | null {
+  const key = process.env.RESEND_API_KEY?.trim();
+  return key ? new Resend(key) : null;
+}
+
+function getFromAddress(): string | null {
+  return process.env.RESEND_FROM_EMAIL?.trim() || null;
+}
+
+export function isConfirmationEmailConfigured(): boolean {
+  return Boolean(getResendClient() && getFromAddress());
+}
+
+function getNewsletterSegmentId(): string | null {
+  return (
+    process.env.RESEND_NEWSLETTER_ID?.trim() ||
+    process.env.RESEND_SEGMENT_ID?.trim() ||
+    process.env.RESEND_AUDIENCE_ID?.trim() ||
+    null
+  );
+}
+
+/**
+ * Adds the signup as a Resend Contact and attaches it to the newsletter segment.
+ * Requires a Resend API key with Full Access (not sending-only).
+ */
+export async function addContactToNewsletterAudience(
+  email: string,
+): Promise<NewsletterContactResult> {
+  const resend = getResendClient();
+  if (!resend) {
+    return {
+      ok: false,
+      contactCreated: false,
+      segmentAttached: false,
+      message: "RESEND_API_KEY is not set.",
+    };
+  }
+
+  const segmentId = getNewsletterSegmentId();
+  const topicId = process.env.RESEND_TOPIC_ID?.trim();
+
+  if (!segmentId) {
+    console.warn(
+      "RESEND_NEWSLETTER_ID is not set — contact will be created without a newsletter segment.",
+    );
+  }
+
+  const { error } = await resend.contacts.create({
+    email,
+    unsubscribed: false,
+    ...(segmentId ? { segments: [{ id: segmentId }] } : {}),
+    ...(topicId
+      ? { topics: [{ id: topicId, subscription: "opt_in" as const }] }
+      : {}),
+  });
+
+  const alreadyExists =
+    Boolean(error) && /already|exists|conflict/i.test(error?.message ?? "");
+
+  if (error && !alreadyExists) {
+    const message = error.message || "Could not add contact to Resend.";
+    console.error("Resend contacts.create failed:", {
+      message,
+      name: error.name,
+      statusCode: "statusCode" in error ? error.statusCode : undefined,
+    });
+    return {
+      ok: false,
+      contactCreated: false,
+      segmentAttached: false,
+      message:
+        /forbidden|permission|unauthorized|access/i.test(message)
+          ? "Resend API key cannot manage Contacts. Create a Full Access API key in Resend and set RESEND_API_KEY in Vercel."
+          : message,
+    };
+  }
+
+  let segmentAttached = false;
+
+  if (segmentId) {
+    const { error: segmentError } = await resend.contacts.segments.add({
+      email,
+      segmentId,
+    });
+
+    if (
+      segmentError &&
+      !/already|exists|conflict/i.test(segmentError.message ?? "")
+    ) {
+      console.error("Resend contacts.segments.add failed:", segmentError);
+      return {
+        ok: false,
+        contactCreated: !error || alreadyExists,
+        segmentAttached: false,
+        message:
+          segmentError.message ||
+          "Could not add contact to newsletter segment.",
+      };
+    }
+
+    segmentAttached = true;
+  }
+
+  return {
+    ok: true,
+    contactCreated: !alreadyExists,
+    segmentAttached,
+  };
+}
+
+export async function sendSignupConfirmationEmail(
+  email: string,
+  options: { alreadySignedUp: boolean },
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    console.warn(
+      "Signup confirmation email skipped: set RESEND_API_KEY and RESEND_FROM_EMAIL.",
+    );
+    return;
+  }
+
+  const code = getNewsletterDiscountCode();
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    "https://twilight-feather.com";
+  const booksUrl = `${siteUrl}/books`;
+
+  const subject = options.alreadySignedUp
+    ? "You're already on the Twilight Feather list"
+    : "Welcome to the Twilight Feather list — your 10% off code";
+
+  const intro = options.alreadySignedUp
+    ? "You're already on our list — thanks for signing up again. Here's your code in case you need it:"
+    : "Thanks for joining the Twilight Feather family! You're on our news and updates list.";
+
+  const { error } = await resend.emails.send({
+    from,
+    to: email,
+    subject,
+    html: `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
+        <h1 style="font-size: 22px; margin-bottom: 12px;">Twilight Feather</h1>
+        <p>${intro}</p>
+        <p style="margin: 24px 0; padding: 16px 20px; background: #fdf6e3; border-radius: 12px; font-size: 18px;">
+          <strong>Your 10% off code:</strong>
+          <span style="letter-spacing: 0.04em;">${code}</span>
+        </p>
+        <p>
+          Use this code at checkout when you buy directly on our website
+          (enter it in the promotion code field on the payment page). Amazon
+          purchases are excluded. Paperback shipping is not discounted.
+        </p>
+        <p>
+          <a href="${booksUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
+            Shop our books
+          </a>
+        </p>
+        <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
+          You'll occasionally hear from us about new stories, resources, and exclusive offers.
+          If this wasn't you, you can ignore this email.
+        </p>
+      </div>
+    `,
+    text: [
+      "Twilight Feather",
+      "",
+      intro,
+      "",
+      `Your 10% off code: ${code}`,
+      "",
+      "Use this code at checkout when you buy directly on our website. Amazon excluded; paperback shipping not discounted.",
+      `Shop: ${booksUrl}`,
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send confirmation email.");
+  }
+}
+
+export async function sendLibraryAccessEmail(
+  email: string,
+  accessUrl: string,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    throw new Error("Access email is not configured (missing Resend).");
+  }
+
+  const isLocalAccess = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(
+    accessUrl,
+  );
+
+  const { error } = await resend.emails.send({
+    from,
+    to: email,
+    subject: "Your Twilight Feather books access link",
+    html: `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
+        <h1 style="font-size: 22px; margin-bottom: 12px;">Twilight Feather</h1>
+        <p>Use this private link to open the books you purchased. It expires in 45 minutes and can be used once.</p>
+        ${
+          isLocalAccess
+            ? `<p>This is a local test link. Gmail often will not make localhost links clickable, so copy and paste it if the button does nothing:</p>
+        <p>
+          <a href="${accessUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
+            Open my books
+          </a>
+        </p>
+        <p style="word-break: break-all; font-size: 14px;">${accessUrl}</p>`
+            : `<p>
+          <a href="${accessUrl}" style="display: inline-block; background: #f5b93f; color: #1a2b4b; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 12px;">
+            Open my books
+          </a>
+        </p>
+        <p style="word-break: break-all; color: #5a6478; font-size: 13px;">If the button is rewritten by email tracking, paste this URL instead:<br />${accessUrl}</p>`
+        }
+        <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
+          If you did not request this, you can ignore this email. We never put your email address in the link.
+        </p>
+      </div>
+    `,
+    text: [
+      "Twilight Feather",
+      "",
+      "Use this private link to open the books you purchased.",
+      "It expires in 45 minutes and can be used once.",
+      "",
+      accessUrl,
+      "",
+      "If you did not request this, you can ignore this email.",
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send access email.");
+  }
+}
+
+function formatUsd(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
+
+export function formatShippingAddressForEmail(
+  address: ShippingAddressSnapshot,
+): string {
+  const lines = [
+    address.name,
+    address.line1,
+    address.line2,
+    [address.city, address.state, address.postalCode].filter(Boolean).join(", "),
+    address.country,
+  ].filter((line) => line && line.trim());
+  return lines.join("\n");
+}
+
+function getFulfillmentNotifyEmail(): string | null {
+  return (
+    process.env.RESEND_FULFILLMENT_NOTIFY_EMAIL?.trim() ||
+    process.env.RESEND_ORDERS_EMAIL?.trim() ||
+    null
+  );
+}
+
+export async function sendPhysicalOrderConfirmationEmail(
+  order: PhysicalOrderRow,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    console.warn(
+      "Physical order confirmation skipped: set RESEND_API_KEY and RESEND_FROM_EMAIL.",
+    );
+    return;
+  }
+
+  const book = getBookById(order.bookId);
+  const title = book?.title ?? "Twilight Feather book";
+  const shipTo = formatShippingAddressForEmail(order.shippingAddress);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: order.customerEmail,
+    subject: `Your Twilight Feather paperback order — ${title}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #1a2b4b; line-height: 1.5;">
+        <h1 style="font-size: 22px; margin-bottom: 12px;">Thank you for your order</h1>
+        <p>Hi ${order.customerName},</p>
+        <p>We received your payment for <strong>${title}</strong> (${order.quantity} ${order.quantity === 1 ? "copy" : "copies"}).</p>
+        <p><strong>Total paid:</strong> ${formatUsd(order.totalAmountCents)}</p>
+        <p><strong>Ship to:</strong><br />${shipTo.replace(/\n/g, "<br />")}</p>
+        <p>Your book will ship directly from Twilight Feather. We will email you when tracking is available.</p>
+        <p style="color: #5a6478; font-size: 13px; margin-top: 32px;">
+          Order reference: ${order.id}
+        </p>
+      </div>
+    `,
+    text: [
+      "Thank you for your order",
+      "",
+      `Hi ${order.customerName},`,
+      "",
+      `Book: ${title}`,
+      `Quantity: ${order.quantity}`,
+      `Total paid: ${formatUsd(order.totalAmountCents)}`,
+      "",
+      "Ship to:",
+      shipTo,
+      "",
+      "Your book will ship directly from Twilight Feather.",
+      "",
+      `Order reference: ${order.id}`,
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send physical order confirmation.");
+  }
+}
+
+export async function sendPhysicalFulfillmentNotificationEmail(
+  order: PhysicalOrderRow,
+): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  const notifyTo = getFulfillmentNotifyEmail();
+  if (!resend || !from || !notifyTo) {
+    console.warn(
+      "Fulfillment notification skipped: set RESEND_FULFILLMENT_NOTIFY_EMAIL (and Resend).",
+    );
+    return;
+  }
+
+  const book = getBookById(order.bookId);
+  const title = book?.title ?? order.bookId;
+  const shipTo = formatShippingAddressForEmail(order.shippingAddress);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: notifyTo,
+    subject: `[Fulfillment] Physical order ${order.id.slice(0, 8)} — ${title}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 640px; line-height: 1.5;">
+        <h1 style="font-size: 20px;">New physical book order</h1>
+        <p><strong>Order ID:</strong> ${order.id}</p>
+        <p><strong>Stripe session:</strong> ${order.stripeCheckoutSessionId}</p>
+        <p><strong>Book:</strong> ${title} (${order.bookId})</p>
+        <p><strong>Quantity:</strong> ${order.quantity}</p>
+        <p><strong>Total:</strong> ${formatUsd(order.totalAmountCents)}</p>
+        <p><strong>Customer:</strong> ${order.customerName} &lt;${order.customerEmail}&gt;</p>
+        <p><strong>Ship to:</strong><br />${shipTo.replace(/\n/g, "<br />")}</p>
+        <p>Create the label manually in Pirate Ship using the address above.</p>
+      </div>
+    `,
+    text: [
+      "New physical book order",
+      `Order ID: ${order.id}`,
+      `Stripe session: ${order.stripeCheckoutSessionId}`,
+      `Book: ${title} (${order.bookId})`,
+      `Quantity: ${order.quantity}`,
+      `Total: ${formatUsd(order.totalAmountCents)}`,
+      `Customer: ${order.customerName} <${order.customerEmail}>`,
+      "",
+      "Ship to:",
+      shipTo,
+    ].join("\n"),
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not send fulfillment notification.");
+  }
+}
+
+export async function sendPhysicalShippingConfirmationEmail(message: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+}): Promise<void> {
+  const resend = getResendClient();
+  const from = getFromAddress();
+  if (!resend || !from) {
+    throw Object.assign(new Error("resend_not_configured"), {
+      code: "resend_not_configured",
+    });
+  }
+
+  const { error } = await resend.emails.send(
+    {
+      from,
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    },
+    { idempotencyKey: message.idempotencyKey },
+  );
+
+  if (error) {
+    throw Object.assign(new Error("send_failed"), { code: "send_failed" });
+  }
+}

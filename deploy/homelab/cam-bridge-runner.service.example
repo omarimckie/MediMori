@@ -1,0 +1,25 @@
+# Example systemd unit — NOT installed by the repo. Copy to the homelab host after Phase 5c authorization.
+# Secrets: use EnvironmentFile pointing to a root-owned file outside git (e.g. /etc/medimori/cam-bridge.env).
+#
+# [Unit]
+# Description=MediMori CAM Cursor bridge runner (disabled by default)
+# After=network-online.target
+# Wants=network-online.target
+#
+# [Service]
+# Type=simple
+# WorkingDirectory=/opt/medimori
+# User=medimori
+# Group=medimori
+# Environment=NODE_ENV=production
+# EnvironmentFile=-/etc/medimori/cam-bridge.env
+# # Keep CENTRAL_AGENT_MANAGER_CURSOR_BRIDGE_RUNNER_ENABLED=false until offline fake transport passes.
+# ExecStart=/usr/bin/npm run cursor-bridge:runner
+# Restart=on-failure
+# RestartSec=30
+# # Resource limits (tune per NUC13 capacity)
+# MemoryMax=1G
+# CPUQuota=150%
+#
+# [Install]
+# WantedBy=multi-user.target

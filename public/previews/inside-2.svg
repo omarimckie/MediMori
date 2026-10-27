@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <rect width="900" height="1200" fill="#fbf8f3"/>
+  <rect x="60" y="70" width="780" height="1060" rx="36" fill="#ffffff" stroke="#d9c8b6" stroke-width="6"/>
+  <rect x="120" y="170" width="280" height="240" rx="24" fill="#6ec4e8" opacity="0.24"/>
+  <rect x="500" y="170" width="280" height="240" rx="24" fill="#5cb87a" opacity="0.24"/>
+  <rect x="120" y="480" width="660" height="18" rx="9" fill="#8b5e3c" opacity="0.38"/>
+  <rect x="120" y="530" width="660" height="18" rx="9" fill="#8b5e3c" opacity="0.26"/>
+  <rect x="120" y="580" width="500" height="18" rx="9" fill="#8b5e3c" opacity="0.26"/>
+  <rect x="120" y="670" width="660" height="320" rx="24" fill="#eaf7ee"/>
+  <circle cx="320" cy="830" r="80" fill="#5cb87a" opacity="0.55"/>
+  <circle cx="580" cy="830" r="80" fill="#6ec4e8" opacity="0.55"/>
+  <text x="450" y="1040" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#3a3a3a">Inside Preview Page 2</text>
+</svg>
