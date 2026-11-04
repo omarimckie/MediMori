@@ -1,0 +1,123 @@
+{
+  "manifestVersion": 1,
+  "deploymentBranch": "deploy/nuc13-cam",
+  "branchHeadCommit": "8e88ae44dfdd09ae62f4188b6e9026d58870288c",
+  "branchHeadNote": "One documentation commit after snapshotCommit; homelab path and emergency-stop guidance only. Does not change the snapshot-vs-candidate code comparison below.",
+  "snapshotCommit": "69c5c2c87312501628201023e170994d33ddcf3e",
+  "snapshotCommitMessage": "Prepare sanitized CAM deployment snapshot for NUC13",
+  "referenceCandidate": {
+    "repository": "omarimckie/MediMori",
+    "branch": "integration/candidate-cam-manager-only",
+    "commit": "213fb7acb67b52d51bcfc4e751b07fd059691cda",
+    "commitMessage": "chore(cam): Phase 6g acceptance scripts and disposable PostgreSQL runbook.",
+    "relationshipDisclaimer": "Reference candidate for comparison only. This manifest does not assert that the snapshot was exported from this commit or that an owner approved that relationship."
+  },
+  "comparisonScope": {
+    "method": "git ls-tree -r and git rev-parse blob hashes on shared paths",
+    "leftCommit": "69c5c2c87312501628201023e170994d33ddcf3e",
+    "rightCommit": "213fb7acb67b52d51bcfc4e751b07fd059691cda",
+    "inspectedAt": "2026-11-04",
+    "excludes": ["node_modules", "working tree modifications outside recorded commits"]
+  },
+  "comparisonSummary": {
+    "snapshotTrackedFiles": 1349,
+    "pathsOnlyInCandidate": 17,
+    "pathsOnlyInSnapshot": 0,
+    "contentDifferencesInSharedPaths": 7,
+    "sharedValidatorImplementation": {
+      "path": "src/lib/central-agent-manager/orchestration/external-execution-refs.ts",
+      "blobIdenticalAtComparedCommits": true
+    }
+  },
+  "omittedFromSnapshot": [
+    ".neon",
+    "tmp-aj-profile.png",
+    "tmp-amara-crown.png",
+    "tmp-blog-section.png",
+    "tmp-email.png",
+    "tmp-email2.png",
+    "tmp-email3.png",
+    "tmp-email4.png",
+    "tmp-feather-check.png",
+    "tmp-feather-check2.png",
+    "tmp-feather-check3.png",
+    "tmp-feather-hires-check.png",
+    "tmp-footer.png",
+    "tmp-friends-final.png",
+    "tmp-globe.png",
+    "tmp-highlights.png",
+    "tmp-highlights2.png"
+  ],
+  "knownDifferences": [
+    {
+      "path": ".env.example",
+      "kind": "sanitization",
+      "summary": "Snapshot uses empty secret placeholders; candidate uses illustrative sk_test_, whsec_, re_, and replace-with-long-random-string samples."
+    },
+    {
+      "path": "docs/central-agent-manager/PHASE_5A_STAGING_RUNBOOK.md",
+      "kind": "whitespace",
+      "summary": "Non-semantic whitespace on a provisioning checklist line."
+    },
+    {
+      "path": "scripts/test-phase1-ownership.ts",
+      "kind": "whitespace",
+      "summary": "Trailing newline only on candidate side."
+    },
+    {
+      "path": "src/app/globals.css",
+      "kind": "whitespace",
+      "summary": "Trailing newline only on candidate side."
+    },
+    {
+      "path": "src/lib/central-agent-manager/orchestration/cursor-bridge/cursor-rest-config.ts",
+      "kind": "whitespace",
+      "summary": "Trailing newline only on candidate side."
+    },
+    {
+      "path": "src/lib/central-agent-manager/phase6c/phase6c-security.test.ts",
+      "kind": "sanitization_and_test_hardening",
+      "summary": "Snapshot uses synthetic sk_ correlationKey via string concatenation and asserts Rejected secret-like external reference field: correlationKey. Candidate uses a Bearer sk_live_ literal with assert.throws only (any error). Runtime on shared validator: snapshot input hits secret-like rejection; candidate input hits Invalid external reference field (correlationKey format) because of embedded space.",
+      "phase6cSecurityTestFindings": {
+        "productionValidatorPath": "src/lib/central-agent-manager/orchestration/external-execution-refs.ts",
+        "validatorBlobIdenticalAtComparedCommits": true,
+        "snapshotAssertionRelativeToCandidate": "stronger_for_secret_like_path",
+        "candidateTestLimitation": "Passes on throw but does not verify secret-like rejection for its literal input.",
+        "additionalCoverage": "external-execution-refs.test.ts rejects sk_-prefixed correlation keys with /secret-like/i on both trees."
+      }
+    },
+    {
+      "path": "src/lib/marketing/incidents/sanitize-adversarial.test.ts",
+      "kind": "test_cosmetic",
+      "summary": "PEM test string built via concatenation in snapshot vs single literal in candidate; same redaction intent."
+    }
+  ],
+  "offlineVerificationRecorded": [
+    {
+      "context": "Windows checkout at branchHeadCommit; CURSOR_API_KEY cleared; CAM_ORCHESTRATION_DATABASE_URL unset",
+      "command": "tsx --test src/lib/central-agent-manager/phase6c/phase6c-security.test.ts src/lib/central-agent-manager/orchestration/external-execution-refs.test.ts",
+      "result": "9 passed, 0 failed"
+    },
+    {
+      "context": "Windows checkout at branchHeadCommit",
+      "command": "npm run cam:phase6c-offline-acceptance",
+      "result": "11 passed; homelab driver exit 0"
+    },
+    {
+      "context": "Operator NUC13 Ubuntu checkout",
+      "checkpoint": "CAM_NUC13_SYNC",
+      "result": "PASS at branchHeadCommit"
+    }
+  ],
+  "checkpoints": [
+    {
+      "name": "CAM_NUC13_SYNC",
+      "commit": "8e88ae44dfdd09ae62f4188b6e9026d58870288c",
+      "status": "PASS",
+      "recordedBy": "operator",
+      "note": "NUC13 checkout synchronized to deploy/nuc13-cam HEAD; does not resolve owner attestation."
+    }
+  ],
+  "approvalStatus": "UNRESOLVED",
+  "ownerAttestation": null
+}
