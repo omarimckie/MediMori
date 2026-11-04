@@ -59,7 +59,7 @@ Expect JSON: `{"ok":true,"code":"homelab_offline_acceptance",...}`, `phase6b_off
 | Guards | `CURSOR_API_KEY` unset; `CAM_ORCHESTRATION_DATABASE_URL` unset |
 | Demo (disabled) | `npm run cam:nuc13-fake-worker-demo` prints guard message unless `CAM_NUC13_FAKE_WORKER_DEMO=1` |
 | Logs | test stdout; runner logs under `/var/log/medimori/` when service enabled later |
-| Emergency stop | `touch /var/lib/medimori/emergency-stop` (see `cam-bridge.env.example`) |
+| Emergency stop | `touch /var/lib/medimori/cursor-bridge-runner.emergency-stop` (must match `CURSOR_BRIDGE_RUNNER_EMERGENCY_STOP_FILE` in `cam-bridge.env.example`) |
 | Rollback | Delete isolated test dir; no service changes in offline mode |
 
 ### Phase 6b manager (queue-backed objective)

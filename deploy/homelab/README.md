@@ -20,7 +20,8 @@
 ## Filesystem layout
 
 ```
-/opt/medimori/                 # application checkout (WorkingDirectory)
+/opt/medimori/                 # medimori user home (see ubuntu-vm-setup.sh.example)
+/opt/medimori/app/             # git checkout root (systemd WorkingDirectory)
 /etc/medimori/cam-bridge.env   # root-owned 0600 secrets
 /var/lib/medimori/             # lock, budget, emergency-stop files
 /var/log/medimori/             # runner logs (journald preferred)

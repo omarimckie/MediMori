@@ -8,7 +8,7 @@
 #
 # [Service]
 # Type=simple
-# WorkingDirectory=/opt/medimori
+# WorkingDirectory=/opt/medimori/app
 # User=medimori
 # Group=medimori
 # Environment=NODE_ENV=production
