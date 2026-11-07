@@ -48,6 +48,7 @@ import {
   reconcileStaleCaptionSubmitSessionMessage,
 } from "@/lib/marketing/smart-upload-caption-submit-message";
 import { SmartUploadCaptionAssistant } from "./SmartUploadCaptionAssistant";
+import { SmartUploadFilePreview } from "./SmartUploadFilePreview";
 import {
   assertAtLeastOneDestination,
   metaDestinationsSelected,
@@ -266,10 +267,10 @@ function appendSmartUploadMultipartFinalizeFields(
   form.set("pinterestDescription", captions.pinterestDescription ?? "");
 }
 
-function statusLabel(status: FileStatus): string {
+function statusLabel(status: FileStatus, staged: boolean): string {
   switch (status) {
     case "ready":
-      return "Ready";
+      return staged ? "Ready" : "Queued";
     case "uploading":
       return "Uploading";
     case "validating":
@@ -1572,6 +1573,13 @@ export function SmartUploadClient() {
                       ))}
                     </ul>
                   ) : null}
+                  {item.status !== "submitted" ? (
+                    <SmartUploadFilePreview
+                      file={item.file}
+                      pathname={item.pathname}
+                      uploadIntent={item.uploadIntent}
+                    />
+                  ) : null}
                   {canUseInBrowserFixWorkflow(item) ? (
                     <div className="mt-2 space-y-2">
                       {(metaDestinationsSelected(destinations) && (needsMetaFix || item.acceptedPreview)) ||
@@ -1649,7 +1657,7 @@ export function SmartUploadClient() {
                 <span
                   className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-bold uppercase ${statusTone(item.status)}`}
                 >
-                  {statusLabel(item.status)}
+                  {statusLabel(item.status, Boolean(item.uploadIntent && item.pathname))}
                 </span>
               </li>
             );

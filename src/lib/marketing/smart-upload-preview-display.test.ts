@@ -19,6 +19,10 @@ test("corrected preview pane uses staged-image route not previewSignedUrl", () =
   assert.doesNotMatch(clientSource, /previewSignedUrl/);
 });
 
+test("list file row renders SmartUploadFilePreview for staged uploads", () => {
+  assert.match(clientSource, /<SmartUploadFilePreview/);
+});
+
 test("smart-upload preview fix no longer emits previewSignedUrl", () => {
   const source = readFileSync(path.join(process.cwd(), "src/lib/marketing/smart-upload.ts"), "utf8");
   const fn = source.slice(

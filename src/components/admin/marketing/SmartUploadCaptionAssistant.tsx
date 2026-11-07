@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import type { AudienceId, ContentCategory } from "@/lib/marketing/types";
 import { CAPTION_CLIENT_INSTRUCTIONS_MAX_LENGTH } from "@/lib/marketing/smart-upload-caption-client";
+import { resourceBlobStorageUnavailableMessage } from "@/lib/marketing/resource-multipart-fallback";
 import {
   CAPTION_ASSISTANT_AUDIENCES,
   CAPTION_ASSISTANT_CONTENT_CATEGORIES,
@@ -59,6 +60,13 @@ export function SmartUploadCaptionAssistant({
 
   const fieldsDisabled = disabled || generating;
   const generateDisabled = fieldsDisabled || !generationReady || generating;
+  const configurationBlocked = Boolean(
+    generationReadyReason &&
+      (generationReadyReason === resourceBlobStorageUnavailableMessage() ||
+        /Caption service unavailable|authentication is required|OpenAI|API key|not configured/i.test(
+          generationReadyReason,
+        )),
+  );
   const hasGeneratedDraft = state.genStatus === "generated" || Boolean(state.generatedFrom);
   const generateLabel = generating
     ? "Generating…"
@@ -117,6 +125,11 @@ export function SmartUploadCaptionAssistant({
           </label>
         </fieldset>
       </div>
+      <p className="text-xs leading-relaxed text-brand-charcoal/60">
+        Use <span className="font-semibold text-brand-charcoal/75">Upload &amp; validate</span> for this
+        image, then click <span className="font-semibold text-brand-charcoal/75">Generate Caption</span>.
+        Captions are not created automatically.
+      </p>
 
       {state.mode === "shared" ? (
         <>
@@ -343,7 +356,20 @@ export function SmartUploadCaptionAssistant({
       <div className="rounded-xl border border-brand-brown/15 bg-cream-deep/30 p-3">
         <p className="text-xs font-bold text-brand-charcoal/70">AI generation</p>
         {!generationReady && generationReadyReason ? (
-          <p className="mt-1 text-xs text-brand-charcoal/55">{generationReadyReason}</p>
+          <p
+            className={`mt-2 text-xs leading-relaxed ${
+              configurationBlocked
+                ? "font-semibold text-brand-orange-deep"
+                : "font-medium text-brand-charcoal/70"
+            }`}
+            role={configurationBlocked ? "alert" : "status"}
+          >
+            {generationReadyReason}
+          </p>
+        ) : generationReady && state.genStatus === "idle" && !state.provenance ? (
+          <p className="mt-1 text-xs text-brand-charcoal/55">
+            Ready — click Generate Caption when your copy settings look right.
+          </p>
         ) : null}
         {state.genError ? (
           <p className="mt-2 text-xs font-semibold text-brand-orange-deep" role="alert">
