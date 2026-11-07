@@ -239,6 +239,13 @@ test("http error mapping", () => {
     /OPENAI_API_KEY/i,
   );
   assert.match(
+    mapCaptionGenerationHttpError(
+      503,
+      "OpenAI HTTP 401 (expired_secret_key: invalid_request_error: Your API key has expired.)",
+    ),
+    /expired/i,
+  );
+  assert.match(
     mapCaptionGenerationHttpError(503, "OpenAI API key is not configured for live caption generation."),
     /OpenAI API key/i,
   );

@@ -78,6 +78,9 @@ export function mapCaptionGeneration502Error(serverMessage: string): string {
   if (!trimmed || isUnsafeCaptionClientMessage(trimmed)) {
     return "Caption service unavailable. Try again in a moment.";
   }
+  if (/expired_secret_key|API key has expired/i.test(trimmed)) {
+    return "OpenAI API key has expired. Create a new key in the OpenAI dashboard and update OPENAI_API_KEY in Vercel.";
+  }
   if (/OpenAI HTTP 401|invalid api key|incorrect api key|authentication.*openai/i.test(trimmed)) {
     return "OpenAI API key is invalid or unauthorized. Check OPENAI_API_KEY in Vercel project settings.";
   }

@@ -125,6 +125,7 @@ export function smartUploadCaptionErrorStatus(error: unknown): number {
 
   const message = error instanceof Error ? error.message : String(error);
   if (/OpenAI API key is not configured|Caption AI is not configured/i.test(message)) return 503;
+  if (/expired_secret_key|OpenAI HTTP 401.*API key has expired/i.test(message)) return 503;
   if (/Unauthorized/i.test(message)) return 401;
   if (/Campaign not found/i.test(message)) return 404;
   if (/OpenAI HTTP|timed out|empty multimodal|not valid JSON/i.test(message)) return 502;

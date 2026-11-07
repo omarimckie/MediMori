@@ -152,6 +152,17 @@ test("smartUploadCaptionErrorStatus maps missing live AI config to 503", () => {
   );
 });
 
+test("smartUploadCaptionErrorStatus maps expired OpenAI key to 503", () => {
+  assert.equal(
+    smartUploadCaptionErrorStatus(
+      new Error(
+        "OpenAI HTTP 401 (expired_secret_key: invalid_request_error: Your API key has expired. Create a new API key to continue.)",
+      ),
+    ),
+    503,
+  );
+});
+
 
 
 test("smartUploadCaptionErrorStatus maps client validation to 400", () => {
