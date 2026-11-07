@@ -12,7 +12,10 @@ import {
 
 import { SmartUploadCaptionGroundingError } from "./smart-upload-caption-errors";
 
-import { SmartUploadCaptionProviderError } from "./smart-upload-caption-errors";
+import {
+  SmartUploadCaptionConfigurationError,
+  SmartUploadCaptionProviderError,
+} from "./smart-upload-caption-errors";
 
 
 
@@ -138,6 +141,15 @@ test("smartUploadCaptionErrorStatus maps malformed model output to 502", () => {
 
   );
 
+});
+
+test("smartUploadCaptionErrorStatus maps missing live AI config to 503", () => {
+  assert.equal(
+    smartUploadCaptionErrorStatus(
+      new SmartUploadCaptionConfigurationError("OpenAI API key is not configured for live caption generation."),
+    ),
+    503,
+  );
 });
 
 

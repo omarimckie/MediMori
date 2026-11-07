@@ -42,6 +42,27 @@ export interface AIProvider {
 
 const textCache = new Map<string, string>();
 
+async function formatOpenAiHttpError(response: Response): Promise<string> {
+  const status = response.status;
+  let detail = "";
+  try {
+    const body = (await response.json()) as {
+      error?: { message?: string; code?: string; type?: string };
+    };
+    const parts: string[] = [];
+    const code = body.error?.code?.trim();
+    const type = body.error?.type?.trim();
+    const message = body.error?.message?.trim();
+    if (code) parts.push(code);
+    if (type) parts.push(type);
+    if (message && !/sk-[A-Za-z0-9]{8,}/.test(message)) parts.push(message);
+    detail = parts.join(": ");
+  } catch {
+    // ignore unparsable error bodies
+  }
+  return detail ? `OpenAI HTTP ${status} (${detail})` : `OpenAI HTTP ${status}`;
+}
+
 export class MockAIProvider implements AIProvider {
   id = "mock";
 
@@ -103,7 +124,7 @@ export class OpenAIProvider implements AIProvider {
     });
 
     if (!response.ok) {
-      const error = `OpenAI HTTP ${response.status}`;
+      const error = await formatOpenAiHttpError(response);
       logMarketing({
         operation: input.task,
         provider: this.id,
@@ -181,7 +202,7 @@ export class OpenAIProvider implements AIProvider {
       });
 
       if (!response.ok) {
-        const error = `OpenAI HTTP ${response.status}`;
+        const error = await formatOpenAiHttpError(response);
         logMarketing({
           operation: input.task,
           provider: this.id,

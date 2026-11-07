@@ -234,6 +234,15 @@ test("failure mapping preserves draft", () => {
 test("http error mapping", () => {
   assert.match(mapCaptionGenerationHttpError(401, ""), /authentication/i);
   assert.match(mapCaptionGenerationHttpError(502, ""), /unavailable/i);
+  assert.match(
+    mapCaptionGenerationHttpError(502, "OpenAI HTTP 401 (invalid_api_key: Incorrect API key)"),
+    /OPENAI_API_KEY/i,
+  );
+  assert.match(
+    mapCaptionGenerationHttpError(503, "OpenAI API key is not configured for live caption generation."),
+    /OpenAI API key/i,
+  );
+  assert.match(mapCaptionGenerationHttpError(502, "OpenAI HTTP 500 (server_error)"), /temporarily unavailable/i);
   assert.equal(mapCaptionGenerationHttpError(400, "bad"), "bad");
 });
 

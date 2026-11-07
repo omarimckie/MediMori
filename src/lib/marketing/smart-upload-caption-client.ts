@@ -65,26 +65,70 @@ export function buildGenerateCaptionsRequestBody(
   return body;
 }
 
+function isUnsafeCaptionClientMessage(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 320) return true;
+  return /(?:sk-[A-Za-z0-9]{8,}|data:image\/|base64,)/i.test(trimmed);
+}
+
+/** Maps provider/upstream failures to operator-facing text without echoing secrets. */
+export function mapCaptionGeneration502Error(serverMessage: string): string {
+  const trimmed = serverMessage.trim();
+  if (!trimmed || isUnsafeCaptionClientMessage(trimmed)) {
+    return "Caption service unavailable. Try again in a moment.";
+  }
+  if (/OpenAI HTTP 401|invalid api key|incorrect api key|authentication.*openai/i.test(trimmed)) {
+    return "OpenAI API key is invalid or unauthorized. Check OPENAI_API_KEY in Vercel project settings.";
+  }
+  if (/OpenAI HTTP 403|does not exist|model.*not found|model_not_found/i.test(trimmed)) {
+    return `OpenAI model is not available for this project. Check MARKETING_AI_COMPLEX_MODEL. (${trimmed})`;
+  }
+  if (/OpenAI HTTP 429|rate limit/i.test(trimmed)) {
+    return "OpenAI rate limit reached. Wait a moment and try again.";
+  }
+  if (/timed out/i.test(trimmed)) {
+    return "Caption generation timed out. Try again, or use a smaller image.";
+  }
+  if (/OpenAI HTTP 5\d\d/i.test(trimmed)) {
+    return "OpenAI is temporarily unavailable. Try again shortly.";
+  }
+  if (/Caption model response/i.test(trimmed)) {
+    return `${trimmed} Use Regenerate Caption to try again.`;
+  }
+  if (/OpenAI HTTP|OpenAI multimodal|empty multimodal|not valid JSON/i.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed;
+}
+
 export function mapCaptionGenerationHttpError(status: number, serverMessage: string): string {
+  const trimmed = serverMessage.trim();
   if (status === 401) {
     return "Admin authentication is required. Sign in and try again.";
   }
   if (status === 404) {
-    return serverMessage.trim() || "Campaign not found.";
+    return trimmed || "Campaign not found.";
   }
   if (status === 422) {
     return (
-      serverMessage.trim() ||
+      trimmed ||
       "Caption could not satisfy approved marketing and medical grounding. Adjust instructions or context and try again."
     );
   }
+  if (status === 503) {
+    return (
+      trimmed ||
+      "Caption AI is not configured for live generation. Set OPENAI_API_KEY and MARKETING_MOCK_MODE=false on Vercel."
+    );
+  }
   if (status === 502) {
-    return "Caption service unavailable. Try again.";
+    return mapCaptionGeneration502Error(trimmed);
   }
   if (status === 400) {
-    return serverMessage.trim() || "Image or request was invalid. Re-validate the upload and try again.";
+    return trimmed || "Image or request was invalid. Re-validate the upload and try again.";
   }
-  return serverMessage.trim() || "Caption generation failed. Try again.";
+  return trimmed || "Caption generation failed. Try again.";
 }
 
 function parsePlatformDraftFromResponse(

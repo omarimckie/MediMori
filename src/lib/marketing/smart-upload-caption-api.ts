@@ -1,6 +1,7 @@
 import type { SmartUploadCaptionBlobRef } from "./smart-upload-caption-security";
 import type { SmartUploadCaptionMode } from "./smart-upload-caption-types";
 import {
+  SmartUploadCaptionConfigurationError,
   SmartUploadCaptionGroundingError,
   SmartUploadCaptionProviderError,
 } from "./smart-upload-caption-errors";
@@ -119,9 +120,11 @@ export function parseSmartUploadGenerateCaptionsBody(record: Record<string, unkn
 
 export function smartUploadCaptionErrorStatus(error: unknown): number {
   if (error instanceof SmartUploadCaptionGroundingError) return 422;
+  if (error instanceof SmartUploadCaptionConfigurationError) return 503;
   if (error instanceof SmartUploadCaptionProviderError) return 502;
 
   const message = error instanceof Error ? error.message : String(error);
+  if (/OpenAI API key is not configured|Caption AI is not configured/i.test(message)) return 503;
   if (/Unauthorized/i.test(message)) return 401;
   if (/Campaign not found/i.test(message)) return 404;
   if (/OpenAI HTTP|timed out|empty multimodal|not valid JSON/i.test(message)) return 502;
