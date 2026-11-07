@@ -24,7 +24,10 @@ import type { SmartUploadCaptionModelPayload } from "./smart-upload-caption-type
 
 import { SmartUploadCaptionGroundingError } from "./smart-upload-caption-errors";
 
-import { SmartUploadCaptionProviderError } from "./smart-upload-caption-errors";
+import {
+  SmartUploadCaptionConfigurationError,
+  SmartUploadCaptionProviderError,
+} from "./smart-upload-caption-errors";
 
 import type { MarketingCampaign } from "./types";
 
@@ -1223,4 +1226,34 @@ test("grounding retry: pinterest medical paraphrase fails then succeeds with saf
 
   assert.equal(recorder.callCount, 2);
   assert.match(result.pinterest?.description ?? "", /gentle story/i);
+});
+
+test("live caption generation rejects missing OpenAI key when mock mode is off", async () => {
+  const store = new MemoryMarketingStore();
+  const uploadIntent = issueSmartUploadIntent({ username: "owner", pathname: ORIGINAL_PATH }).uploadIntent;
+  const prevMock = process.env.MARKETING_MOCK_MODE;
+  const prevKey = process.env.OPENAI_API_KEY;
+  process.env.MARKETING_MOCK_MODE = "false";
+  delete process.env.OPENAI_API_KEY;
+  try {
+    await assert.rejects(
+      () =>
+        generateSmartUploadCaptions(store, {
+          actorUsername: "owner",
+          mode: "shared",
+          instructions: null,
+          explicitCta: null,
+          bookId: null,
+          campaignId: null,
+          original: stagedRef(uploadIntent),
+          acceptedDerivative: null,
+        }),
+      SmartUploadCaptionConfigurationError,
+    );
+  } finally {
+    if (prevMock === undefined) delete process.env.MARKETING_MOCK_MODE;
+    else process.env.MARKETING_MOCK_MODE = prevMock;
+    if (prevKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = prevKey;
+  }
 });

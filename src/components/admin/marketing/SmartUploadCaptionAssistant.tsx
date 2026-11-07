@@ -63,7 +63,7 @@ export function SmartUploadCaptionAssistant({
   const configurationBlocked = Boolean(
     generationReadyReason &&
       (generationReadyReason === resourceBlobStorageUnavailableMessage() ||
-        /Caption service unavailable|authentication is required|OpenAI|API key|not configured/i.test(
+        /Caption service unavailable|authentication is required|OpenAI|API key|not configured|Caption AI is not configured|MARKETING_AI_COMPLEX_MODEL|rate limit/i.test(
           generationReadyReason,
         )),
   );

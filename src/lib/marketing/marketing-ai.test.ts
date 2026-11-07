@@ -72,6 +72,28 @@ test("OpenAI multimodal HTTP failure throws", async () => {
   );
 });
 
+test("OpenAI multimodal HTTP failure includes safe API error detail", async () => {
+  const provider = new OpenAIProvider("test-key");
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: { code: "model_not_found", message: "The model `gpt-4.1` does not exist." },
+      }),
+      { status: 404 },
+    );
+  await assert.rejects(
+    () =>
+      provider.generateMultimodalStructuredOutput({
+        task: "t",
+        systemPrompt: "s",
+        userText: "u",
+        image: { mimeType: "image/png", base64: "x" },
+        fallback: {},
+      }),
+    /model_not_found/,
+  );
+});
+
 test("OpenAI multimodal malformed JSON throws", async () => {
   const provider = new OpenAIProvider("test-key");
   globalThis.fetch = async () =>

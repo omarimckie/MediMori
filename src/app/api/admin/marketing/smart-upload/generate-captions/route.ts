@@ -8,6 +8,8 @@ import {
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+/** OpenAI multimodal caption generation can exceed the default hobby function limit. */
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const auth = await requireMarketingAdmin();

@@ -4,7 +4,7 @@ import type { AIProvider } from "./ai";
 
 import { getAIProvider } from "./ai";
 
-import { getAiComplexModel, isMockMode } from "./config";
+import { getAiComplexModel, getOpenAiKey, isMockMode } from "./config";
 
 import { scanMarketingText } from "./safety";
 
@@ -55,6 +55,7 @@ import type {
 import { logMarketing } from "./logger";
 
 import {
+  SmartUploadCaptionConfigurationError,
   SmartUploadCaptionGroundingError,
   SmartUploadCaptionProviderError,
 } from "./smart-upload-caption-errors";
@@ -378,6 +379,12 @@ export async function generateSmartUploadCaptions(
   });
 
 
+
+  if (!isMockMode() && !getOpenAiKey()) {
+    throw new SmartUploadCaptionConfigurationError(
+      "OpenAI API key is not configured for live caption generation.",
+    );
+  }
 
   const provider = input.provider ?? getAIProvider();
 
