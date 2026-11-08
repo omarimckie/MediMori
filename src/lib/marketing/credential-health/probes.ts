@@ -18,13 +18,13 @@ export const CREDENTIAL_PROBE_TIMEOUT_MS = 10_000;
 
 export type CredentialProbeFetch = (
   url: string,
-  init: { signal: AbortSignal },
+  init: { signal: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 /** Production cron path: Node/edge `fetch` with injectable probe shape. */
 export async function runtimeCredentialProbeFetch(
   url: string,
-  init: { signal: AbortSignal },
+  init: { signal: AbortSignal; headers?: Record<string, string> },
 ): Promise<{ status: number; json: () => Promise<unknown> }> {
   const response = await fetch(url, init);
   return {

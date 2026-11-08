@@ -4,7 +4,7 @@ import type {
   CredentialHealthObservationPrior,
   CredentialHealthSnapshot,
   CredentialValidationAttempt,
-  MetaCredentialPlatform,
+  CredentialHealthPlatform,
 } from "./types";
 import { classifyCredentialHealth } from "./classify";
 import { credentialFingerprintChanged } from "./fingerprint";
@@ -14,14 +14,17 @@ import { credentialFingerprintChanged } from "./fingerprint";
  * Does not write to the database in B3-A — serializer only (Decision 6 pattern).
  */
 export function credentialHealthHeartbeatSource(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): string {
+  if (platform === "openai") {
+    return "openai_credential_health:openai";
+  }
   return `meta_credential_health:${platform}`;
 }
 
 export type CredentialHealthHeartbeatMetadata = {
   schema_version: 1;
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   last_validation_attempt_at: string;
   last_successful_validation_at: string | null;
   validity: string;

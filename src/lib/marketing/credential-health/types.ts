@@ -1,6 +1,9 @@
 /** Meta platforms covered by Phase III-B3 credential health. */
 export type MetaCredentialPlatform = "facebook" | "instagram";
 
+/** Monitored credential targets (Meta publish + OpenAI API). */
+export type CredentialHealthPlatform = MetaCredentialPlatform | "openai";
+
 export const CREDENTIAL_HEALTH_STATES = [
   "healthy",
   "expiring_soon",
@@ -38,6 +41,7 @@ export type EvidenceConfidence = "high" | "medium" | "low";
 export type CredentialValidationMethod =
   | "meta_debug_token"
   | "instagram_graph_me"
+  | "openai_models_list"
   | "unsupported"
   | "not_attempted";
 
@@ -47,7 +51,7 @@ export type CredentialMonitoringAvailability =
   | "not_configured";
 
 export type CredentialValidationAttempt = {
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   method: CredentialValidationMethod;
   /** ISO-8601 instant of this validation attempt. */
   attemptedAt: string;
@@ -83,7 +87,7 @@ export type CredentialHealthClassification = {
 };
 
 export type CredentialHealthSnapshot = {
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   classification: CredentialHealthClassification;
   attemptedAt: string;
   lastSuccessfulValidationAt: string | null;

@@ -13,11 +13,19 @@ import {
   type CredentialProbeKind,
 } from "./policy";
 import { snapshotIncidentEvidence } from "./snapshot";
-import type { CredentialHealthClassification, CredentialValidationAttempt, MetaCredentialPlatform } from "./types";
+import type {
+  CredentialHealthClassification,
+  CredentialHealthPlatform,
+  CredentialValidationAttempt,
+} from "./types";
+
+function credentialProviderForPlatform(platform: CredentialHealthPlatform): "meta" | "openai" {
+  return platform === "openai" ? "openai" : "meta";
+}
 
 export async function findOpenCredentialWarningIncident(
   repository: MarketingIncidentRepository,
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): Promise<MarketingIncidentRecord | null> {
   const incident = await repository.findByDedupeKey(
     credentialWarningIncidentDedupeKey(platform),
@@ -30,7 +38,7 @@ export async function findOpenCredentialWarningIncident(
 
 export async function recordCredentialWarningIncident(
   input: {
-    platform: MetaCredentialPlatform;
+    platform: CredentialHealthPlatform;
     classification: CredentialHealthClassification;
     attempt: CredentialValidationAttempt;
     credentialFingerprint: string | null;
@@ -65,7 +73,7 @@ export async function recordCredentialWarningIncident(
         permittedActions: ["investigate_read_only", "notify_owner"],
         humanApprovalRequired: false,
         platform: input.platform,
-        provider: "meta",
+        provider: credentialProviderForPlatform(input.platform),
         evidence,
         detectedAt: input.attempt.attemptedAt,
       },
@@ -89,7 +97,7 @@ export async function recordCredentialWarningIncident(
         permittedActions: ["investigate_read_only", "notify_owner"],
         humanApprovalRequired: false,
         platform: input.platform,
-        provider: "meta",
+        provider: credentialProviderForPlatform(input.platform),
         evidence,
         detectedAt: input.attempt.attemptedAt,
       },
@@ -102,7 +110,7 @@ export async function recordCredentialWarningIncident(
 
 export async function resolveCredentialWarningIfRecovered(
   input: {
-    platform: MetaCredentialPlatform;
+    platform: CredentialHealthPlatform;
     classification: CredentialHealthClassification;
     repository?: MarketingIncidentRepository;
     sourceOperation: string;
@@ -127,9 +135,21 @@ export async function resolveCredentialWarningIfRecovered(
 }
 
 function credentialIncidentMessage(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   errorClass: string,
 ): string {
+  if (platform === "openai") {
+    if (errorClass === "openai_credentials_missing") {
+      return "OpenAI API key is not configured.";
+    }
+    if (errorClass === "openai_auth_expired") {
+      return "OpenAI API key has expired. Smart Upload captions and other AI features may fail.";
+    }
+    if (errorClass === "openai_auth_invalid") {
+      return "OpenAI API key is invalid or revoked.";
+    }
+    return `OpenAI API credential health requires attention (${errorClass}).`;
+  }
   const label = platform === "facebook" ? "Facebook" : "Instagram";
   if (errorClass === "meta_auth_expiring_soon") {
     return `${label} access token expires within seven days. Renew before publishing fails.`;

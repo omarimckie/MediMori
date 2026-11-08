@@ -6,11 +6,25 @@ import { resolveCredentialHealthHeartbeatStore } from "./heartbeat-store-runtime
 import { storedToClientSafeMetadata } from "./merge-state";
 import {
   getCredentialMonitoringEnabledAtIso,
+  getOpenAiCredentialMonitoringEnabledAtIso,
   isCredentialMonitoringEnabled,
+  isOpenAiCredentialMonitoringEnabled,
 } from "./monitoring-config";
-import type { MetaCredentialPlatform } from "./types";
+import { isCredentialHealthObservationStale } from "./stale-heartbeat";
+import type { CredentialHealthPlatform } from "./types";
 
-const PLATFORMS: MetaCredentialPlatform[] = ["facebook", "instagram"];
+const DASHBOARD_PLATFORMS: CredentialHealthPlatform[] = ["facebook", "instagram", "openai"];
+
+function isPlatformMonitoringEnabled(
+  platform: CredentialHealthPlatform,
+  env: Record<string, string | undefined>,
+  nowIso: string,
+): boolean {
+  if (platform === "openai") {
+    return isOpenAiCredentialMonitoringEnabled(env, nowIso);
+  }
+  return isCredentialMonitoringEnabled(env, nowIso);
+}
 
 export type CredentialHealthActiveIncidentView = {
   id: string;
@@ -22,9 +36,11 @@ export type CredentialHealthActiveIncidentView = {
 };
 
 export type CredentialHealthPlatformDashboardView = {
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   platformLabel: string;
   monitoringState: "disabled" | "no_observation" | "observed";
+  observationStale: boolean;
+  showPublishingPermissions: boolean;
   validity: "valid" | "invalid" | "unknown" | null;
   healthState: string | null;
   healthStateLabel: string;
@@ -40,8 +56,11 @@ export type CredentialHealthPlatformDashboardView = {
 };
 
 export type CredentialHealthDashboardView = {
+  /** Meta (Facebook / Instagram) proactive monitoring. */
   monitoringEnabled: boolean;
   monitoringEnabledAt: string | null;
+  openAiMonitoringEnabled: boolean;
+  openAiMonitoringEnabledAt: string | null;
   platforms: CredentialHealthPlatformDashboardView[];
 };
 
@@ -52,7 +71,8 @@ export type CredentialHealthDashboardDeps = {
   nowIso?: string;
 };
 
-function platformLabel(platform: MetaCredentialPlatform): string {
+function platformLabel(platform: CredentialHealthPlatform): string {
+  if (platform === "openai") return "OpenAI API key";
   return platform === "facebook" ? "Facebook" : "Instagram";
 }
 
@@ -93,7 +113,7 @@ function permissionStatusLabel(permission: string): string {
 
 function pickActiveCredentialIncident(
   incidents: MarketingIncidentRecord[],
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): MarketingIncidentRecord | null {
   const dedupe = credentialWarningIncidentDedupeKey(platform);
   const match = incidents.find(
@@ -123,25 +143,32 @@ export async function buildCredentialHealthDashboardView(
   const nowIso = deps.nowIso ?? new Date().toISOString();
   const monitoringEnabled = isCredentialMonitoringEnabled(env, nowIso);
   const monitoringEnabledAt = getCredentialMonitoringEnabledAtIso(env);
+  const openAiMonitoringEnabled = isOpenAiCredentialMonitoringEnabled(env, nowIso);
+  const openAiMonitoringEnabledAt = getOpenAiCredentialMonitoringEnabledAtIso(env);
   const store = resolveCredentialHealthHeartbeatStore(deps.heartbeatStore);
   const listIncidentsFn = deps.listIncidentsFn ?? listIncidents;
 
-  const incidents = monitoringEnabled
-    ? await listIncidentsFn({ unresolvedOnly: true, limit: 100 })
-    : [];
+  const incidents =
+    monitoringEnabled || openAiMonitoringEnabled
+      ? await listIncidentsFn({ unresolvedOnly: true, limit: 100 })
+      : [];
 
   const platforms: CredentialHealthPlatformDashboardView[] = [];
 
-  for (const platform of PLATFORMS) {
-    const activeIncident = monitoringEnabled
+  for (const platform of DASHBOARD_PLATFORMS) {
+    const platformEnabled = isPlatformMonitoringEnabled(platform, env, nowIso);
+    const activeIncident = platformEnabled
       ? pickActiveCredentialIncident(incidents, platform)
       : null;
+    const showPublishingPermissions = platform !== "openai";
 
-    if (!monitoringEnabled) {
+    if (!platformEnabled) {
       platforms.push({
         platform,
         platformLabel: platformLabel(platform),
         monitoringState: "disabled",
+        observationStale: false,
+        showPublishingPermissions,
         validity: null,
         healthState: null,
         healthStateLabel: formatHealthStateLabel(null, "disabled"),
@@ -164,6 +191,8 @@ export async function buildCredentialHealthDashboardView(
         platform,
         platformLabel: platformLabel(platform),
         monitoringState: "no_observation",
+        observationStale: true,
+        showPublishingPermissions,
         validity: "unknown",
         healthState: null,
         healthStateLabel: formatHealthStateLabel(null, "no_observation"),
@@ -181,6 +210,10 @@ export async function buildCredentialHealthDashboardView(
     }
 
     const safe = storedToClientSafeMetadata(stored);
+    const observationStale = isCredentialHealthObservationStale(
+      safe.last_validation_attempt_at,
+      nowIso,
+    );
     const expirationStatus =
       (safe.expiration_knowledge as CredentialHealthPlatformDashboardView["expirationStatus"]) ??
       null;
@@ -194,6 +227,8 @@ export async function buildCredentialHealthDashboardView(
       platform,
       platformLabel: platformLabel(platform),
       monitoringState: "observed",
+      observationStale,
+      showPublishingPermissions,
       validity:
         safe.validity === "valid" || safe.validity === "invalid" || safe.validity === "unknown"
           ? safe.validity
@@ -215,6 +250,8 @@ export async function buildCredentialHealthDashboardView(
   return {
     monitoringEnabled,
     monitoringEnabledAt,
+    openAiMonitoringEnabled,
+    openAiMonitoringEnabledAt,
     platforms,
   };
 }
