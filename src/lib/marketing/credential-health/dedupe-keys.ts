@@ -1,4 +1,5 @@
 import type { MarketingIncidentRecord } from "../incidents/types";
+import { isIntegrationCredentialPlatform } from "./integration-platforms";
 import type { CredentialHealthPlatform, MetaCredentialPlatform } from "./types";
 
 export function credentialWarningIncidentDedupeKey(
@@ -6,6 +7,12 @@ export function credentialWarningIncidentDedupeKey(
 ): string {
   if (platform === "openai") {
     return "incident:credential_warning:v1:openai:api_key";
+  }
+  if (platform === "facebook" || platform === "instagram") {
+    return `incident:credential_warning:v1:meta:${platform}`;
+  }
+  if (isIntegrationCredentialPlatform(platform)) {
+    return `incident:credential_warning:v1:${platform}:credential`;
   }
   return `incident:credential_warning:v1:meta:${platform}`;
 }

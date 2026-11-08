@@ -61,7 +61,9 @@ describe("Phase III-B3-C credential health dashboard", () => {
     });
     assert.equal(view.monitoringEnabled, true);
     assert.equal(view.openAiMonitoringEnabled, false);
-    const metaRows = view.platforms.filter((p) => p.platform !== "openai");
+    const metaRows = view.platforms.filter(
+      (p) => p.platform === "facebook" || p.platform === "instagram",
+    );
     assert.ok(metaRows.every((p) => p.monitoringState === "no_observation"));
     assert.ok(metaRows.every((p) => p.validity === "unknown"));
     assert.ok(metaRows.every((p) => /not verified/i.test(p.healthStateLabel)));

@@ -6,14 +6,22 @@ import { resolveCredentialHealthHeartbeatStore } from "./heartbeat-store-runtime
 import { storedToClientSafeMetadata } from "./merge-state";
 import {
   getCredentialMonitoringEnabledAtIso,
+  getIntegrationCredentialMonitoringEnabledAtIso,
   getOpenAiCredentialMonitoringEnabledAtIso,
   isCredentialMonitoringEnabled,
+  isIntegrationCredentialMonitoringEnabled,
   isOpenAiCredentialMonitoringEnabled,
 } from "./monitoring-config";
+import { INTEGRATION_CREDENTIAL_REGISTRY } from "./provider-registry";
 import { isCredentialHealthObservationStale } from "./stale-heartbeat";
 import type { CredentialHealthPlatform } from "./types";
 
-const DASHBOARD_PLATFORMS: CredentialHealthPlatform[] = ["facebook", "instagram", "openai"];
+const DASHBOARD_PLATFORMS: CredentialHealthPlatform[] = [
+  "facebook",
+  "instagram",
+  "openai",
+  ...INTEGRATION_CREDENTIAL_REGISTRY.map((row) => row.platform),
+];
 
 function isPlatformMonitoringEnabled(
   platform: CredentialHealthPlatform,
@@ -22,6 +30,9 @@ function isPlatformMonitoringEnabled(
 ): boolean {
   if (platform === "openai") {
     return isOpenAiCredentialMonitoringEnabled(env, nowIso);
+  }
+  if (platform !== "facebook" && platform !== "instagram") {
+    return isIntegrationCredentialMonitoringEnabled(env, nowIso);
   }
   return isCredentialMonitoringEnabled(env, nowIso);
 }
@@ -38,6 +49,7 @@ export type CredentialHealthActiveIncidentView = {
 export type CredentialHealthPlatformDashboardView = {
   platform: CredentialHealthPlatform;
   platformLabel: string;
+  platformDescription: string | null;
   monitoringState: "disabled" | "no_observation" | "observed";
   observationStale: boolean;
   showPublishingPermissions: boolean;
@@ -61,6 +73,8 @@ export type CredentialHealthDashboardView = {
   monitoringEnabledAt: string | null;
   openAiMonitoringEnabled: boolean;
   openAiMonitoringEnabledAt: string | null;
+  integrationMonitoringEnabled: boolean;
+  integrationMonitoringEnabledAt: string | null;
   platforms: CredentialHealthPlatformDashboardView[];
 };
 
@@ -73,7 +87,17 @@ export type CredentialHealthDashboardDeps = {
 
 function platformLabel(platform: CredentialHealthPlatform): string {
   if (platform === "openai") return "OpenAI API key";
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
+  if (integration) return integration.label;
   return platform === "facebook" ? "Facebook" : "Instagram";
+}
+
+function platformDescription(platform: CredentialHealthPlatform): string | null {
+  if (platform === "openai") {
+    return "Smart Upload captions and marketing AI (read-only models list).";
+  }
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
+  return integration?.description ?? null;
 }
 
 function formatHealthStateLabel(
@@ -145,11 +169,13 @@ export async function buildCredentialHealthDashboardView(
   const monitoringEnabledAt = getCredentialMonitoringEnabledAtIso(env);
   const openAiMonitoringEnabled = isOpenAiCredentialMonitoringEnabled(env, nowIso);
   const openAiMonitoringEnabledAt = getOpenAiCredentialMonitoringEnabledAtIso(env);
+  const integrationMonitoringEnabled = isIntegrationCredentialMonitoringEnabled(env, nowIso);
+  const integrationMonitoringEnabledAt = getIntegrationCredentialMonitoringEnabledAtIso(env);
   const store = resolveCredentialHealthHeartbeatStore(deps.heartbeatStore);
   const listIncidentsFn = deps.listIncidentsFn ?? listIncidents;
 
   const incidents =
-    monitoringEnabled || openAiMonitoringEnabled
+    monitoringEnabled || openAiMonitoringEnabled || integrationMonitoringEnabled
       ? await listIncidentsFn({ unresolvedOnly: true, limit: 100 })
       : [];
 
@@ -160,12 +186,14 @@ export async function buildCredentialHealthDashboardView(
     const activeIncident = platformEnabled
       ? pickActiveCredentialIncident(incidents, platform)
       : null;
-    const showPublishingPermissions = platform !== "openai";
+    const showPublishingPermissions =
+      platform === "facebook" || platform === "instagram";
 
     if (!platformEnabled) {
       platforms.push({
         platform,
         platformLabel: platformLabel(platform),
+        platformDescription: platformDescription(platform),
         monitoringState: "disabled",
         observationStale: false,
         showPublishingPermissions,
@@ -190,6 +218,7 @@ export async function buildCredentialHealthDashboardView(
       platforms.push({
         platform,
         platformLabel: platformLabel(platform),
+        platformDescription: platformDescription(platform),
         monitoringState: "no_observation",
         observationStale: true,
         showPublishingPermissions,
@@ -226,6 +255,7 @@ export async function buildCredentialHealthDashboardView(
     platforms.push({
       platform,
       platformLabel: platformLabel(platform),
+      platformDescription: platformDescription(platform),
       monitoringState: "observed",
       observationStale,
       showPublishingPermissions,
@@ -252,6 +282,8 @@ export async function buildCredentialHealthDashboardView(
     monitoringEnabledAt,
     openAiMonitoringEnabled,
     openAiMonitoringEnabledAt,
+    integrationMonitoringEnabled,
+    integrationMonitoringEnabledAt,
     platforms,
   };
 }

@@ -12,6 +12,7 @@ import {
   shouldOpenCredentialWarningIncident,
   type CredentialProbeKind,
 } from "./policy";
+import { INTEGRATION_CREDENTIAL_REGISTRY } from "./provider-registry";
 import { snapshotIncidentEvidence } from "./snapshot";
 import type {
   CredentialHealthClassification,
@@ -19,8 +20,11 @@ import type {
   CredentialValidationAttempt,
 } from "./types";
 
-function credentialProviderForPlatform(platform: CredentialHealthPlatform): "meta" | "openai" {
-  return platform === "openai" ? "openai" : "meta";
+function credentialProviderForPlatform(platform: CredentialHealthPlatform): string {
+  if (platform === "facebook" || platform === "instagram") {
+    return "meta";
+  }
+  return platform;
 }
 
 export async function findOpenCredentialWarningIncident(
@@ -138,6 +142,16 @@ function credentialIncidentMessage(
   platform: CredentialHealthPlatform,
   errorClass: string,
 ): string {
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
+  if (integration) {
+    if (errorClass.endsWith("_credentials_missing")) {
+      return `${integration.label} credentials are not configured.`;
+    }
+    if (errorClass.endsWith("_auth_invalid") || errorClass.endsWith("_auth_expired")) {
+      return `${integration.label} credentials were rejected by the provider.`;
+    }
+    return `${integration.label} credential health requires attention (${errorClass}).`;
+  }
   if (platform === "openai") {
     if (errorClass === "openai_credentials_missing") {
       return "OpenAI API key is not configured.";
