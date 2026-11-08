@@ -60,9 +60,13 @@ describe("Phase III-B3-C credential health dashboard", () => {
       listIncidentsFn: async () => [],
     });
     assert.equal(view.monitoringEnabled, true);
-    assert.ok(view.platforms.every((p) => p.monitoringState === "no_observation"));
-    assert.ok(view.platforms.every((p) => p.validity === "unknown"));
-    assert.ok(view.platforms.every((p) => /not verified/i.test(p.healthStateLabel)));
+    assert.equal(view.openAiMonitoringEnabled, false);
+    const metaRows = view.platforms.filter((p) => p.platform !== "openai");
+    assert.ok(metaRows.every((p) => p.monitoringState === "no_observation"));
+    assert.ok(metaRows.every((p) => p.validity === "unknown"));
+    assert.ok(metaRows.every((p) => /not verified/i.test(p.healthStateLabel)));
+    const openai = view.platforms.find((p) => p.platform === "openai");
+    assert.equal(openai?.monitoringState, "disabled");
   });
 
   it("healthy facebook observation", async () => {

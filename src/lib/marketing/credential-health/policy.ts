@@ -10,7 +10,10 @@ export function isTransientValidationUnavailable(
     classification.healthState === "validation_unavailable" &&
     classification.errorClass !== "meta_credentials_missing" &&
     classification.errorClass !== "meta_auth_expired" &&
-    classification.errorClass !== "meta_permissions"
+    classification.errorClass !== "meta_permissions" &&
+    classification.errorClass !== "openai_credentials_missing" &&
+    classification.errorClass !== "openai_auth_expired" &&
+    classification.errorClass !== "openai_auth_invalid"
   );
 }
 
@@ -23,7 +26,15 @@ export function isConfirmedCredentialFailure(
   if (classification.permissionCheck === "insufficient") {
     return true;
   }
-  return classification.errorClass === "meta_credentials_missing";
+  if (
+    classification.errorClass === "meta_credentials_missing" ||
+    classification.errorClass === "openai_credentials_missing" ||
+    classification.errorClass === "openai_auth_expired" ||
+    classification.errorClass === "openai_auth_invalid"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function incidentSeverityForClassification(
@@ -91,6 +102,16 @@ export function isVerifiedCredentialRecovery(
       classification.healthState === "healthy" ||
       (classification.healthState === "unknown_expiration" &&
         classification.permissionCheck !== "insufficient")
+    );
+  }
+  if (
+    incidentClass === "openai_auth_expired" ||
+    incidentClass === "openai_auth_invalid" ||
+    incidentClass === "openai_credentials_missing"
+  ) {
+    return (
+      classification.healthState === "healthy" ||
+      classification.healthState === "unknown_expiration"
     );
   }
   if (

@@ -13,7 +13,7 @@ import {
   credentialFailureSeverityEscalationNotifyDedupeKey,
   credentialMonitoringUnavailableNotifyDedupeKey,
 } from "./dedupe-keys";
-import type { CredentialHealthClassification, MetaCredentialPlatform } from "./types";
+import type { CredentialHealthClassification, CredentialHealthPlatform } from "./types";
 import {
   incidentErrorClassForClassification,
   isConfirmedCredentialFailure,
@@ -38,28 +38,41 @@ const defaultDeps: CredentialNotifyDeps = {
   releaseDedupe: releaseReliabilityDedupe,
 };
 
-function platformLabel(platform: MetaCredentialPlatform): string {
+function platformLabel(platform: CredentialHealthPlatform): string {
+  if (platform === "openai") return "OpenAI API";
   return platform === "facebook" ? "Facebook" : "Instagram";
 }
 
+function authFailureBody(platform: CredentialHealthPlatform): string {
+  if (platform === "openai") {
+    return (
+      "Smart Upload captions and marketing AI may fail until the OpenAI API key is rotated. " +
+      "Open Marketing Admin credential health to review the incident."
+    );
+  }
+  return (
+    "Publishing may fail until Meta credentials are renewed or permissions are fixed. " +
+    "Open Marketing Admin to review the credential incident."
+  );
+}
+
 export function buildCredentialAuthFailurePayload(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   relatedIncidentId: string,
 ): MarketingNotificationPayload {
   return {
     type: "credential_warning",
     severity: "error",
     title: `${platformLabel(platform)} credentials need attention`,
-    body:
-      "Publishing may fail until Meta credentials are renewed or permissions are fixed. " +
-      "Open Marketing Admin to review the credential incident.",
-    destination: "/admin/marketing/week",
+    body: authFailureBody(platform),
+    destination:
+      platform === "openai" ? "/admin/marketing/credential-health" : "/admin/marketing/week",
     relatedIncidentId,
   };
 }
 
 export function buildCredentialExpiringPayload(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   relatedIncidentId: string,
   knownExpiresAtIso: string,
 ): MarketingNotificationPayload {
@@ -75,16 +88,18 @@ export function buildCredentialExpiringPayload(
 }
 
 export function buildCredentialMonitoringUnavailablePayload(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): MarketingNotificationPayload {
+  const body =
+    platform === "openai"
+      ? "Daily OpenAI credential checks could not reach the provider. This does not mean your key is expired. Retry will occur on the next check."
+      : "Daily credential checks could not reach Meta. This does not mean your token is expired. Publishing behavior is unchanged; retry will occur on the next check.";
   return {
     type: "credential_warning",
     severity: "warning",
     title: `Unable to verify ${platformLabel(platform)} credentials`,
-    body:
-      "Daily credential checks could not reach Meta. This does not mean your token is expired. " +
-      "Publishing behavior is unchanged; retry will occur on the next check.",
-    destination: "/admin/marketing/week",
+    body,
+    destination: "/admin/marketing/credential-health",
   };
 }
 
@@ -117,7 +132,7 @@ async function sendDeduped(
 
 export async function notifyCredentialHealthOutcomes(
   input: {
-    platform: MetaCredentialPlatform;
+    platform: CredentialHealthPlatform;
     classification: CredentialHealthClassification;
     incident: MarketingIncidentRecord | null;
     incidentOutcome: "created" | "reopened" | "occurrence" | null;

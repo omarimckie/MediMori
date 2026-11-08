@@ -79,11 +79,18 @@ export function CredentialHealthClient() {
         <>
           <Card>
             <h2 className="font-display text-xl font-bold text-brand-navy">Monitoring</h2>
-            <p className="mt-2 text-sm text-brand-charcoal/80">
-              {data.monitoringEnabled
-                ? `Proactive monitoring is enabled (since ${formatInstant(data.monitoringEnabledAt)}).`
-                : "Monitoring is not enabled. Set MARKETING_CREDENTIAL_MONITORING_ENABLED_AT in the server environment to activate checks."}
-            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-brand-charcoal/80">
+              <li>
+                {data.monitoringEnabled
+                  ? `Meta (Facebook / Instagram) monitoring enabled since ${formatInstant(data.monitoringEnabledAt)}.`
+                  : "Meta monitoring off — set MARKETING_CREDENTIAL_MONITORING_ENABLED_AT to enable."}
+              </li>
+              <li>
+                {data.openAiMonitoringEnabled
+                  ? `OpenAI API key monitoring enabled since ${formatInstant(data.openAiMonitoringEnabledAt)}.`
+                  : "OpenAI monitoring off — set OPENAI_CREDENTIAL_MONITORING_ENABLED_AT to enable daily read-only checks."}
+              </li>
+            </ul>
           </Card>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -104,6 +111,16 @@ export function CredentialHealthClient() {
 
                 {platform.monitoringState === "disabled" ? (
                   <p className="mt-3 text-sm font-semibold text-brand-charcoal/80">Not enabled</p>
+                ) : null}
+
+                {platform.observationStale && platform.monitoringState === "observed" ? (
+                  <p
+                    className="mt-3 rounded-2xl bg-brand-orange/20 px-3 py-2 text-sm font-semibold text-brand-navy"
+                    role="status"
+                  >
+                    Last check is older than expected. Treat validity as unverified until the next
+                    daily probe succeeds.
+                  </p>
                 ) : null}
 
                 {platform.monitoringUnavailableWarning ? (
@@ -147,12 +164,14 @@ export function CredentialHealthClient() {
                         : platform.expirationStatusLabel}
                     </dd>
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-brand-charcoal/60">Publishing permissions</dt>
-                    <dd className="text-right font-semibold text-brand-charcoal">
-                      {platform.permissionStatusLabel}
-                    </dd>
-                  </div>
+                  {platform.showPublishingPermissions ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-brand-charcoal/60">Publishing permissions</dt>
+                      <dd className="text-right font-semibold text-brand-charcoal">
+                        {platform.permissionStatusLabel}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
 
                 {platform.activeIncident ? (

@@ -1,6 +1,8 @@
 import { classifyCredentialHealth } from "./classify";
+import { classifyOpenAiCredentialHealth } from "./classify-openai";
 import { buildCredentialHealthEvidence } from "./evidence";
 import type {
+  CredentialHealthClassification,
   CredentialHealthSnapshot,
   CredentialValidationAttempt,
 } from "./types";
@@ -11,6 +13,40 @@ export type BuildCredentialHealthSnapshotInput = {
   lastSuccessfulValidationAt: string | null;
   referenceNowIso?: string;
 };
+
+export function classifyCredentialAttempt(
+  attempt: CredentialValidationAttempt,
+  referenceNowIso?: string,
+): CredentialHealthClassification {
+  if (attempt.platform === "openai") {
+    return classifyOpenAiCredentialHealth(attempt);
+  }
+  return classifyCredentialHealth(attempt, { referenceNowIso });
+}
+
+export function buildCredentialHealthSnapshotForAttempt(
+  input: BuildCredentialHealthSnapshotInput,
+): CredentialHealthSnapshot {
+  const classification = classifyCredentialAttempt(
+    input.attempt,
+    input.referenceNowIso,
+  );
+  const successAt =
+    classification.validity === "valid" &&
+    classification.healthState !== "validation_unavailable"
+      ? input.attempt.attemptedAt
+      : input.lastSuccessfulValidationAt;
+
+  return {
+    platform: input.attempt.platform,
+    classification,
+    attemptedAt: input.attempt.attemptedAt,
+    lastSuccessfulValidationAt: successAt,
+    validationMethod: input.attempt.method,
+    monitoringAvailability: input.attempt.monitoringAvailability,
+    credentialFingerprint: input.credentialFingerprint,
+  };
+}
 
 export function buildCredentialHealthSnapshot(
   input: BuildCredentialHealthSnapshotInput,

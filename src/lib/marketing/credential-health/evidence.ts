@@ -7,12 +7,12 @@ import type {
   CredentialValidity,
   EvidenceConfidence,
   ExpirationKnowledge,
-  MetaCredentialPlatform,
+  CredentialHealthPlatform,
   PermissionCheckResult,
 } from "./types";
 
 export type CredentialHealthEvidence = {
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   health_state: CredentialHealthState;
   validity: string;
   expiration_knowledge: string;
@@ -52,7 +52,7 @@ export function buildCredentialHealthEvidence(
 
 /** In-memory view when no incident row exists (healthy / unknown monitoring). */
 export type CredentialHealthStatusView = {
-  platform: MetaCredentialPlatform;
+  platform: CredentialHealthPlatform;
   healthState: CredentialHealthState;
   validity: CredentialValidity | null;
   expirationKnowledge: ExpirationKnowledge | null;

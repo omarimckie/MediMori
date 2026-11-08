@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readOpenAiApiKey } from "./openai-probe";
 import type { MetaCredentialPlatform } from "./types";
 
 /**
@@ -56,6 +57,21 @@ export function getCredentialFingerprintKey(
  * Key rotation: changing `MARKETING_CREDENTIAL_FINGERPRINT_KEY` changes all
  * fingerprints; treat as a monitoring re-baseline, not as token rotation.
  */
+export function fingerprintOpenAiApiKey(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const apiKey = readOpenAiApiKey(env);
+  if (!apiKey) {
+    return null;
+  }
+  const key = getCredentialFingerprintKey(env);
+  if (!key || !validateCredentialFingerprintKey(key).ok) {
+    return null;
+  }
+  const message = `${FINGERPRINT_VERSION}:openai:${apiKey}`;
+  return createHmac(FINGERPRINT_ALG, key).update(message, "utf8").digest("base64url");
+}
+
 export function fingerprintMetaAccessToken(
   platform: MetaCredentialPlatform,
   accessToken: string,

@@ -1,7 +1,7 @@
 import { getSql } from "@/lib/db";
 import type { CredentialHealthHeartbeatMetadata } from "./observation-persistence";
 import { credentialHealthHeartbeatSource } from "./observation-persistence";
-import type { MetaCredentialPlatform } from "./types";
+import type { CredentialHealthPlatform } from "./types";
 import { withCredentialHealthSourceLock } from "./heartbeat-store-pool";
 
 export type StoredCredentialHealthState = CredentialHealthHeartbeatMetadata & {
@@ -15,18 +15,18 @@ export type CredentialHealthStoreBackend = "memory" | "postgres";
 
 export type CredentialHealthHeartbeatStore = {
   readonly storeBackend: CredentialHealthStoreBackend;
-  load(platform: MetaCredentialPlatform): Promise<StoredCredentialHealthState | null>;
+  load(platform: CredentialHealthPlatform): Promise<StoredCredentialHealthState | null>;
   /**
    * Atomically claims the UTC daily proactive probe slot for a platform.
    * Returns false when another invocation already claimed or completed today's probe.
    */
   claimProactiveDailyProbe(
-    platform: MetaCredentialPlatform,
+    platform: CredentialHealthPlatform,
     dayUtc: string,
     attemptedAtIso: string,
   ): Promise<boolean>;
   saveMerged(
-    platform: MetaCredentialPlatform,
+    platform: CredentialHealthPlatform,
     merge: (previous: StoredCredentialHealthState | null) => StoredCredentialHealthState,
     options: { attemptedAtIso: string },
   ): Promise<StoredCredentialHealthState>;
@@ -45,7 +45,7 @@ function parseStored(raw: unknown): StoredCredentialHealthState | null {
 
 function applyDailyProbeClaim(
   previous: StoredCredentialHealthState | null,
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   dayUtc: string,
 ): StoredCredentialHealthState | null {
   if (previous?.last_proactive_daily_probe_day === dayUtc) {
@@ -59,7 +59,7 @@ function applyDailyProbeClaim(
 }
 
 export function defaultStoredCredentialHealthState(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): StoredCredentialHealthState {
   return {
     schema_version: 1,

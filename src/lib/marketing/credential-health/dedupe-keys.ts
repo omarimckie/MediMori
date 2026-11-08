@@ -1,13 +1,18 @@
 import type { MarketingIncidentRecord } from "../incidents/types";
-import type { MetaCredentialPlatform } from "./types";
+import type { CredentialHealthPlatform, MetaCredentialPlatform } from "./types";
 
-export function credentialWarningIncidentDedupeKey(platform: MetaCredentialPlatform): string {
+export function credentialWarningIncidentDedupeKey(
+  platform: CredentialHealthPlatform,
+): string {
+  if (platform === "openai") {
+    return "incident:credential_warning:v1:openai:api_key";
+  }
   return `incident:credential_warning:v1:meta:${platform}`;
 }
 
 /** One auth-failure push per open incident episode; reopened incidents get a new episode key. */
 export function credentialFailureNotifyDedupeKey(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   incident: Pick<MarketingIncidentRecord, "id" | "occurrenceCount">,
   outcome: "created" | "reopened" | "occurrence",
 ): string {
@@ -22,7 +27,7 @@ export function credentialFailureNotifyDedupeKey(
 }
 
 export function credentialFailureSeverityEscalationNotifyDedupeKey(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   incidentId: string,
   errorClass: string,
 ): string {
@@ -30,14 +35,14 @@ export function credentialFailureSeverityEscalationNotifyDedupeKey(
 }
 
 export function credentialExpiringNotifyDedupeKey(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
   knownExpiresAtIso: string,
 ): string {
   return `credential_notify:v1:${platform}:expiring:${knownExpiresAtIso.slice(0, 10)}`;
 }
 
 export function credentialMonitoringUnavailableNotifyDedupeKey(
-  platform: MetaCredentialPlatform,
+  platform: CredentialHealthPlatform,
 ): string {
   return `credential_notify:v1:${platform}:monitoring_unavailable`;
 }
