@@ -1,5 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { hasMarketingBlobCredentials } from "../marketing-blob";
+import { getPinterestCredentials } from "../pinterest";
 import { readOpenAiApiKey } from "./openai-probe";
+import { readResendApiKey } from "./probes/resend-probe";
+import { readStripeSecretKey } from "./probes/stripe-probe";
+import type { IntegrationCredentialPlatform } from "./integration-platforms";
 import type { MetaCredentialPlatform } from "./types";
 
 /**
@@ -57,6 +62,56 @@ export function getCredentialFingerprintKey(
  * Key rotation: changing `MARKETING_CREDENTIAL_FINGERPRINT_KEY` changes all
  * fingerprints; treat as a monitoring re-baseline, not as token rotation.
  */
+function hmacFingerprint(message: string, env: Record<string, string | undefined> = process.env): string | null {
+  const key = getCredentialFingerprintKey(env);
+  if (!key || !validateCredentialFingerprintKey(key).ok) {
+    return null;
+  }
+  return createHmac(FINGERPRINT_ALG, key).update(message, "utf8").digest("base64url");
+}
+
+/** Host + database name only — never password or user. */
+export function databaseUrlHostIdentity(
+  connectionString: string,
+): string | null {
+  try {
+    const normalized = connectionString.replace(/^postgres:\/\//i, "postgresql://");
+    const parsed = new URL(normalized);
+    const db = parsed.pathname.replace(/^\//, "") || "postgres";
+    return `${parsed.hostname}:${db}`;
+  } catch {
+    return null;
+  }
+}
+
+export function fingerprintIntegrationCredential(
+  platform: IntegrationCredentialPlatform,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  let material: string | null = null;
+  if (platform === "stripe") {
+    material = readStripeSecretKey(env);
+  } else if (platform === "resend") {
+    material = readResendApiKey(env);
+  } else if (platform === "vercel_blob") {
+    const token = env.BLOB_READ_WRITE_TOKEN?.trim();
+    const oidc = env.VERCEL_OIDC_TOKEN?.trim();
+    const store = env.BLOB_STORE_ID?.trim();
+    if (token) material = `token:${token}`;
+    else if (oidc && store) material = `oidc:${store}:${oidc}`;
+  } else if (platform === "neon_postgres") {
+    const url = env.DATABASE_URL?.trim();
+    material = url ? `neon:${databaseUrlHostIdentity(url) ?? "unknown-host"}` : null;
+  } else if (platform === "pinterest") {
+    const creds = getPinterestCredentials(env);
+    material = creds
+      ? `pinterest:${creds.clientId}:${creds.refreshToken}`
+      : null;
+  }
+  if (!material) return null;
+  return hmacFingerprint(`${FINGERPRINT_VERSION}:${platform}:${material}`, env);
+}
+
 export function fingerprintOpenAiApiKey(
   env: Record<string, string | undefined> = process.env,
 ): string | null {

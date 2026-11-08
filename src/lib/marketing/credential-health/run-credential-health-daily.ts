@@ -3,6 +3,8 @@ import { getMarketingIncidentRepository } from "../incidents/runtime-repository"
 import type { CredentialHealthHeartbeatStore } from "./heartbeat-store";
 import { runCredentialMonitoringDailyIfEnabled } from "./daily";
 import { runOpenAiCredentialMonitoringDailyIfEnabled } from "./daily-openai";
+import { runIntegrationCredentialMonitoringDailyIfEnabled } from "./daily-integrations";
+import type { IntegrationCredentialPlatform } from "./integration-platforms";
 import type { CredentialProbeFetch } from "./probes";
 import type { CredentialNotifyDeps } from "./notify-credential";
 import type { MetaCredentialPlatform } from "./types";
@@ -19,6 +21,7 @@ export type RunCredentialHealthDailyCronInput = {
 export type CredentialHealthDailyCronResult = {
   openai: { ran: boolean };
   meta: { ran: boolean; platforms: MetaCredentialPlatform[] };
+  integrations: { ran: boolean; platforms: IntegrationCredentialPlatform[] };
 };
 
 export async function runCredentialHealthDailyCron(
@@ -34,10 +37,11 @@ export async function runCredentialHealthDailyCron(
     notifyDeps: input.notifyDeps,
   };
 
-  const [openai, meta] = await Promise.all([
+  const [openai, meta, integrations] = await Promise.all([
     runOpenAiCredentialMonitoringDailyIfEnabled(shared),
     runCredentialMonitoringDailyIfEnabled(shared),
+    runIntegrationCredentialMonitoringDailyIfEnabled(shared),
   ]);
 
-  return { openai, meta };
+  return { openai, meta, integrations };
 }

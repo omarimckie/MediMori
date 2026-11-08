@@ -2,6 +2,8 @@ import { validatePartialPublicationFailureEnabledAt } from "../publication-incid
 
 const MONITORING_ENABLED_AT_ENV = "MARKETING_CREDENTIAL_MONITORING_ENABLED_AT";
 export const OPENAI_MONITORING_ENABLED_AT_ENV = "OPENAI_CREDENTIAL_MONITORING_ENABLED_AT";
+export const INTEGRATION_MONITORING_ENABLED_AT_ENV =
+  "MARKETING_INTEGRATION_CREDENTIAL_MONITORING_ENABLED_AT";
 
 let monitoringEnabledAtOverride: string | null | undefined;
 
@@ -75,6 +77,43 @@ export function setOpenAiCredentialMonitoringEnabledAtForTests(iso: string | nul
 
 export function resetOpenAiCredentialMonitoringEnabledAtForTests(): void {
   openAiMonitoringEnabledAtOverride = undefined;
+}
+
+let integrationMonitoringEnabledAtOverride: string | null | undefined;
+
+export function getIntegrationCredentialMonitoringEnabledAtIso(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  if (integrationMonitoringEnabledAtOverride !== undefined) {
+    return integrationMonitoringEnabledAtOverride;
+  }
+  const raw = env[INTEGRATION_MONITORING_ENABLED_AT_ENV]?.trim();
+  return raw || null;
+}
+
+export function isIntegrationCredentialMonitoringEnabled(
+  env: Record<string, string | undefined> = process.env,
+  nowIso = new Date().toISOString(),
+): boolean {
+  const enabledAt = getIntegrationCredentialMonitoringEnabledAtIso(env);
+  if (!enabledAt) {
+    return false;
+  }
+  const validation = validatePartialPublicationFailureEnabledAt(enabledAt);
+  if (!validation.ok) {
+    return false;
+  }
+  const enabledMs = Date.parse(validation.iso);
+  const nowMs = Date.parse(nowIso);
+  return Number.isFinite(enabledMs) && Number.isFinite(nowMs) && nowMs >= enabledMs;
+}
+
+export function setIntegrationCredentialMonitoringEnabledAtForTests(iso: string | null): void {
+  integrationMonitoringEnabledAtOverride = iso;
+}
+
+export function resetIntegrationCredentialMonitoringEnabledAtForTests(): void {
+  integrationMonitoringEnabledAtOverride = undefined;
 }
 
 export const META_APP_ID_ENV = "META_APP_ID";

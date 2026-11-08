@@ -90,10 +90,15 @@ export function CredentialHealthClient() {
                   ? `OpenAI API key monitoring enabled since ${formatInstant(data.openAiMonitoringEnabledAt)}.`
                   : "OpenAI monitoring off — set OPENAI_CREDENTIAL_MONITORING_ENABLED_AT to enable daily read-only checks."}
               </li>
+              <li>
+                {data.integrationMonitoringEnabled
+                  ? `Stripe, Resend, Blob, Neon, and Pinterest monitoring enabled since ${formatInstant(data.integrationMonitoringEnabledAt)}.`
+                  : "Integration monitoring off — set MARKETING_INTEGRATION_CREDENTIAL_MONITORING_ENABLED_AT to enable."}
+              </li>
             </ul>
           </Card>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {data.platforms.map((platform) => (
               <Card key={platform.platform}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -108,6 +113,10 @@ export function CredentialHealthClient() {
                     <StatusPill status="draft" />
                   )}
                 </div>
+
+                {platform.platformDescription ? (
+                  <p className="mt-2 text-xs text-brand-charcoal/70">{platform.platformDescription}</p>
+                ) : null}
 
                 {platform.monitoringState === "disabled" ? (
                   <p className="mt-3 text-sm font-semibold text-brand-charcoal/80">Not enabled</p>

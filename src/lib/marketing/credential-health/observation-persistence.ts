@@ -19,6 +19,9 @@ export function credentialHealthHeartbeatSource(
   if (platform === "openai") {
     return "openai_credential_health:openai";
   }
+  if (platform !== "facebook" && platform !== "instagram") {
+    return `integration_credential_health:${platform}`;
+  }
   return `meta_credential_health:${platform}`;
 }
 

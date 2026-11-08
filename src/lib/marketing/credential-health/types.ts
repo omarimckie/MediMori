@@ -1,8 +1,13 @@
+import type { IntegrationCredentialPlatform } from "./integration-platforms";
+
 /** Meta platforms covered by Phase III-B3 credential health. */
 export type MetaCredentialPlatform = "facebook" | "instagram";
 
-/** Monitored credential targets (Meta publish + OpenAI API). */
-export type CredentialHealthPlatform = MetaCredentialPlatform | "openai";
+/** Monitored credential targets (Meta publish, OpenAI, and production integrations). */
+export type CredentialHealthPlatform =
+  | MetaCredentialPlatform
+  | "openai"
+  | IntegrationCredentialPlatform;
 
 export const CREDENTIAL_HEALTH_STATES = [
   "healthy",
@@ -42,6 +47,11 @@ export type CredentialValidationMethod =
   | "meta_debug_token"
   | "instagram_graph_me"
   | "openai_models_list"
+  | "stripe_balance_get"
+  | "resend_api_keys_list"
+  | "vercel_blob_list"
+  | "neon_postgres_ping"
+  | "pinterest_no_safe_probe"
   | "unsupported"
   | "not_attempted";
 

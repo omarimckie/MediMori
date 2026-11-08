@@ -1,5 +1,7 @@
 import { classifyCredentialHealth } from "./classify";
 import { classifyOpenAiCredentialHealth } from "./classify-openai";
+import { classifyIntegrationCredentialHealth } from "./classify-integration";
+import { isIntegrationCredentialPlatform } from "./integration-platforms";
 import { buildCredentialHealthEvidence } from "./evidence";
 import type {
   CredentialHealthClassification,
@@ -20,6 +22,9 @@ export function classifyCredentialAttempt(
 ): CredentialHealthClassification {
   if (attempt.platform === "openai") {
     return classifyOpenAiCredentialHealth(attempt);
+  }
+  if (isIntegrationCredentialPlatform(attempt.platform)) {
+    return classifyIntegrationCredentialHealth(attempt);
   }
   return classifyCredentialHealth(attempt, { referenceNowIso });
 }

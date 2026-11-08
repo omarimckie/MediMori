@@ -3,17 +3,24 @@ import type { CredentialHealthClassification, CredentialHealthState } from "./ty
 
 export type CredentialProbeKind = "proactive_daily" | "reactive";
 
+function isDefinitiveCredentialFailureClass(errorClass: string | null): boolean {
+  if (!errorClass) {
+    return false;
+  }
+  return (
+    errorClass.endsWith("_credentials_missing") ||
+    errorClass.endsWith("_auth_invalid") ||
+    errorClass.endsWith("_auth_expired") ||
+    errorClass === "meta_permissions"
+  );
+}
+
 export function isTransientValidationUnavailable(
   classification: CredentialHealthClassification,
 ): boolean {
   return (
     classification.healthState === "validation_unavailable" &&
-    classification.errorClass !== "meta_credentials_missing" &&
-    classification.errorClass !== "meta_auth_expired" &&
-    classification.errorClass !== "meta_permissions" &&
-    classification.errorClass !== "openai_credentials_missing" &&
-    classification.errorClass !== "openai_auth_expired" &&
-    classification.errorClass !== "openai_auth_invalid"
+    !isDefinitiveCredentialFailureClass(classification.errorClass)
   );
 }
 
@@ -26,15 +33,24 @@ export function isConfirmedCredentialFailure(
   if (classification.permissionCheck === "insufficient") {
     return true;
   }
-  if (
-    classification.errorClass === "meta_credentials_missing" ||
-    classification.errorClass === "openai_credentials_missing" ||
-    classification.errorClass === "openai_auth_expired" ||
-    classification.errorClass === "openai_auth_invalid"
-  ) {
+  if (isDefinitiveCredentialFailureClass(classification.errorClass)) {
     return true;
   }
   return false;
+}
+
+export function shouldOpenIntegrationCredentialIncident(
+  classification: CredentialHealthClassification,
+  probeKind: CredentialProbeKind,
+  suppressAuthIncidents: boolean,
+): boolean {
+  if (classification.errorClass === "pinterest_no_safe_probe") {
+    return false;
+  }
+  if (suppressAuthIncidents && classification.validity !== "valid") {
+    return isConfirmedCredentialFailure(classification) && classification.errorClass?.endsWith("_credentials_missing") === true;
+  }
+  return shouldOpenCredentialWarningIncident(classification, probeKind);
 }
 
 export function incidentSeverityForClassification(
@@ -107,7 +123,10 @@ export function isVerifiedCredentialRecovery(
   if (
     incidentClass === "openai_auth_expired" ||
     incidentClass === "openai_auth_invalid" ||
-    incidentClass === "openai_credentials_missing"
+    incidentClass === "openai_credentials_missing" ||
+    incidentClass?.endsWith("_auth_invalid") ||
+    incidentClass?.endsWith("_auth_expired") ||
+    incidentClass?.endsWith("_credentials_missing")
   ) {
     return (
       classification.healthState === "healthy" ||

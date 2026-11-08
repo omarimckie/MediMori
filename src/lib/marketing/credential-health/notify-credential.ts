@@ -13,6 +13,7 @@ import {
   credentialFailureSeverityEscalationNotifyDedupeKey,
   credentialMonitoringUnavailableNotifyDedupeKey,
 } from "./dedupe-keys";
+import { INTEGRATION_CREDENTIAL_REGISTRY } from "./provider-registry";
 import type { CredentialHealthClassification, CredentialHealthPlatform } from "./types";
 import {
   incidentErrorClassForClassification,
@@ -40,6 +41,8 @@ const defaultDeps: CredentialNotifyDeps = {
 
 function platformLabel(platform: CredentialHealthPlatform): string {
   if (platform === "openai") return "OpenAI API";
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
+  if (integration) return integration.label;
   return platform === "facebook" ? "Facebook" : "Instagram";
 }
 
@@ -48,6 +51,13 @@ function authFailureBody(platform: CredentialHealthPlatform): string {
     return (
       "Smart Upload captions and marketing AI may fail until the OpenAI API key is rotated. " +
       "Open Marketing Admin credential health to review the incident."
+    );
+  }
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
+  if (integration) {
+    return (
+      `${integration.label} integration may be misconfigured or rejected by the provider. ` +
+      "Review the credential health dashboard incident (no automatic rotation)."
     );
   }
   return (
@@ -66,7 +76,9 @@ export function buildCredentialAuthFailurePayload(
     title: `${platformLabel(platform)} credentials need attention`,
     body: authFailureBody(platform),
     destination:
-      platform === "openai" ? "/admin/marketing/credential-health" : "/admin/marketing/week",
+      platform === "openai" || INTEGRATION_CREDENTIAL_REGISTRY.some((r) => r.platform === platform)
+        ? "/admin/marketing/credential-health"
+        : "/admin/marketing/week",
     relatedIncidentId,
   };
 }
@@ -90,10 +102,13 @@ export function buildCredentialExpiringPayload(
 export function buildCredentialMonitoringUnavailablePayload(
   platform: CredentialHealthPlatform,
 ): MarketingNotificationPayload {
+  const integration = INTEGRATION_CREDENTIAL_REGISTRY.find((row) => row.platform === platform);
   const body =
     platform === "openai"
       ? "Daily OpenAI credential checks could not reach the provider. This does not mean your key is expired. Retry will occur on the next check."
-      : "Daily credential checks could not reach Meta. This does not mean your token is expired. Publishing behavior is unchanged; retry will occur on the next check.";
+      : integration
+        ? `Daily ${integration.label} credential checks could not complete. This may be a transient outage. Retry will occur on the next check.`
+        : "Daily credential checks could not reach Meta. This does not mean your token is expired. Publishing behavior is unchanged; retry will occur on the next check.";
   return {
     type: "credential_warning",
     severity: "warning",
