@@ -305,6 +305,9 @@ function statusTone(status: FileStatus): string {
 async function parseApiError(response: Response): Promise<string> {
   const raw = await response.text();
   if (!raw) return `Request failed (${response.status}).`;
+  if (/<!DOCTYPE\s+html|<html[\s>]/i.test(raw) || /cloudflare/i.test(raw)) {
+    return `Request failed (${response.status}) with a gateway error page (not application JSON). Check Vercel function logs for smart_upload_generate_captions.`;
+  }
   try {
     const payload = JSON.parse(raw) as { error?: string };
     return payload.error ?? `Request failed (${response.status}).`;
