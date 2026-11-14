@@ -30,6 +30,14 @@ test("parseAddToPlannerResponse requires ok true", () => {
     queued: ["x"],
     alreadyQueued: [],
   });
+  assert.deepEqual(
+    parseAddToPlannerResponse({
+      ok: true,
+      queued: [{ id: "a", platform: "instagram" }],
+      alreadyQueued: [{ id: "b" }],
+    }),
+    { ok: true, queued: ["a"], alreadyQueued: ["b"] },
+  );
   assert.equal(parseAddToPlannerResponse({ ok: false }), null);
   assert.equal(parseAddToPlannerResponse(null), null);
 });

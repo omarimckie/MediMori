@@ -58,15 +58,24 @@ export function formatAddToPlannerSuccessMessage(
   return "No items were added to the planner.";
 }
 
+function normalizePlannerIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
+        return (entry as { id: string }).id;
+      }
+      return null;
+    })
+    .filter((id): id is string => Boolean(id));
+}
+
 export function parseAddToPlannerResponse(json: unknown): AddToPlannerResponse | null {
   if (!json || typeof json !== "object") return null;
   const row = json as Record<string, unknown>;
   if (row.ok !== true) return null;
-  const queued = Array.isArray(row.queued)
-    ? row.queued.filter((id): id is string => typeof id === "string")
-    : [];
-  const alreadyQueued = Array.isArray(row.alreadyQueued)
-    ? row.alreadyQueued.filter((id): id is string => typeof id === "string")
-    : [];
+  const queued = normalizePlannerIdList(row.queued);
+  const alreadyQueued = normalizePlannerIdList(row.alreadyQueued);
   return { ok: true, queued, alreadyQueued };
 }
