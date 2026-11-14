@@ -78,6 +78,8 @@ test("mutation path matrix blocks marketing writes and cron triggers", () => {
   const blocked: Array<[string, string]> = [
     ["/api/admin/marketing/content/abc", "POST"],
     ["/api/admin/marketing/content/assign-week", "POST"],
+    ["/api/admin/marketing/content/add-to-planner", "POST"],
+    ["/api/admin/marketing/content/remove-from-planner", "POST"],
     ["/api/admin/marketing/content/smart-upload-pair", "POST"],
     ["/api/admin/marketing/assets/abc", "PATCH"],
     ["/api/admin/marketing/assets/abc", "POST"],

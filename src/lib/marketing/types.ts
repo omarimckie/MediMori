@@ -220,6 +220,10 @@ export type MarketingContentMetadata = {
   resourcePublishedAt?: string | null;
   /** Optional admin override; must pass approved on-site path validation. */
   websiteDestinationPath?: string | null;
+  /** ISO timestamp when explicitly added to the planner queue. */
+  plannerQueuedAt?: string | null;
+  /** ISO timestamp when hidden from the planner queue (legacy or explicit). */
+  plannerQueueExcludedAt?: string | null;
 };
 
 export type MarketingContent = {
@@ -398,6 +402,19 @@ export type ContentFilters = {
   category?: ContentCategory;
   status?: ContentStatus;
   excludeStatuses?: ContentStatus[];
+};
+
+export type PlannerQueueListParams = {
+  limit: number;
+  offset: number;
+  platform?: Platform;
+};
+
+export type PlannerQueueListResult = {
+  content: MarketingContent[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type PurchaseSnapshot = {

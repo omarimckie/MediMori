@@ -1,4 +1,5 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, asStringOrNull, toDateOnly, toIso } from "./json";
+import { appearsInPlannerQueueView } from "./content-planner-queue";
 import { sortMarketingContentForAdminList } from "./content-list-order";
 import {
   assertSmartUploadPlatformSlotAvailable,
@@ -27,6 +28,8 @@ import type {
   MarketingRecommendation,
   MarketingRule,
   MarketingTemplate,
+  PlannerQueueListParams,
+  PlannerQueueListResult,
   Platform,
   WeeklyPlan,
 } from "./types";
@@ -211,6 +214,25 @@ export class MemoryMarketingStore implements MarketingStore {
         .filter((item) => matchesFilters(item, filters))
         .map(clone),
     );
+  }
+
+  async listPlannerQueue(params: PlannerQueueListParams): Promise<PlannerQueueListResult> {
+    const publications = [...this.publications.values()].map((row) => ({
+      contentId: row.contentId,
+      platform: row.platform,
+      status: row.status,
+    }));
+    const eligible = [...this.content.values()]
+      .filter((item) => appearsInPlannerQueueView(item, publications))
+      .filter((item) => !params.platform || item.platform === params.platform);
+    const sorted = sortMarketingContentForAdminList(eligible.map(clone));
+    const page = sorted.slice(params.offset, params.offset + params.limit).map(clone);
+    return {
+      content: page,
+      total: sorted.length,
+      limit: params.limit,
+      offset: params.offset,
+    };
   }
 
   async findSmartUploadContentByFinalizeKey(finalizeKey: string) {
