@@ -13,7 +13,7 @@ const MORE_NAV = [
   { href: "/admin/marketing/smart-upload", label: "Smart Upload" },
   { href: "/admin/marketing/campaigns", label: "Campaigns" },
   { href: "/admin/marketing/content", label: "Content" },
-  { href: "/admin/marketing/calendar", label: "Calendar" },
+  { href: "/admin/marketing/calendar", label: "Calendar & planner" },
   { href: "/admin/marketing/assets", label: "Assets" },
   { href: "/admin/marketing/analytics", label: "Analytics" },
   { href: "/admin/marketing/recommendations", label: "Recommendations" },

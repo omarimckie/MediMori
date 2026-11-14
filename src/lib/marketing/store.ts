@@ -14,6 +14,8 @@ import type {
   MarketingRecommendation,
   MarketingRule,
   MarketingTemplate,
+  PlannerQueueListParams,
+  PlannerQueueListResult,
   WeeklyPlan,
 } from "./types";
 
@@ -67,6 +69,7 @@ export type MarketingStore = {
   getContent(id: string): Promise<MarketingContent | null>;
   getContentByToken(token: string): Promise<MarketingContent | null>;
   listContent(filters?: ContentFilters): Promise<MarketingContent[]>;
+  listPlannerQueue(params: PlannerQueueListParams): Promise<PlannerQueueListResult>;
   findSmartUploadContentByFinalizeKey(finalizeKey: string): Promise<SmartUploadFinalizeLookup>;
   deleteContent(id: string): Promise<boolean>;
 

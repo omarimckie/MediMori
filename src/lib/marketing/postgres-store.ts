@@ -37,6 +37,7 @@ import type {
   MarketingRecommendation,
   MarketingRule,
   MarketingTemplate,
+  PlannerQueueListParams,
   WeeklyPlan,
 } from "./types";
 
@@ -371,6 +372,61 @@ export class PostgresMarketingStore implements MarketingStore {
       return true;
     });
     return sortMarketingContentForAdminList(filtered);
+  }
+
+  async listPlannerQueue(params: PlannerQueueListParams) {
+    const sql = getSql();
+    const platform = params.platform ?? null;
+    const blockingStatuses = ["scheduled", "processing", "published"];
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total
+      FROM marketing_content c
+      WHERE c.status = 'approved'
+        AND (c.metadata->>'plannerQueueExcludedAt') IS NULL
+        AND (${platform}::text IS NULL OR c.platform = ${platform})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM marketing_publications p
+          WHERE p.content_id = c.id
+            AND p.platform = c.platform
+            AND p.status = ANY(${blockingStatuses}::text[])
+        )
+        AND (
+          (c.metadata->>'plannerQueuedAt') IS NOT NULL
+          OR (c.metadata->>'plannerQueuedAt') IS NULL
+        )
+    `;
+    const total = Number((countRows[0] as { total?: number })?.total ?? 0);
+    const rows = await sql`
+      SELECT c.*
+      FROM marketing_content c
+      WHERE c.status = 'approved'
+        AND (c.metadata->>'plannerQueueExcludedAt') IS NULL
+        AND (${platform}::text IS NULL OR c.platform = ${platform})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM marketing_publications p
+          WHERE p.content_id = c.id
+            AND p.platform = c.platform
+            AND p.status = ANY(${blockingStatuses}::text[])
+        )
+        AND (
+          (c.metadata->>'plannerQueuedAt') IS NOT NULL
+          OR (c.metadata->>'plannerQueuedAt') IS NULL
+        )
+      ORDER BY COALESCE((c.metadata->>'plannerQueuedAt')::timestamptz, c.updated_at) DESC, c.created_at DESC
+      LIMIT ${params.limit}
+      OFFSET ${params.offset}
+    `;
+    const content = sortMarketingContentForAdminList(
+      rows.map((row) => mapContent(row as Record<string, unknown>)),
+    );
+    return {
+      content,
+      total,
+      limit: params.limit,
+      offset: params.offset,
+    };
   }
 
   async deleteContent(id: string) {

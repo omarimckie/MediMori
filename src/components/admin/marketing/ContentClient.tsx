@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { pickOperationalWeeklyPlanId } from "@/lib/marketing/content-client-utils";
-import { AddToWeekModal } from "./AddToWeekModal";
+import {
+  formatAddToPlannerSuccessMessage,
+  parseAddToPlannerResponse,
+} from "@/lib/marketing/content-planner-client";
+import { AddToPlannerModal } from "./AddToPlannerModal";
 import {
   ContentQueueReviewCard,
   type ContentQueueReviewItem,
@@ -36,37 +40,43 @@ export function ContentClient() {
     audience: "",
   });
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const [weekModal, setWeekModal] = useState<ContentQueueReviewItem | null>(null);
+  const [plannerModal, setPlannerModal] = useState<ContentQueueReviewItem | null>(null);
   const [allowPublicBlobPreview, setAllowPublicBlobPreview] = useState(false);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(filters)) {
       if (value) params.set(key, value);
     }
     params.set("enrich", "preview");
-    const [contentRes, settingsRes] = await Promise.all([
-      fetch(`/api/admin/marketing/content?${params}`),
-      fetch("/api/admin/marketing/settings"),
-    ]);
-    const data = (await contentRes.json()) as {
-      content?: ContentQueueReviewItem[];
-      previewByContentId?: PreviewById;
-      previewReadonlyImages?: boolean;
-      error?: string;
-    };
-    if (!contentRes.ok) {
-      throw new Error(data.error || "Could not load content.");
-    }
-    setItems(data.content ?? []);
-    setPreviewByContentId(data.previewByContentId ?? {});
-    setAllowPublicBlobPreview(data.previewReadonlyImages === true);
-    if (settingsRes.ok) {
-      const settings = (await settingsRes.json()) as { plans?: WeeklyPlanOption[] };
-      const planList = settings.plans ?? [];
-      setPlans(planList);
-      setCurrentWeekPlanId(pickOperationalWeeklyPlanId(planList));
+    try {
+      const [contentRes, settingsRes] = await Promise.all([
+        fetch(`/api/admin/marketing/content?${params}`),
+        fetch("/api/admin/marketing/settings"),
+      ]);
+      const data = (await contentRes.json()) as {
+        content?: ContentQueueReviewItem[];
+        previewByContentId?: PreviewById;
+        previewReadonlyImages?: boolean;
+        error?: string;
+      };
+      if (!contentRes.ok) {
+        throw new Error(data.error || "Could not load content.");
+      }
+      setItems(data.content ?? []);
+      setPreviewByContentId(data.previewByContentId ?? {});
+      setAllowPublicBlobPreview(data.previewReadonlyImages === true);
+      if (settingsRes.ok) {
+        const settings = (await settingsRes.json()) as { plans?: WeeklyPlanOption[] };
+        const planList = settings.plans ?? [];
+        setPlans(planList);
+        setCurrentWeekPlanId(pickOperationalWeeklyPlanId(planList));
+      }
+    } finally {
+      setLoading(false);
     }
   }, [filters]);
 
@@ -77,25 +87,31 @@ export function ContentClient() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  async function confirmAssignWeek(input: { weeklyPlanId: string; contentIds: string[] }) {
+  async function confirmAddToPlanner(input: { contentIds: string[] }) {
+    if (busy) return;
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/marketing/content/assign-week", {
+      const res = await fetch("/api/admin/marketing/content/add-to-planner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ contentIds: input.contentIds }),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json()) as { error?: string; ok?: boolean; queued?: string[]; alreadyQueued?: string[] };
       if (!res.ok) {
-        setMessage(json.error ?? "Could not assign to week.");
+        setMessage(json.error ?? "Could not add to planner.");
         return;
       }
-      setWeekModal(null);
-      setMessage("Assigned to week.");
+      const parsed = parseAddToPlannerResponse(json);
+      if (!parsed) {
+        setMessage("Unexpected planner response.");
+        return;
+      }
+      setPlannerModal(null);
+      setMessage(formatAddToPlannerSuccessMessage(parsed.queued, parsed.alreadyQueued));
       await load();
     } catch {
-      setMessage("Network error while assigning to week.");
+      setMessage("Network error while adding to planner.");
     } finally {
       setBusy(false);
     }
@@ -119,7 +135,11 @@ export function ContentClient() {
         setMessage(json.error ?? "Review action failed.");
         return;
       }
-      setMessage(body.action === "approve" ? "Approved. Not scheduled or published." : "Rejected.");
+      setMessage(
+        body.action === "approve"
+          ? "Approved. Use Add to Planner when you are ready to queue for scheduling."
+          : "Rejected.",
+      );
       await load();
     } catch {
       setMessage("Network error while updating review status.");
@@ -133,12 +153,16 @@ export function ContentClient() {
       <Card>
         <p className="text-sm text-brand-charcoal/70">
           Review marketing content with authenticated image previews and full captions. Approving
-          marks a post ready for later scheduling — it does not schedule or publish. Assign items to
-          a weekly plan for{" "}
+          marks a post ready for the planner — it does not schedule or publish. Add approved items to
+          the{" "}
+          <Link href="/admin/marketing/calendar#planning-queue" className="font-bold text-brand-navy underline">
+            planning queue
+          </Link>{" "}
+          to choose week, platform, and publish time later.{" "}
           <Link href="/admin/marketing/week" className="font-bold text-brand-navy underline">
             Your week
           </Link>{" "}
-          when that plan is active.
+          remains the working queue when you assign content to a weekly plan.
         </p>
       </Card>
 
@@ -176,54 +200,58 @@ export function ContentClient() {
         </p>
       ) : null}
 
-      {items.map((item) => {
-        const preview = previewByContentId[item.id];
-        return (
-          <ContentQueueReviewCard
-            key={item.id}
-            item={item}
-            previewUrl={preview?.previewUrl ?? null}
-            showVisualPreview={preview?.showVisualPreview ?? false}
-            websiteDestination={preview?.websiteDestination ?? null}
-            allowPublicBlobPreview={allowPublicBlobPreview}
-            plans={plans}
-            currentWeekPlanId={currentWeekPlanId}
-            busy={busy}
-            onApprove={() => void runReviewAction(item.id, { action: "approve" })}
-            onReject={() =>
-              void runReviewAction(item.id, {
-                action: "reject",
-                feedback: "Rejected from content queue.",
-              })
-            }
-            onAddToWeek={() => setWeekModal(item)}
-          />
-        );
-      })}
+      {loading ? (
+        <p className="text-sm text-brand-charcoal/60" role="status">
+          Loading content…
+        </p>
+      ) : null}
 
-      {!items.length ? (
+      {!loading &&
+        items.map((item) => {
+          const preview = previewByContentId[item.id];
+          return (
+            <ContentQueueReviewCard
+              key={item.id}
+              item={item}
+              previewUrl={preview?.previewUrl ?? null}
+              showVisualPreview={preview?.showVisualPreview ?? false}
+              websiteDestination={preview?.websiteDestination ?? null}
+              allowPublicBlobPreview={allowPublicBlobPreview}
+              previewReadonlyMode={allowPublicBlobPreview}
+              plans={plans}
+              currentWeekPlanId={currentWeekPlanId}
+              busy={busy}
+              onApprove={() => void runReviewAction(item.id, { action: "approve" })}
+              onReject={() =>
+                void runReviewAction(item.id, {
+                  action: "reject",
+                  feedback: "Rejected from content queue.",
+                })
+              }
+              onAddToPlanner={() => setPlannerModal(item)}
+            />
+          );
+        })}
+
+      {!loading && !items.length ? (
         <p className="text-sm text-brand-charcoal/60">No content matches these filters.</p>
       ) : null}
 
-      <SecondaryButton onClick={() => void load()}>Refresh</SecondaryButton>
+      <SecondaryButton onClick={() => void load()} disabled={busy || loading}>
+        Refresh
+      </SecondaryButton>
 
-      {weekModal ? (
-        <AddToWeekModal
+      {plannerModal ? (
+        <AddToPlannerModal
           open
           busy={busy}
-          anchorContentId={weekModal.id}
-          anchorTitle={weekModal.title}
-          anchorBody={weekModal.body}
-          previewUrl={previewByContentId[weekModal.id]?.previewUrl ?? null}
+          anchorContentId={plannerModal.id}
+          anchorTitle={plannerModal.title}
+          anchorBody={plannerModal.body}
+          previewUrl={previewByContentId[plannerModal.id]?.previewUrl ?? null}
           allowPublicBlobPreview={allowPublicBlobPreview}
-          plans={plans}
-          initialWeeklyPlanId={
-            weekModal.weeklyPlanId ?? pickOperationalWeeklyPlanId(plans)
-          }
-          onClose={() => setWeekModal(null)}
-          modalTitle={weekModal.weeklyPlanId ? "Change Week" : "Add to Week"}
-          confirmLabel={weekModal.weeklyPlanId ? "Save week" : "Add to Week"}
-          onConfirm={(input) => void confirmAssignWeek(input)}
+          onClose={() => setPlannerModal(null)}
+          onConfirm={(input) => void confirmAddToPlanner(input)}
         />
       ) : null}
     </div>
