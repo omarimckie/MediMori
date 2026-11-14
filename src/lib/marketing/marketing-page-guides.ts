@@ -79,7 +79,7 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
     ],
     notes: [
       "Finalizing creates Content in the library; it does not publish to social channels by itself.",
-      "Open Content or Your week next to assign the new items to a week and schedule them.",
+      "Open Content to approve and Add to Planner, then schedule from the Calendar planning queue.",
     ],
   },
   campaigns: {
@@ -103,8 +103,8 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
       "Inventory and staging area for all marketing content records, including items from Smart Upload, campaigns, and manual flows.",
     actions: [
       "Filter by status, platform, category, or audience to find items.",
-      "Add approved or draft items to an operational week with Add to week.",
-      "Open Your week for review, approval, and scheduling when items are assigned.",
+      "Approve items, then use Add to Planner to queue them without picking a week.",
+      "Open the Calendar planning queue to assign an optional week and schedule publish times.",
     ],
     notes: [
       "Being listed here does not mean a post is scheduled or published.",
@@ -113,15 +113,16 @@ export const MARKETING_PAGE_GUIDES: Record<MarketingPageGuideId, MarketingPageGu
   },
   calendar: {
     id: "calendar",
-    title: "Calendar",
+    title: "Calendar & planner",
     purpose:
-      "Month view of scheduled and published marketing activity in the marketing timezone.",
+      "Month view of scheduled and published marketing activity, plus the planning queue for approved unscheduled content.",
     actions: [
       "Browse by month to see what is planned or already went out.",
+      "Use the Planning queue to assign an optional week and schedule approved content.",
       "Open an event for details, or use Add existing post to schedule or recycle approved content onto the calendar.",
     ],
     notes: [
-      "This is a time-oriented view; heavy editing and approval still happen in Your week.",
+      "The planning queue includes items you added from Content and legacy approved unscheduled items.",
       "Scheduling from here sets due times the same way as Your week—the dispatcher publishes when due.",
     ],
   },
