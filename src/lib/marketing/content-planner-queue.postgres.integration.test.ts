@@ -171,8 +171,9 @@ describe("content planner queue (disposable PostgreSQL)", { skip: !testDbUrl }, 
     assert.equal(enqueue.queued.length, 1);
     const loaded = await store.getContent(igId);
     assert.equal(loaded?.metadata.plannerQueuedAt, "2026-04-02T12:00:00.000Z");
-    assert.equal(loaded?.metadata.seedTag, "planner-pg");
-    assert.equal(loaded?.metadata.foo, 1);
+    const metadata = loaded?.metadata as Record<string, unknown> | undefined;
+    assert.equal(metadata?.seedTag, "planner-pg");
+    assert.equal(metadata?.foo, 1);
 
     const legacyQueue = await listPlannerQueue(store, { limit: 50, offset: 0 });
     assert.ok(legacyQueue.content.some((row) => row.id === fbId));

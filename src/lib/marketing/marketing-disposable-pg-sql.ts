@@ -17,7 +17,9 @@ export function createDisposableMarketingPgSql(pool: pg.Pool): NeonQueryFunction
     return result.rows;
   }) as NeonQueryFunction<false, false>;
 
-  tag.query = async (queryText: string, params?: unknown[]) => {
+  (tag as NeonQueryFunction<false, false> & {
+    query: (queryText: string, params?: unknown[]) => Promise<unknown[]>;
+  }).query = async (queryText: string, params?: unknown[]) => {
     const result = await pool.query(queryText, params);
     return result.rows;
   };
