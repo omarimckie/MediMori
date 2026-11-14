@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import pg from "pg";
 import { resetSqlCacheForTests, setSqlFactoryForTests } from "@/lib/db";
 import { createDisposableMarketingPgSql } from "./marketing-disposable-pg-sql";
@@ -15,10 +15,14 @@ import {
 import { marketingDatetimeLocalToIso } from "./marketing-scheduling";
 import { SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN } from "./marketing-social-tracking-test-token";
 import { scheduleApproved } from "./approval";
+import { parseMarketingPublicationAmbiguityMigrationStatements } from "../../../scripts/apply-marketing-publication-ambiguity-schema.mjs";
 import { PostgresMarketingStore } from "./postgres-store";
 import type { MarketingContent } from "./types";
 
 const marketingSqlPath = fileURLToPath(new URL("../../../sql/marketing.sql", import.meta.url));
+const publicationAmbiguitySqlPath = fileURLToPath(
+  new URL("../../../sql/marketing-publication-ambiguity.sql", import.meta.url),
+);
 
 const testDbUrl = process.env.MARKETING_PLANNER_TEST_DATABASE_URL?.trim() ?? "";
 
@@ -127,12 +131,27 @@ describe("content planner queue (disposable PostgreSQL)", { skip: !testDbUrl }, 
     resetSqlCacheForTests();
     setSqlFactoryForTests(() => createDisposableMarketingPgSql(disposablePool!));
     await applyMarketingSchema(disposablePool);
+    const ambiguityStatements = parseMarketingPublicationAmbiguityMigrationStatements(
+      readFileSync(publicationAmbiguitySqlPath, "utf8"),
+    );
+    for (const statement of ambiguityStatements) {
+      await disposablePool.query(statement);
+    }
   });
 
   after(async () => {
     await disposablePool?.end();
     disposablePool = null;
     resetSqlCacheForTests();
+  });
+
+  beforeEach(async () => {
+    if (!disposablePool) return;
+    await disposablePool.query(`
+      TRUNCATE marketing_publications, marketing_approvals, marketing_content,
+        marketing_weekly_plans, marketing_campaigns, marketing_assets
+      RESTART IDENTITY CASCADE
+    `);
   });
 
   it("persists enqueue metadata in JSONB and lists queue with pagination and platform filter", async () => {
