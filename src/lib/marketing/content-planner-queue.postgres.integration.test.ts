@@ -45,18 +45,18 @@ function contentInput(overrides: Partial<MarketingContent> & { id?: string }): O
   "createdAt" | "updatedAt"
 > {
   const id = overrides.id ?? crypto.randomUUID();
-  return {
+  const base: Omit<MarketingContent, "createdAt" | "updatedAt"> = {
     id,
-    campaignId: overrides.campaignId ?? null,
-    weeklyPlanId: overrides.weeklyPlanId ?? null,
-    platform: overrides.platform ?? "instagram",
-    format: overrides.format ?? "post",
-    category: overrides.category ?? "educational",
-    audience: overrides.audience ?? "parents",
-    status: overrides.status ?? "approved",
-    title: overrides.title ?? "Planner postgres test",
-    body: overrides.body ?? "Body",
-    cta: overrides.cta ?? null,
+    campaignId: null,
+    weeklyPlanId: null,
+    platform: "instagram",
+    format: "post",
+    category: "educational",
+    audience: "parents",
+    status: "approved",
+    title: "Planner postgres test",
+    body: "Body",
+    cta: null,
     seoTitle: null,
     seoDescription: null,
     scheduledFor: null,
@@ -68,11 +68,10 @@ function contentInput(overrides: Partial<MarketingContent> & { id?: string }): O
     trackingToken: `${SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN}-${id.slice(0, 8)}`,
     originalBody: null,
     bookId: null,
-    metadata: overrides.metadata ?? {},
+    metadata: {},
     isDemo: true,
-    ...overrides,
-    id,
   };
+  return { ...base, ...overrides, id: overrides.id ?? id };
 }
 
 async function seedWeeklyPlan(store: PostgresMarketingStore) {
