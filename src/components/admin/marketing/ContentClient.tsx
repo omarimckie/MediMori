@@ -217,6 +217,7 @@ export function ContentClient() {
               showVisualPreview={preview?.showVisualPreview ?? false}
               websiteDestination={preview?.websiteDestination ?? null}
               allowPublicBlobPreview={allowPublicBlobPreview}
+              previewReadonlyMode={allowPublicBlobPreview}
               plans={plans}
               currentWeekPlanId={currentWeekPlanId}
               busy={busy}

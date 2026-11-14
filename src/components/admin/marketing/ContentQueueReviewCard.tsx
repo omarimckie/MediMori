@@ -15,6 +15,7 @@ import {
   contentQueueRejectConfirmMessage,
   contentQueueShowsApproveReject,
   resolveReviewCardImageSrc,
+  reviewCardPreviewUnavailableMessage,
 } from "@/lib/marketing/content-queue-review";
 import type { MarketingWebsiteDestinationReview } from "@/lib/marketing/marketing-website-destination";
 import { ReviewPreviewImage } from "./ReviewPreviewImage";
@@ -42,6 +43,7 @@ type Props = {
   previewUrl: string | null;
   showVisualPreview: boolean;
   allowPublicBlobPreview?: boolean;
+  previewReadonlyMode?: boolean;
   websiteDestination?: MarketingWebsiteDestinationReview | null;
   plans: PlanOption[];
   currentWeekPlanId: string | null;
@@ -60,6 +62,7 @@ export function ContentQueueReviewCard({
   previewUrl,
   showVisualPreview,
   allowPublicBlobPreview = false,
+  previewReadonlyMode = false,
   websiteDestination = null,
   plans,
   currentWeekPlanId,
@@ -76,8 +79,8 @@ export function ContentQueueReviewCard({
   const week = formatContentWeekLabel(item.weeklyPlanId, plans);
   const onCurrentWeek =
     item.weeklyPlanId && currentWeekPlanId && item.weeklyPlanId === currentWeekPlanId;
-  const canReview = contentQueueShowsApproveReject(item.status);
-  const canAddToPlanner = contentCanEnqueueToPlanner(item);
+  const canReview = !previewReadonlyMode && contentQueueShowsApproveReject(item.status);
+  const canAddToPlanner = !previewReadonlyMode && contentCanEnqueueToPlanner(item);
   const inPlanner = contentShowsInPlanner(item);
 
   function handleReject() {
@@ -130,7 +133,7 @@ export function ContentQueueReviewCard({
               className="flex max-w-md items-center justify-center rounded-2xl border border-dashed border-brand-brown/25 bg-cream-deep/60 px-4 py-10 text-sm text-brand-charcoal/55"
               role="status"
             >
-              Preview unavailable
+              {reviewCardPreviewUnavailableMessage(previewUrl, allowPublicBlobPreview)}
             </div>
           ) : null}
 
@@ -162,6 +165,12 @@ export function ContentQueueReviewCard({
               <span className="text-brand-charcoal/45"> · visible on Your week now</span>
             ) : null}
           </p>
+
+          {previewReadonlyMode ? (
+            <p className="text-xs font-semibold text-brand-charcoal/60" role="status">
+              Marketing preview is read-only — approve, reject, and planner actions are disabled.
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {canAddToPlanner ? (
