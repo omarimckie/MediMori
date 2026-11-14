@@ -1,11 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   contentDisplayTitle,
   formatContentCreatedAt,
   formatContentWeekLabel,
 } from "@/lib/marketing/content-client-utils";
+import {
+  contentCanEnqueueToPlanner,
+  contentShowsInPlanner,
+} from "@/lib/marketing/content-planner-client";
 import {
   contentQueueRejectConfirmMessage,
   contentQueueShowsApproveReject,
@@ -26,6 +31,7 @@ export type ContentQueueReviewItem = {
   body: string;
   cta: string | null;
   weeklyPlanId: string | null;
+  plannerQueued?: boolean;
   createdAt: string;
 };
 
@@ -42,7 +48,7 @@ type Props = {
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
-  onAddToWeek: () => void;
+  onAddToPlanner: () => void;
 };
 
 /**
@@ -60,7 +66,7 @@ export function ContentQueueReviewCard({
   busy,
   onApprove,
   onReject,
-  onAddToWeek,
+  onAddToPlanner,
 }: Props) {
   const [imageFailed, setImageFailed] = useState(false);
   const safePreview = resolveReviewCardImageSrc(previewUrl, allowPublicBlobPreview);
@@ -71,6 +77,8 @@ export function ContentQueueReviewCard({
   const onCurrentWeek =
     item.weeklyPlanId && currentWeekPlanId && item.weeklyPlanId === currentWeekPlanId;
   const canReview = contentQueueShowsApproveReject(item.status);
+  const canAddToPlanner = contentCanEnqueueToPlanner(item);
+  const inPlanner = contentShowsInPlanner(item);
 
   function handleReject() {
     if (busy) return;
@@ -85,6 +93,11 @@ export function ContentQueueReviewCard({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={item.status} />
+            {inPlanner ? (
+              <span className="rounded-full border border-brand-green-deep/35 bg-brand-green-deep/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-brand-green-deep">
+                In planner
+              </span>
+            ) : null}
             <StatusPill status={item.platform} />
             <StatusPill status={item.category} />
             <StatusPill status={item.audience} />
@@ -142,7 +155,7 @@ export function ContentQueueReviewCard({
             {item.weeklyPlanId && !onCurrentWeek ? (
               <span className="text-brand-charcoal/45">
                 {" "}
-                (not the plan shown on Your week — switch or generate that week to review there)
+                (not the plan shown on Your week — assign a week from the Calendar planner when ready)
               </span>
             ) : null}
             {onCurrentWeek ? (
@@ -150,14 +163,23 @@ export function ContentQueueReviewCard({
             ) : null}
           </p>
 
-          <div className="pt-1">
-            <SecondaryButton
-              type="button"
-              disabled={busy || plans.length === 0}
-              onClick={onAddToWeek}
-            >
-              {item.weeklyPlanId ? "Change Week" : "Add to Week"}
-            </SecondaryButton>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {canAddToPlanner ? (
+              <SecondaryButton type="button" disabled={busy} onClick={onAddToPlanner}>
+                Add to Planner
+              </SecondaryButton>
+            ) : null}
+            {inPlanner ? (
+              <Link
+                href="/admin/marketing/calendar#planning-queue"
+                className="text-xs font-bold text-brand-navy underline"
+              >
+                Open planning queue
+              </Link>
+            ) : null}
+            {item.status !== "approved" && !canReview ? (
+              <p className="text-xs text-brand-charcoal/50">Approve content before adding to the planner.</p>
+            ) : null}
           </div>
         </div>
 
@@ -173,7 +195,7 @@ export function ContentQueueReviewCard({
               Reject
             </SecondaryButton>
             <p className="text-xs leading-snug text-brand-charcoal/50">
-              Approve marks content ready for later scheduling. It does not schedule or publish.
+              Approve marks content ready for the planner. It does not schedule or publish.
             </p>
           </div>
         ) : null}
