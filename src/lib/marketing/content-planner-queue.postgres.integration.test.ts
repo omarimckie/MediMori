@@ -68,7 +68,7 @@ function contentInput(overrides: Partial<MarketingContent> & { id?: string }): O
     trackingToken: `${SOCIAL_SCHEDULE_TEST_TRACKING_TOKEN}-${id.slice(0, 8)}`,
     originalBody: null,
     bookId: null,
-    metadata: overrides.metadata ?? { seedTag: "planner-pg" },
+    metadata: overrides.metadata ?? {},
     isDemo: true,
     ...overrides,
     id,
@@ -160,7 +160,11 @@ describe("content planner queue (disposable PostgreSQL)", { skip: !testDbUrl }, 
     const igId = crypto.randomUUID();
     const fbId = crypto.randomUUID();
     await store.createContent(
-      contentInput({ id: igId, platform: "instagram", metadata: { seedTag: "planner-pg", foo: 1 } }),
+      contentInput({
+        id: igId,
+        platform: "instagram",
+        metadata: { seedTag: "planner-pg", foo: 1 } as unknown as MarketingContent["metadata"],
+      }),
     );
     await store.createContent(contentInput({ id: fbId, platform: "facebook" }));
     const enqueue = await addContentToPlanner(

@@ -17,12 +17,12 @@ export function createDisposableMarketingPgSql(pool: pg.Pool): NeonQueryFunction
     return result.rows;
   }) as NeonQueryFunction<false, false>;
 
-  (tag as NeonQueryFunction<false, false> & {
-    query: (queryText: string, params?: unknown[]) => Promise<unknown[]>;
-  }).query = async (queryText: string, params?: unknown[]) => {
+  const sql = tag as unknown as NeonQueryFunction<false, false>;
+  // @ts-expect-error disposable local pg adapter: Neon’s query() typing expects HTTP promises.
+  sql.query = async (queryText: string, params?: unknown[]) => {
     const result = await pool.query(queryText, params);
     return result.rows;
   };
 
-  return tag;
+  return sql as unknown as NeonQueryFunction<false, false>;
 }
