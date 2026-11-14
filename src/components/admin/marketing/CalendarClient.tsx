@@ -12,7 +12,10 @@ import {
   calendarEventStatusLabel,
 } from "@/lib/marketing/calendar-publication-eligibility";
 import { formatContentWeekLabel } from "@/lib/marketing/content-client-utils";
-import type { PlannerQueueContent } from "@/lib/marketing/content-planner-client";
+import {
+  formatRemoveFromPlannerSuccessMessage,
+  type PlannerQueueContent,
+} from "@/lib/marketing/content-planner-client";
 import type { MarketingCalendarEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyForEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyInMarketingTimezone } from "@/lib/marketing/marketing-scheduling";
@@ -136,6 +139,30 @@ export function CalendarClient() {
       setShowPicker(true);
     } catch {
       setMessage("Could not load content for picker.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeFromPlanningQueue(contentId: string) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/marketing/content/remove-from-planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentIds: [contentId] }),
+      });
+      const json = (await res.json()) as { error?: string; removed?: unknown[] };
+      if (!res.ok) {
+        setMessage(json.error ?? "Could not remove from planning queue.");
+        return;
+      }
+      const removedCount = Array.isArray(json.removed) ? json.removed.length : 0;
+      setMessage(formatRemoveFromPlannerSuccessMessage(removedCount));
+      await reloadAll();
+    } catch {
+      setMessage("Network error while removing from planning queue.");
     } finally {
       setBusy(false);
     }
@@ -354,6 +381,13 @@ export function CalendarClient() {
                       onClick={() => setAssignWeekTarget(item)}
                     >
                       {item.weeklyPlanId ? "Change week" : "Assign week"}
+                    </SecondaryButton>
+                    <SecondaryButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removeFromPlanningQueue(item.id)}
+                    >
+                      Remove from queue
                     </SecondaryButton>
                     <PrimaryButton
                       type="button"

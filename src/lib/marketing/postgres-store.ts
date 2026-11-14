@@ -414,7 +414,7 @@ export class PostgresMarketingStore implements MarketingStore {
           (c.metadata->>'plannerQueuedAt') IS NOT NULL
           OR (c.metadata->>'plannerQueuedAt') IS NULL
         )
-      ORDER BY COALESCE(c.metadata->>'plannerQueuedAt', c.updated_at) DESC, c.created_at DESC
+      ORDER BY COALESCE((c.metadata->>'plannerQueuedAt')::timestamptz, c.updated_at) DESC, c.created_at DESC
       LIMIT ${params.limit}
       OFFSET ${params.offset}
     `;

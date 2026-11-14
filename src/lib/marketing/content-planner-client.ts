@@ -38,6 +38,13 @@ export function contentShowsInPlanner(item: { plannerQueued?: boolean }): boolea
   return item.plannerQueued === true;
 }
 
+export function formatRemoveFromPlannerSuccessMessage(removedCount: number): string {
+  if (removedCount <= 0) return "No items were removed from the planner.";
+  return removedCount === 1
+    ? "Removed from the planning queue."
+    : `Removed ${removedCount} items from the planning queue.`;
+}
+
 export function formatAddToPlannerSuccessMessage(
   queued: string[],
   alreadyQueued: string[],

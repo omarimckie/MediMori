@@ -4,6 +4,7 @@ import {
   contentCanEnqueueToPlanner,
   contentShowsInPlanner,
   formatAddToPlannerSuccessMessage,
+  formatRemoveFromPlannerSuccessMessage,
   parseAddToPlannerResponse,
 } from "./content-planner-client";
 
@@ -16,6 +17,12 @@ test("contentCanEnqueueToPlanner allows approved not queued", () => {
 test("contentShowsInPlanner reflects plannerQueued", () => {
   assert.equal(contentShowsInPlanner({ plannerQueued: true }), true);
   assert.equal(contentShowsInPlanner({}), false);
+});
+
+test("formatRemoveFromPlannerSuccessMessage covers count", () => {
+  assert.match(formatRemoveFromPlannerSuccessMessage(1), /Removed from the planning queue/);
+  assert.match(formatRemoveFromPlannerSuccessMessage(2), /Removed 2 items/);
+  assert.match(formatRemoveFromPlannerSuccessMessage(0), /No items were removed/);
 });
 
 test("formatAddToPlannerSuccessMessage covers queued and alreadyQueued", () => {
