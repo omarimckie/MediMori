@@ -20,24 +20,82 @@ function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
+function normalizeAdminUsersEnvRaw(raw: string): string {
+  let value = raw.replace(/^\uFEFF/, "").trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    try {
+      const unwrapped = JSON.parse(value) as unknown;
+      if (typeof unwrapped === "string") value = unwrapped.trim();
+    } catch {
+      // Keep the original string when a single-quoted shell escape slipped through.
+    }
+  }
+  return value;
+}
+
+function parseAdminUsersMap(raw: string): {
+  users: AdminUserMap;
+  jsonParseable: boolean;
+} {
+  const normalized = normalizeAdminUsersEnvRaw(raw);
+  if (!normalized) return { users: {}, jsonParseable: false };
+
+  try {
+    const parsed = JSON.parse(normalized) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { users: {}, jsonParseable: false };
+    }
+
+    const users: AdminUserMap = {};
+    for (const [username, password] of Object.entries(parsed as Record<string, unknown>)) {
+      const normalizedUsername = normalizeUsername(username);
+      if (!normalizedUsername || typeof password !== "string" || !password.trim()) continue;
+      users[normalizedUsername] = password;
+    }
+
+    return { users, jsonParseable: true };
+  } catch {
+    return { users: {}, jsonParseable: false };
+  }
+}
+
 function getAdminUsers(): AdminUserMap {
   const raw = process.env.ADMIN_USERS?.trim();
   if (!raw) return {};
+  return parseAdminUsersMap(raw).users;
+}
 
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const users: AdminUserMap = {};
+export type AdminConfigurationDiagnostics = {
+  sessionSecretPresent: boolean;
+  adminUsersRawPresent: boolean;
+  adminUsersJsonParseable: boolean;
+  adminUsersValidEntryCount: number;
+  configured: boolean;
+};
 
-    for (const [username, password] of Object.entries(parsed)) {
-      const normalized = normalizeUsername(username);
-      if (!normalized || typeof password !== "string" || !password) continue;
-      users[normalized] = password;
-    }
+/** Safe for logs/API: no usernames, passwords, or secret material. */
+export function getAdminConfigurationDiagnostics(
+  env: Record<string, string | undefined> = process.env,
+): AdminConfigurationDiagnostics {
+  const sessionSecretPresent = Boolean(env.ADMIN_SESSION_SECRET?.trim());
+  const raw = env.ADMIN_USERS?.trim();
+  const adminUsersRawPresent = Boolean(raw);
+  const { users, jsonParseable } = raw
+    ? parseAdminUsersMap(raw)
+    : { users: {}, jsonParseable: false };
+  const adminUsersValidEntryCount = Object.keys(users).length;
+  const configured = adminUsersValidEntryCount > 0 && sessionSecretPresent;
 
-    return users;
-  } catch {
-    return {};
-  }
+  return {
+    sessionSecretPresent,
+    adminUsersRawPresent,
+    adminUsersJsonParseable: adminUsersRawPresent ? jsonParseable : false,
+    adminUsersValidEntryCount,
+    configured,
+  };
 }
 
 function signPayload(payload: string): string {
@@ -105,11 +163,10 @@ export function verifyAdminCredentials(username: string, password: string): bool
   return safeEqualStrings(password, expectedPassword);
 }
 
-export function isAdminConfigured(): boolean {
-  return (
-    Object.keys(getAdminUsers()).length > 0 &&
-    Boolean(process.env.ADMIN_SESSION_SECRET?.trim())
-  );
+export function isAdminConfigured(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return getAdminConfigurationDiagnostics(env).configured;
 }
 
 export async function isAdminAuthenticated(): Promise<boolean> {
