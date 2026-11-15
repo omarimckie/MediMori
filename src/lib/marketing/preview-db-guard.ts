@@ -1,4 +1,5 @@
 import type { NeonQueryFunction } from "@neondatabase/serverless";
+import { createIdentityProbeGuardedSql } from "@/lib/marketing/database-identity-guard";
 
 export const PREVIEW_DATABASE_GUARD_REF = "feature/order-notifications";
 export const PREVIEW_DATABASE_GUARD_ERROR = "Preview database isolation check failed.";
@@ -74,16 +75,7 @@ export function previewDbIdentityMatches(rows: unknown): boolean {
   );
 }
 
-const GUARD_INNER = Symbol("previewDbGuardInner");
-
 type QueryClient = NeonQueryFunction<false, false>;
-
-type DeferredQuery = {
-  then: PromiseLike<unknown>["then"];
-  catch: (onRejected?: (reason: unknown) => unknown) => Promise<unknown>;
-  finally: (onFinally?: () => void) => Promise<unknown>;
-  [GUARD_INNER]?: PromiseLike<unknown>;
-};
 
 /**
  * Wrap one Neon HTTP client.
@@ -97,82 +89,12 @@ export function createPreviewGuardedSql(
   options?: { timeoutMs?: number },
 ): QueryClient {
   const timeoutMs = options?.timeoutMs ?? PREVIEW_DATABASE_GUARD_TIMEOUT_MS;
-  let succeeded = false;
-  let pending: Promise<void> | null = null;
-
-  function ensure(): Promise<void> {
-    if (succeeded) return Promise.resolve();
-    if (!pending) {
-      pending = runProbe(raw, timeoutMs).then(
-        () => {
-          succeeded = true;
-          pending = null;
-        },
-        (error: unknown) => {
-          pending = null;
-          succeeded = false;
-          throw error;
-        },
-      );
-    }
-    return pending;
-  }
-
-  function defer<T extends PromiseLike<unknown>>(inner: T): T {
-    let started: Promise<unknown> | null = null;
-    const start = () => {
-      if (!started) started = ensure().then(() => inner);
-      return started;
-    };
-    const guarded: DeferredQuery = {
-      [GUARD_INNER]: inner,
-      then(onFulfilled, onRejected) {
-        return start().then(onFulfilled, onRejected);
-      },
-      catch(onRejected) {
-        return start().catch(onRejected);
-      },
-      finally(onFinally) {
-        return start().finally(onFinally);
-      },
-    };
-    return guarded as unknown as T;
-  }
-
-  const guarded = ((strings: TemplateStringsArray, ...params: unknown[]) => {
-    return defer(raw(strings, ...params));
-  }) as QueryClient;
-
-  guarded.query = ((query, params, queryOpts) => {
-    return defer(raw.query(query, params, queryOpts));
-  }) as QueryClient["query"];
-
-  guarded.unsafe = ((rawSql: string) => raw.unsafe(rawSql)) as QueryClient["unsafe"];
-
-  guarded.transaction = (async (queriesOrFn, opts) => {
-    await ensure();
-    const build = queriesOrFn as unknown as (sql: QueryClient) => unknown;
-    const queries = typeof queriesOrFn === "function" ? build(guarded) : queriesOrFn;
-    if (!Array.isArray(queries)) {
-      throw new PreviewDatabaseGuardError("probe-failed");
-    }
-    const unwrapped = queries.map((query) => {
-      if (query && typeof query === "object" && GUARD_INNER in query) {
-        return (query as { [GUARD_INNER]?: unknown })[GUARD_INNER];
-      }
-      return query;
-    });
-    return (raw.transaction as (queries: unknown, opts?: unknown) => Promise<unknown>)(
-      unwrapped,
-      opts,
-    );
-  }) as QueryClient["transaction"];
-
-  return guarded;
-}
-
-function runProbe(raw: QueryClient, timeoutMs: number): Promise<void> {
-  return runIdentityProbe(() => raw.query(PREVIEW_DB_IDENTITY_PROBE_SQL), timeoutMs);
+  return createIdentityProbeGuardedSql(raw, {
+    timeoutMs,
+    probeSql: PREVIEW_DB_IDENTITY_PROBE_SQL,
+    identityMatches: previewDbIdentityMatches,
+    GuardError: PreviewDatabaseGuardError,
+  });
 }
 
 function runIdentityProbe(start: () => Promise<unknown>, timeoutMs: number): Promise<void> {

@@ -1,10 +1,10 @@
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import {
-  connectPreviewAwarePoolClient,
-  guardPoolForProtectedPreview,
-  previewDatabaseGuardDecision,
-  PreviewDatabaseGuardError,
-} from "@/lib/marketing/preview-db-guard";
+  assertMarketingDatabaseGuardAllowsAccess,
+  connectMarketingAwarePoolClient,
+  getMarketingGuardedPool,
+  resolveMarketingDatabaseGuardRoute,
+} from "@/lib/marketing/marketing-database-guard";
 
 let marketingPool: Pool | null = null;
 let marketingPoolFactory: ((connectionString: string) => Pool) | null = null;
@@ -37,23 +37,17 @@ export function resetMarketingPoolForTests(): void {
 }
 
 export function getMarketingPool(): Pool {
-  const decision = previewDatabaseGuardDecision(process.env);
-  if (decision === "reject") {
-    throw new PreviewDatabaseGuardError("ambiguous-scope");
-  }
+  assertMarketingDatabaseGuardAllowsAccess(process.env);
   const raw = getRawMarketingPool();
-  if (decision === "skip") return raw;
-  return guardPoolForProtectedPreview(raw);
+  return getMarketingGuardedPool(raw);
 }
 
 export async function withMarketingPoolTransaction<T>(
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
-  const decision = previewDatabaseGuardDecision(process.env);
-  if (decision === "reject") {
-    throw new PreviewDatabaseGuardError("ambiguous-scope");
-  }
-  const client = await connectPreviewAwarePoolClient({
+  assertMarketingDatabaseGuardAllowsAccess(process.env);
+  const route = resolveMarketingDatabaseGuardRoute(process.env);
+  const client = await connectMarketingAwarePoolClient({
     connect: () => getRawMarketingPool().connect(),
   });
   let began = false;
@@ -64,7 +58,7 @@ export async function withMarketingPoolTransaction<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    if (began || decision === "skip") {
+    if (began || route === "skip") {
       try {
         await client.query("ROLLBACK");
       } catch {
