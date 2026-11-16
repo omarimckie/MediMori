@@ -342,7 +342,7 @@ export class PostgresMarketingStore implements MarketingStore {
     const current = await this.getContent(id);
     if (!current) return null;
     if (patch.metadata) {
-      rejectClientSuppliedE2eOwnership(patch.metadata);
+      rejectClientSuppliedE2eOwnership(patch.metadata, current.metadata);
     }
     const next = { ...current, ...patch, id };
     const sql = getSql();

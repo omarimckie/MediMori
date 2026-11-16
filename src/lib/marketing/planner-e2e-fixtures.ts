@@ -281,11 +281,18 @@ export async function createPlannerE2eStagingFixtures(
   };
 }
 
-/** Reject client attempts to self-assign E2E ownership. */
-export function rejectClientSuppliedE2eOwnership(metadata: unknown): void {
-  if (!metadata || typeof metadata !== "object") return;
-  const record = metadata as Record<string, unknown>;
-  if (record.e2eTag === PLANNER_E2E_STAGING_TAG) {
-    throw new PlannerStagingE2eFixturesError(PLANNER_STAGING_E2E_OWNERSHIP_MESSAGE);
-  }
+/** Reject client attempts to self-assign E2E ownership (preserving server tags is allowed). */
+export function rejectClientSuppliedE2eOwnership(
+  patchMetadata: unknown,
+  currentMetadata?: unknown,
+): void {
+  if (!patchMetadata || typeof patchMetadata !== "object") return;
+  const record = patchMetadata as Record<string, unknown>;
+  if (record.e2eTag !== PLANNER_E2E_STAGING_TAG) return;
+  const currentTag =
+    currentMetadata && typeof currentMetadata === "object"
+      ? (currentMetadata as Record<string, unknown>).e2eTag
+      : undefined;
+  if (currentTag === PLANNER_E2E_STAGING_TAG) return;
+  throw new PlannerStagingE2eFixturesError(PLANNER_STAGING_E2E_OWNERSHIP_MESSAGE);
 }

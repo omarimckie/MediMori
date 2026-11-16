@@ -56,4 +56,10 @@ test("fixtures blocked when E2E mode is unarmed", async () => {
 
 test("client cannot self-assign e2eTag via metadata patch", () => {
   assert.throws(() => rejectClientSuppliedE2eOwnership({ e2eTag: PLANNER_E2E_STAGING_TAG }));
+  assert.doesNotThrow(() =>
+    rejectClientSuppliedE2eOwnership(
+      { e2eTag: PLANNER_E2E_STAGING_TAG, plannerQueuedAt: "t" },
+      { e2eTag: PLANNER_E2E_STAGING_TAG },
+    ),
+  );
 });

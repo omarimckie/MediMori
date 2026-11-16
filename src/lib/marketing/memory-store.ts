@@ -195,7 +195,7 @@ export class MemoryMarketingStore implements MarketingStore {
     const current = this.content.get(id);
     if (!current) return null;
     if (patch.metadata) {
-      rejectClientSuppliedE2eOwnership(patch.metadata);
+      rejectClientSuppliedE2eOwnership(patch.metadata, current.metadata);
     }
     const row = { ...current, ...patch, id, updatedAt: nowIso() };
     this.content.set(id, row);
