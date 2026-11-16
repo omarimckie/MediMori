@@ -1,3 +1,4 @@
+import { assertPlannerE2eApproveAllowed, PlannerStagingE2eOwnershipError } from "./planner-staging-e2e-gate";
 import { jsonError, marketingPreviewReadonlyResponse } from "./http";
 import {
   assertMarketingPreviewAllowsMutations,
@@ -40,6 +41,10 @@ export async function executeMarketingContentPostAction(
 ) {
   try {
     assertMarketingPreviewAllowsMutations();
+    const existing = await store.getContent(input.contentId);
+    if (existing && input.action === "approve") {
+      assertPlannerE2eApproveAllowed(existing);
+    }
     const result = await runApprovalAction(store, {
       ...input,
       confirmPermanentDelete: input.confirmPermanentDelete,
@@ -48,6 +53,9 @@ export async function executeMarketingContentPostAction(
   } catch (error) {
     if (error instanceof MarketingPreviewReadonlyError) {
       return marketingPreviewReadonlyResponse();
+    }
+    if (error instanceof PlannerStagingE2eOwnershipError) {
+      return jsonError(error.message, 403);
     }
     const message = error instanceof Error ? error.message : "Action failed.";
     return jsonError(message, contentActionFailureStatus(message));

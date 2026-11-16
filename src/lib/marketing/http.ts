@@ -4,6 +4,10 @@ import {
 } from "@/lib/admin-auth";
 import { marketingAuthError } from "./auth-guard";
 import {
+  evaluatePlannerStagingE2eHttpMutation,
+  plannerStagingE2eMutationBlockMessage,
+} from "./planner-staging-e2e-gate";
+import {
   isMarketingPreviewReadonly,
   MARKETING_PREVIEW_READONLY_MESSAGE,
 } from "./preview-readonly";
@@ -26,7 +30,7 @@ export async function requireMarketingAdmin() {
 }
 
 /** Authenticated marketing admin required, then Preview read-only mutations blocked. */
-export async function requireMarketingAdminMutation() {
+export async function requireMarketingAdminMutation(request?: Request) {
   const auth = await requireMarketingAdmin();
   if (!auth.ok) return auth;
   if (isMarketingPreviewReadonly()) {
@@ -35,6 +39,20 @@ export async function requireMarketingAdminMutation() {
       response: marketingPreviewReadonlyResponse(),
       username: null as string | null,
     };
+  }
+  if (request) {
+    const url = new URL(request.url);
+    const decision = evaluatePlannerStagingE2eHttpMutation(url.pathname, request.method);
+    if (decision === "scope_unarmed" || decision === "deny_allowlist") {
+      return {
+        ok: false as const,
+        response: NextResponse.json(
+          { error: plannerStagingE2eMutationBlockMessage(decision) },
+          { status: 403 },
+        ),
+        username: null as string | null,
+      };
+    }
   }
   return auth;
 }

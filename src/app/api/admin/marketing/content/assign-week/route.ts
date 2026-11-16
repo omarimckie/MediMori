@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const auth = await requireMarketingAdminMutation();
+  const auth = await requireMarketingAdminMutation(request);
   if (!auth.ok) return auth.response;
 
   let body: { contentIds?: unknown; weeklyPlanId?: unknown } = {};

@@ -5,12 +5,13 @@ import {
   addToPlannerErrorStatus,
   AddToPlannerError,
 } from "@/lib/marketing/content-planner-queue";
+import { PlannerStagingE2eOwnershipError } from "@/lib/marketing/planner-staging-e2e-gate";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const auth = await requireMarketingAdminMutation();
+  const auth = await requireMarketingAdminMutation(request);
   if (!auth.ok) return auth.response;
 
   let body: { contentIds?: unknown } = {};
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof AddToPlannerError) {
       return jsonError(error.message, addToPlannerErrorStatus(error));
+    }
+    if (error instanceof PlannerStagingE2eOwnershipError) {
+      return jsonError(error.message, 403);
     }
     const message = error instanceof Error ? error.message : "Add to planner failed.";
     return jsonError(message, 500);

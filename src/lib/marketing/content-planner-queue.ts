@@ -1,3 +1,4 @@
+import { assertPlannerStagingE2eOwnedContentIds } from "./planner-staging-e2e-gate";
 import {
   hasActiveScheduledPublication,
   filterUnscheduledApprovedContent,
@@ -251,6 +252,7 @@ export async function addContentToPlanner(
   }
 
   const expandedIds = await expandSmartUploadPlannerIds(store, requestedIds);
+  await assertPlannerStagingE2eOwnedContentIds(store, expandedIds);
   const publications = await store.listPublications();
   const nowIso = now();
   const queued: MarketingContent[] = [];
@@ -274,6 +276,7 @@ export async function removeContentFromPlanner(
   now = () => new Date().toISOString(),
 ): Promise<RemoveContentFromPlannerResult> {
   const contentIds = normalizeRemoveContentIds(input.contentIds);
+  await assertPlannerStagingE2eOwnedContentIds(store, contentIds);
   const removed: MarketingContent[] = [];
   const nowIso = now();
 
