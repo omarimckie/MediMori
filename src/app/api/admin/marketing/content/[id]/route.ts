@@ -1,9 +1,4 @@
 import { jsonError, requireMarketingAdmin, requireMarketingAdminMutation } from "@/lib/marketing/http";
-import {
-  isPlannerStagingE2eContentPostActionAllowed,
-  plannerStagingE2eMutationBlockMessage,
-} from "@/lib/marketing/planner-staging-e2e-gate";
-import { evaluatePlannerStagingE2eHttpMutation } from "@/lib/marketing/planner-staging-e2e-gate";
 import { getMarketingStore } from "@/lib/marketing/context";
 import { executeMarketingContentPostAction } from "@/lib/marketing/content-post-action";
 import { NextResponse } from "next/server";
@@ -44,17 +39,6 @@ export async function POST(
     return jsonError("Invalid JSON body.");
   }
   const action = body.action;
-  const decision = evaluatePlannerStagingE2eHttpMutation(
-    `/api/admin/marketing/content/${id}`,
-    "POST",
-  );
-  if (
-    decision === "allow" &&
-    action &&
-    !isPlannerStagingE2eContentPostActionAllowed(action)
-  ) {
-    return jsonError(plannerStagingE2eMutationBlockMessage("deny_allowlist"), 403);
-  }
   if (
     action !== "approve" &&
     action !== "reject" &&

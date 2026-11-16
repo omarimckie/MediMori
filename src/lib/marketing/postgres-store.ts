@@ -1,4 +1,6 @@
 import { getSql } from "@/lib/db";
+import { rejectClientSuppliedE2eOwnership } from "./planner-e2e-fixtures";
+import { PLANNER_E2E_STAGING_TAG } from "./planner-staging-e2e-gate";
 import { sortMarketingContentForAdminList } from "./content-list-order";
 import {
   mapApproval,
@@ -111,6 +113,18 @@ export class PostgresMarketingStore implements MarketingStore {
     return rows.map((row) => mapCampaign(row as Record<string, unknown>));
   }
 
+  async deleteCampaign(id: string) {
+    const sql = getSql();
+    const rows = await sql`
+      DELETE FROM marketing_campaigns
+      WHERE id = ${id}::uuid
+        AND is_demo = true
+        AND name LIKE ${"%" + PLANNER_E2E_STAGING_TAG + "%"}
+      RETURNING id
+    `;
+    return rows.length > 0;
+  }
+
   async createWeeklyPlan(input: Omit<WeeklyPlan, "createdAt">) {
     const sql = getSql();
     const rows = await sql`
@@ -174,6 +188,16 @@ export class PostgresMarketingStore implements MarketingStore {
       LIMIT 1
     `;
     return rows[0] ? mapPlan(rows[0] as Record<string, unknown>) : null;
+  }
+
+  async deleteWeeklyPlan(id: string) {
+    const sql = getSql();
+    const rows = await sql`
+      DELETE FROM marketing_weekly_plans
+      WHERE id = ${id}::uuid AND is_demo = true
+      RETURNING id
+    `;
+    return rows.length > 0;
   }
 
   async createAsset(input: Omit<MarketingAsset, "createdAt">) {
@@ -317,6 +341,9 @@ export class PostgresMarketingStore implements MarketingStore {
   async updateContent(id: string, patch: Partial<MarketingContent>) {
     const current = await this.getContent(id);
     if (!current) return null;
+    if (patch.metadata) {
+      rejectClientSuppliedE2eOwnership(patch.metadata);
+    }
     const next = { ...current, ...patch, id };
     const sql = getSql();
     const rows = await sql`

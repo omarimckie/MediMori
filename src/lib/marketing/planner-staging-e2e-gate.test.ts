@@ -139,7 +139,8 @@ test("armed allowlist permits planner routes only", () => {
     "/api/admin/marketing/content/add-to-planner",
     "/api/admin/marketing/content/remove-from-planner",
     "/api/admin/marketing/content/assign-week",
-    "/api/admin/marketing/seed",
+    "/api/admin/marketing/planner-e2e/fixtures",
+    "/api/admin/marketing/planner-e2e/cleanup",
   ]) {
     assert.equal(
       evaluatePlannerStagingE2eHttpMutation(path, "POST", env),
@@ -232,7 +233,7 @@ test("ownership: tagged content allowed; untagged non-demo rejected when armed",
   await assert.rejects(() => assertPlannerStagingE2eOwnedContentIds(store, [legacyId]));
 });
 
-test("approve allows demo seed content without e2eTag when armed", async () => {
+test("approve rejects demo content without e2eTag when armed", async () => {
   const store = new MemoryMarketingStore();
   applyEnv(integrationPreview({ [MARKETING_PLANNER_STAGING_E2E_ENV]: "true" }));
   const demoId = crypto.randomUUID();
@@ -264,7 +265,31 @@ test("approve allows demo seed content without e2eTag when armed", async () => {
   });
   const row = await store.getContent(demoId);
   assert.ok(row);
-  assertPlannerE2eApproveAllowed(row);
+  assert.throws(() => assertPlannerE2eApproveAllowed(row));
+});
+
+test("seed and generic content POST are not allowlisted when armed", () => {
+  const env = integrationPreview({ [MARKETING_PLANNER_STAGING_E2E_ENV]: "true" });
+  assert.equal(
+    evaluatePlannerStagingE2eHttpMutation("/api/admin/marketing/seed", "POST", env),
+    "deny_allowlist",
+  );
+  assert.equal(
+    evaluatePlannerStagingE2eHttpMutation(
+      "/api/admin/marketing/content/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "POST",
+      env,
+    ),
+    "deny_allowlist",
+  );
+});
+
+test("missing staging Neon project env fails closed", () => {
+  const env = integrationPreview({
+    [MARKETING_PLANNER_STAGING_E2E_ENV]: "true",
+    [MARKETING_STAGING_NEON_PROJECT_ID_ENV]: "",
+  });
+  assert.equal(isPlannerStagingE2eArmed(env), false);
 });
 
 test("disabling E2E mode restores skip on unrelated mutation policy", () => {
@@ -294,16 +319,12 @@ test("disabling E2E mode restores skip on unrelated mutation policy", () => {
 });
 
 test("positive classification covers Phase 3 HTTP paths", () => {
-  const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  assert.equal(
-    isPlannerStagingE2eAllowlistedMutation(
-      `/api/admin/marketing/content/${id}`,
-      "POST",
-    ),
-    true,
-  );
   assert.equal(
     isPlannerStagingE2eAllowlistedMutation("/api/admin/marketing/planner/queue", "GET"),
+    false,
+  );
+  assert.equal(
+    isPlannerStagingE2eAllowlistedMutation("/api/admin/marketing/plans", "POST"),
     false,
   );
 });

@@ -79,12 +79,9 @@ const EXACT_ALLOWLIST: ReadonlyArray<{ method: string; path: string }> = [
   { method: "POST", path: "/api/admin/marketing/content/add-to-planner" },
   { method: "POST", path: "/api/admin/marketing/content/remove-from-planner" },
   { method: "POST", path: "/api/admin/marketing/content/assign-week" },
-  { method: "POST", path: "/api/admin/marketing/seed" },
-  { method: "POST", path: "/api/admin/marketing/plans" },
+  { method: "POST", path: "/api/admin/marketing/planner-e2e/fixtures" },
+  { method: "POST", path: "/api/admin/marketing/planner-e2e/cleanup" },
 ];
-
-const UUID_SEGMENT =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** Positive allowlist for armed E2E write window (readonly still blocks first). */
 export function isPlannerStagingE2eAllowlistedMutation(pathname: string, method: string): boolean {
@@ -95,18 +92,25 @@ export function isPlannerStagingE2eAllowlistedMutation(pathname: string, method:
     if (entry.method === normalizedMethod && entry.path === path) return true;
   }
 
-  if (normalizedMethod === "POST") {
-    const match = /^\/api\/admin\/marketing\/content\/([^/]+)$/.exec(path);
-    if (match && UUID_SEGMENT.test(match[1] ?? "")) {
-      return true;
-    }
-  }
-
   return false;
 }
 
-export function isPlannerStagingE2eContentPostActionAllowed(action: string): boolean {
-  return action === "approve";
+export class PlannerStagingE2eFixtureScopeError extends Error {
+  readonly status = 403;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PlannerStagingE2eFixtureScopeError";
+  }
+}
+
+/** Server-owned fixture/cleanup mutations (blocked when unarmed or readonly). */
+export function assertPlannerStagingE2eFixtureMutationAllowed(): void {
+  if (!isPlannerStagingE2eArmed()) {
+    throw new PlannerStagingE2eFixtureScopeError(
+      "Planner staging E2E fixtures are only available when E2E mode is armed on the integration staging Preview.",
+    );
+  }
 }
 
 export function evaluatePlannerStagingE2eHttpMutation(
@@ -189,7 +193,5 @@ export async function assertPlannerStagingE2eOwnedContentIds(
 
 export function assertPlannerE2eApproveAllowed(content: MarketingContent): void {
   if (!isPlannerStagingE2eArmed()) return;
-  if (isPlannerE2eStagingTaggedMetadata(content.metadata)) return;
-  if (content.isDemo) return;
-  throw new PlannerStagingE2eOwnershipError(content.id);
+  assertPlannerE2eStagingContentOwnership(content.metadata, content.id);
 }
