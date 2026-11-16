@@ -46,11 +46,14 @@ function validateTargetEnv() {
   if (process.env.MARKETING_MOCK_MODE === "false") {
     throw new Error("MARKETING_MOCK_MODE must be true");
   }
-  if (process.env.MARKETING_PREVIEW_READONLY === "true") {
-    throw new Error("Read-only must be disabled only during authorized write window");
-  }
-  if (process.env.MARKETING_PLANNER_STAGING_E2E !== "true") {
-    throw new Error("MARKETING_PLANNER_STAGING_E2E must be true for mutations");
+  const execute = process.env.PLANNER_E2E_RUNNER_EXECUTE === "true";
+  if (execute) {
+    if (process.env.MARKETING_PREVIEW_READONLY === "true") {
+      throw new Error("Read-only must be disabled only during authorized write window");
+    }
+    if (process.env.MARKETING_PLANNER_STAGING_E2E !== "true") {
+      throw new Error("MARKETING_PLANNER_STAGING_E2E must be true for mutations");
+    }
   }
   return { baseUrl, branch, neon };
 }
