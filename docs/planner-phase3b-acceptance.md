@@ -26,7 +26,7 @@
 | Assignment UI (“Change week”) | **PASS** |
 | No publishing performed | **PASS** |
 | smartInstagram remains in Planning queue after week assign | **Observed — by design** (see below) |
-| Negative control browser cases | **NOT RUN** |
+| Negative control browser cases | **PASS** (Add to Planner — see final verification below) |
 
 ### Planning queue after week assignment
 
@@ -47,6 +47,31 @@ Server batch cleanup (`cleanupPlannerE2eStagingFixtures`, batch `5845e01f-bd6e-4
 Second cleanup pass: **idempotent** (no additional deletes).
 
 Post-cleanup Neon counts: **0** across `marketing_content`, `marketing_publications`, `marketing_weekly_plans`, `marketing_campaigns`, `marketing_assets`.
+
+**Baseline note:** This record does not include an ISO timestamp; it is anchored to Phase 3B server batch cleanup (fixture batch `5845e01f-bd6e-49d8-b67b-419fc91027d5`) and rollback deploy `4daa3d00044d3ae764db7b21b7e18853047c10bb` in this document. Subsequent CAM read-only probes on `small-frost-27394379` (including 2026-11-17 / integration head `1f3b6d2`) also observed **0** rows before negative-control tests.
+
+## Final negative control — owner browser (2026-11-17)
+
+**Integration Preview:** `dpl_BosBGGqEA47mBKSTykKBg5jDexbd` — https://medi-mori-jpc0vui9s-omarimckies-projects.vercel.app  
+**Application code (PR #17 head at deploy):** `1f3b6d2d7db51da9ff46a952b1501a771070373a`
+
+| Check | Result |
+|-------|--------|
+| Authenticated DevTools `POST` `/api/admin/marketing/content/add-to-planner` body `{}` | **403 PASS** |
+| Response body | `Preview is in read-only mode. Marketing mutations are disabled.` (exact match) |
+
+**Neon staging verification (read-only, CAM):** `small-frost-27394379` / `neondb` queried **2026-11-18T03:48:00Z** (approximate; post owner test).
+
+| Table | Baseline (post-cleanup) | After owner test |
+|-------|------------------------|------------------|
+| `marketing_content` | 0 | **0** |
+| `marketing_publications` | 0 | **0** |
+| `marketing_weekly_plans` | 0 | **0** |
+| `marketing_campaigns` | 0 | **0** |
+| `marketing_assets` | 0 | **0** |
+| `planner_queued_content_rows` (metadata query) | 0 | **0** |
+
+**Conclusion:** No planner content or publication rows were created by the blocked mutation.
 
 ## Rollback verification (owner authenticated)
 
@@ -81,7 +106,8 @@ Vercel branch Preview env restored: `MARKETING_PREVIEW_READONLY=true`, `MARKETIN
 | Staging persistence / cleanup | **PASS** |
 | Security (staging identity, gates, mock, ownership) | **PASS** |
 | Operational (rollback, baseline, readonly) | **PASS** |
-| Negative browser controls | **NOT RUN** (documented gap) |
+| Negative browser controls (Add to Planner, owner authenticated) | **PASS** |
+| Full negative browser matrix on current Preview (remove / assign-week / fixtures × browser) | **NOT RUN** (prior rollback deploy **8/8** HTTP only) |
 | Live cleanup HTTP (owner) | **NOT RUN** (server batch cleanup **PASS**) |
 
-**Recommendation:** **GO** for merge decision on PR #17 (owner merge when ready). PR remains **open** until explicitly merged; no production deploy from this record.
+**Recommendation:** **CONDITIONAL GO** for merge decision on PR #17 — core planner path, staging identity, readonly enforcement, and Add-to-Planner negative control are satisfied; optional full browser negative matrix and owner cleanup HTTP remain unexecuted on latest Preview. PR remains **open** until explicitly merged; no production deploy from this record.
