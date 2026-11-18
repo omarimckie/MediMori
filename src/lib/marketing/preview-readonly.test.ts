@@ -50,7 +50,7 @@ test("preview readonly defaults off without env", () => {
   );
 });
 
-test("preview readonly enables only for Vercel Preview with explicit flag", () => {
+test("preview readonly enables for Vercel Preview with explicit or default flag", () => {
   assert.equal(
     isMarketingPreviewReadonly({ VERCEL_ENV: "preview", MARKETING_PREVIEW_READONLY: "1" }),
     true,
@@ -59,13 +59,14 @@ test("preview readonly enables only for Vercel Preview with explicit flag", () =
     isMarketingPreviewReadonly({ VERCEL_ENV: "preview", MARKETING_PREVIEW_READONLY: "true" }),
     true,
   );
+  assert.equal(isMarketingPreviewReadonly({ VERCEL_ENV: "preview" }), true);
 });
 
-test("client-style signals cannot enable readonly (query/header keys ignored)", () => {
+test("client-style signals cannot spoof readonly disable on preview", () => {
   assert.equal(
     isMarketingPreviewReadonly({
       VERCEL_ENV: "preview",
-      // spoofed client-shaped keys must not enable the guard
+      MARKETING_PREVIEW_READONLY: "false",
       "x-marketing-preview-readonly": "1",
       marketingPreviewReadonly: "1",
       READONLY: "1",
@@ -293,15 +294,16 @@ test("publish cron cannot execute in readonly mode even when authorize would pas
   assert.equal(publishCalled, false);
 });
 
-test("assert helper throws only when readonly active", () => {
-  assert.doesNotThrow(() => assertMarketingPreviewAllowsMutations({ VERCEL_ENV: "preview" }));
+test("assert helper throws on preview unless readonly explicitly disabled", () => {
   assert.throws(
-    () =>
-      assertMarketingPreviewAllowsMutations({
-        VERCEL_ENV: "preview",
-        MARKETING_PREVIEW_READONLY: "1",
-      }),
+    () => assertMarketingPreviewAllowsMutations({ VERCEL_ENV: "preview" }),
     MarketingPreviewReadonlyError,
+  );
+  assert.doesNotThrow(() =>
+    assertMarketingPreviewAllowsMutations({
+      VERCEL_ENV: "preview",
+      MARKETING_PREVIEW_READONLY: "false",
+    }),
   );
 });
 
