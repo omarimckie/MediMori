@@ -12,6 +12,7 @@ export type PlannerQueueContent = Pick<
   | "id"
   | "platform"
   | "title"
+  | "body"
   | "status"
   | "weeklyPlanId"
   | "scheduledFor"
