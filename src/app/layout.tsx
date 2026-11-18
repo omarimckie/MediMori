@@ -10,21 +10,9 @@ import {
   siteMetadataBase,
   websiteJsonLd,
 } from "@/lib/seo";
+import { cormorant, nunitoSans } from "@/lib/site-fonts";
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Nunito_Sans } from "next/font/google";
 import "./globals.css";
-
-const nunitoSans = Nunito_Sans({
-  variable: "--font-nunito-sans",
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
-});
-
-const cormorant = Cormorant_Garamond({
-  variable: "--font-cormorant",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   metadataBase: siteMetadataBase(),

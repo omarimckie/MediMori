@@ -1,4 +1,6 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, asStringOrNull, toDateOnly, toIso } from "./json";
+import { appearsInPlannerQueueView } from "./content-planner-queue";
+import { rejectClientSuppliedE2eOwnership } from "./planner-e2e-fixtures";
 import { sortMarketingContentForAdminList } from "./content-list-order";
 import {
   assertSmartUploadPlatformSlotAvailable,
@@ -27,6 +29,8 @@ import type {
   MarketingRecommendation,
   MarketingRule,
   MarketingTemplate,
+  PlannerQueueListParams,
+  PlannerQueueListResult,
   Platform,
   WeeklyPlan,
 } from "./types";
@@ -91,6 +95,10 @@ export class MemoryMarketingStore implements MarketingStore {
     return [...this.campaigns.values()].map(clone).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async deleteCampaign(id: string) {
+    return this.campaigns.delete(id);
+  }
+
   async createWeeklyPlan(input: Omit<WeeklyPlan, "createdAt">) {
     const row: WeeklyPlan = { ...input, createdAt: nowIso() };
     this.plans.set(row.id, row);
@@ -129,6 +137,10 @@ export class MemoryMarketingStore implements MarketingStore {
       (plan) => plan.campaignId === null && plan.weekStart === weekStart,
     );
     return row ? clone(row) : null;
+  }
+
+  async deleteWeeklyPlan(id: string) {
+    return this.plans.delete(id);
   }
 
   async createAsset(input: Omit<MarketingAsset, "createdAt">) {
@@ -182,6 +194,9 @@ export class MemoryMarketingStore implements MarketingStore {
   async updateContent(id: string, patch: Partial<MarketingContent>) {
     const current = this.content.get(id);
     if (!current) return null;
+    if (patch.metadata) {
+      rejectClientSuppliedE2eOwnership(patch.metadata, current.metadata);
+    }
     const row = { ...current, ...patch, id, updatedAt: nowIso() };
     this.content.set(id, row);
     return clone(row);
@@ -211,6 +226,25 @@ export class MemoryMarketingStore implements MarketingStore {
         .filter((item) => matchesFilters(item, filters))
         .map(clone),
     );
+  }
+
+  async listPlannerQueue(params: PlannerQueueListParams): Promise<PlannerQueueListResult> {
+    const publications = [...this.publications.values()].map((row) => ({
+      contentId: row.contentId,
+      platform: row.platform,
+      status: row.status,
+    }));
+    const eligible = [...this.content.values()]
+      .filter((item) => appearsInPlannerQueueView(item, publications))
+      .filter((item) => !params.platform || item.platform === params.platform);
+    const sorted = sortMarketingContentForAdminList(eligible.map(clone));
+    const page = sorted.slice(params.offset, params.offset + params.limit).map(clone);
+    return {
+      content: page,
+      total: sorted.length,
+      limit: params.limit,
+      offset: params.offset,
+    };
   }
 
   async findSmartUploadContentByFinalizeKey(finalizeKey: string) {

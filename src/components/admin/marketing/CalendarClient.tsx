@@ -11,17 +11,22 @@ import {
   calendarEventShowsRecycleBadge,
   calendarEventStatusLabel,
 } from "@/lib/marketing/calendar-publication-eligibility";
-import { filterUnscheduledApprovedContent } from "@/lib/marketing/calendar-unscheduled";
+import { formatContentWeekLabel } from "@/lib/marketing/content-client-utils";
+import {
+  formatRemoveFromPlannerSuccessMessage,
+  type PlannerQueueContent,
+} from "@/lib/marketing/content-planner-client";
 import type { MarketingCalendarEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyForEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyInMarketingTimezone } from "@/lib/marketing/marketing-scheduling";
-import type { MarketingContent, MarketingPublication } from "@/lib/marketing/types";
+import type { MarketingPublication } from "@/lib/marketing/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AddExistingPostPickerModal,
   type AddExistingPostPickerItem,
 } from "./AddExistingPostPickerModal";
 import { CalendarPublicationDetailModal } from "./CalendarPublicationDetailModal";
+import { AssignWeekModal } from "./AssignWeekModal";
 import { ScheduleContentModal } from "./ScheduleContentModal";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 import { runMarketingWeekPostAction } from "./week-client-act";
@@ -47,9 +52,11 @@ export function CalendarClient() {
   const [pickerPublications, setPickerPublications] = useState<
     Pick<MarketingPublication, "contentId" | "platform" | "status" | "publishedAt" | "externalId">[]
   >([]);
-  const [unscheduled, setUnscheduled] = useState<MarketingContent[]>([]);
+  const [planningQueue, setPlanningQueue] = useState<PlannerQueueContent[]>([]);
+  const [queueLoading, setQueueLoading] = useState(true);
   const [weeklyPlans, setWeeklyPlans] = useState<Array<{ id: string; weekStart: string }>>([]);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget | null>(null);
+  const [assignWeekTarget, setAssignWeekTarget] = useState<PlannerQueueContent | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -72,34 +79,46 @@ export function CalendarClient() {
     }
   }, [viewMonth, viewYear]);
 
-  const loadUnscheduled = useCallback(async () => {
-    const [contentRes, settingsRes] = await Promise.all([
-      fetch("/api/admin/marketing/content?status=approved"),
-      fetch("/api/admin/marketing/settings"),
-    ]);
-    const contentData = await contentRes.json();
-    const settingsData = await settingsRes.json();
-    const publications = (settingsData.publications ?? []) as Pick<
-      MarketingPublication,
-      "contentId" | "platform" | "status"
-    >[];
-    const approved = (contentData.content ?? []) as MarketingContent[];
-    setUnscheduled(filterUnscheduledApprovedContent(approved, publications));
-    setWeeklyPlans(
-      ((settingsData.plans ?? []) as Array<{ id: string; weekStart: string }>).map((plan) => ({
-        id: plan.id,
-        weekStart: plan.weekStart,
-      })),
-    );
+  const loadPlanningQueue = useCallback(async () => {
+    setQueueLoading(true);
+    try {
+      const [queueRes, settingsRes] = await Promise.all([
+        fetch("/api/admin/marketing/planner/queue"),
+        fetch("/api/admin/marketing/settings"),
+      ]);
+      const queueData = (await queueRes.json()) as { content?: PlannerQueueContent[]; error?: string };
+      if (!queueRes.ok) {
+        throw new Error(queueData.error ?? "Could not load planning queue.");
+      }
+      setPlanningQueue(queueData.content ?? []);
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        setWeeklyPlans(
+          ((settingsData.plans ?? []) as Array<{ id: string; weekStart: string }>).map((plan) => ({
+            id: plan.id,
+            weekStart: plan.weekStart,
+          })),
+        );
+      }
+    } finally {
+      setQueueLoading(false);
+    }
   }, []);
 
   const reloadAll = useCallback(async () => {
-    await Promise.all([loadCalendar(), loadUnscheduled()]);
-  }, [loadCalendar, loadUnscheduled]);
+    await Promise.all([loadCalendar(), loadPlanningQueue()]);
+  }, [loadCalendar, loadPlanningQueue]);
 
   useEffect(() => {
-    void reloadAll();
+    void reloadAll().catch((error: Error) => setMessage(error.message));
   }, [reloadAll]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#planning-queue") {
+      document.getElementById("planning-queue")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [queueLoading]);
 
   useEffect(() => {
     ensureViewMonth();
@@ -120,6 +139,54 @@ export function CalendarClient() {
       setShowPicker(true);
     } catch {
       setMessage("Could not load content for picker.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeFromPlanningQueue(contentId: string) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/marketing/content/remove-from-planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentIds: [contentId] }),
+      });
+      const json = (await res.json()) as { error?: string; removed?: unknown[] };
+      if (!res.ok) {
+        setMessage(json.error ?? "Could not remove from planning queue.");
+        return;
+      }
+      const removedCount = Array.isArray(json.removed) ? json.removed.length : 0;
+      setMessage(formatRemoveFromPlannerSuccessMessage(removedCount));
+      await reloadAll();
+    } catch {
+      setMessage("Network error while removing from planning queue.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitAssignWeek(contentId: string, weeklyPlanId: string) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/marketing/content/assign-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentIds: [contentId], weeklyPlanId }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setMessage(json.error ?? "Could not assign week.");
+        return;
+      }
+      setAssignWeekTarget(null);
+      setMessage("Week assigned.");
+      await reloadAll();
+    } catch {
+      setMessage("Network error while assigning week.");
     } finally {
       setBusy(false);
     }
@@ -278,44 +345,74 @@ export function CalendarClient() {
       </Card>
 
       <Card>
-        <h2 className="font-display text-xl text-brand-navy">Unscheduled</h2>
+        <h2 id="planning-queue" className="font-display text-xl text-brand-navy scroll-mt-24">
+          Planning queue
+        </h2>
         <p className="mt-1 text-sm text-brand-charcoal/65">
-          Approved content ready to schedule. Not shown on the calendar until you pick a date.
+          Approved, unscheduled content ready for week assignment and scheduling. Legacy approved
+          items appear here until scheduled. Nothing appears on the calendar until you confirm a
+          publish time.
         </p>
-        {unscheduled.length ? (
-          <ul className="mt-4 space-y-2">
-            {unscheduled.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-brown/10 pb-2 last:border-0"
-              >
-                <div>
-                  <p className="font-bold">{item.title || item.platform}</p>
-                  <p className="text-xs text-brand-charcoal/60">{item.platform}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusPill status="approved" />
-                  <PrimaryButton
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setScheduleTarget({
-                        id: item.id,
-                        title: item.title,
-                        platform: item.platform,
-                        scheduledFor: item.scheduledFor,
-                        mode: "schedule",
-                      })
-                    }
-                  >
-                    Schedule
-                  </PrimaryButton>
-                </div>
-              </li>
-            ))}
+        {queueLoading ? (
+          <p className="mt-3 text-sm text-brand-charcoal/60" role="status">
+            Loading planning queue…
+          </p>
+        ) : planningQueue.length ? (
+          <ul className="mt-4 space-y-3">
+            {planningQueue.map((item) => {
+              const week = formatContentWeekLabel(item.weeklyPlanId, weeklyPlans);
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-2 border-b border-brand-brown/10 pb-3 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold">{item.title || item.platform}</p>
+                    <p className="text-xs text-brand-charcoal/60">{item.platform}</p>
+                    <p className="mt-1 text-xs text-brand-charcoal/55">
+                      Week: <span className="font-semibold">{week.label}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill status="approved" />
+                    <SecondaryButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setAssignWeekTarget(item)}
+                    >
+                      {item.weeklyPlanId ? "Change week" : "Assign week"}
+                    </SecondaryButton>
+                    <SecondaryButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removeFromPlanningQueue(item.id)}
+                    >
+                      Remove from queue
+                    </SecondaryButton>
+                    <PrimaryButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        setScheduleTarget({
+                          id: item.id,
+                          title: item.title,
+                          platform: item.platform,
+                          scheduledFor: item.scheduledFor,
+                          mode: "schedule",
+                        })
+                      }
+                    >
+                      Schedule
+                    </PrimaryButton>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : (
-          <p className="mt-3 text-sm text-brand-charcoal/70">No unscheduled approved content.</p>
+          <p className="mt-3 text-sm text-brand-charcoal/70">
+            The planning queue is empty. Approve content in the library and use Add to Planner.
+          </p>
         )}
       </Card>
 
@@ -367,7 +464,7 @@ export function CalendarClient() {
             weeklyPlans.find(
               (plan) =>
                 plan.id ===
-                unscheduled.find((row) => row.id === scheduleTarget.id)?.weeklyPlanId,
+                planningQueue.find((row) => row.id === scheduleTarget.id)?.weeklyPlanId,
             )?.weekStart ?? null
           }
           busy={busy}
@@ -375,6 +472,19 @@ export function CalendarClient() {
           onConfirm={(scheduledFor) => {
             void submitSchedule(scheduledFor);
           }}
+        />
+      ) : null}
+
+      {assignWeekTarget ? (
+        <AssignWeekModal
+          key={`${assignWeekTarget.id}-${assignWeekTarget.weeklyPlanId ?? "none"}`}
+          open
+          busy={busy}
+          contentLabel={assignWeekTarget.title || assignWeekTarget.platform}
+          plans={weeklyPlans}
+          initialWeeklyPlanId={assignWeekTarget.weeklyPlanId}
+          onClose={() => setAssignWeekTarget(null)}
+          onConfirm={(weeklyPlanId) => void submitAssignWeek(assignWeekTarget.id, weeklyPlanId)}
         />
       ) : null}
     </div>

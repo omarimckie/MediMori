@@ -3,7 +3,10 @@ import {
   verifyAdminSessionValueEdge,
 } from "@/lib/admin-session-edge";
 import {
-  isMarketingPreviewReadonly,
+  evaluatePlannerStagingE2eHttpMutation,
+  plannerStagingE2eMutationBlockMessage,
+} from "@/lib/marketing/planner-staging-e2e-gate";
+import {
   isMarketingPreviewReadonlyMutationRequest,
   MARKETING_PREVIEW_READONLY_MESSAGE,
 } from "@/lib/marketing/preview-readonly";
@@ -13,14 +16,20 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const method = request.method;
 
-  if (
-    isMarketingPreviewReadonly() &&
-    isMarketingPreviewReadonlyMutationRequest(pathname, method)
-  ) {
-    return NextResponse.json(
-      { error: MARKETING_PREVIEW_READONLY_MESSAGE },
-      { status: 403 },
-    );
+  if (isMarketingPreviewReadonlyMutationRequest(pathname, method)) {
+    const e2eDecision = evaluatePlannerStagingE2eHttpMutation(pathname, method);
+    if (e2eDecision === "readonly") {
+      return NextResponse.json(
+        { error: MARKETING_PREVIEW_READONLY_MESSAGE },
+        { status: 403 },
+      );
+    }
+    if (e2eDecision === "scope_unarmed" || e2eDecision === "deny_allowlist") {
+      return NextResponse.json(
+        { error: plannerStagingE2eMutationBlockMessage(e2eDecision) },
+        { status: 403 },
+      );
+    }
   }
 
   if (!pathname.startsWith("/admin")) {

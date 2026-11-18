@@ -1,10 +1,10 @@
 import { getSql } from "@/lib/db";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import {
-  connectPreviewAwarePoolClient,
-  previewDatabaseGuardDecision,
-  PreviewDatabaseGuardError,
-} from "@/lib/marketing/preview-db-guard";
+  assertMarketingDatabaseGuardAllowsAccess,
+  connectMarketingAwarePoolClient,
+  resolveMarketingDatabaseGuardRoute,
+} from "@/lib/marketing/marketing-database-guard";
 import { sanitizeEventPayload } from "./sanitize";
 import type {
   MarketingIncidentEventRecord,
@@ -294,11 +294,9 @@ function createRepoForPoolClient(client: PoolClient): PostgresMarketingIncidentR
 }
 
 async function withPoolTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const decision = previewDatabaseGuardDecision(process.env);
-  if (decision === "reject") {
-    throw new PreviewDatabaseGuardError("ambiguous-scope");
-  }
-  const client = await connectPreviewAwarePoolClient({
+  assertMarketingDatabaseGuardAllowsAccess(process.env);
+  const route = resolveMarketingDatabaseGuardRoute(process.env);
+  const client = await connectMarketingAwarePoolClient({
     connect: () => getIncidentPool().connect(),
   });
   let began = false;
@@ -309,7 +307,7 @@ async function withPoolTransaction<T>(fn: (client: PoolClient) => Promise<T>): P
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    if (began || decision === "skip") {
+    if (began || route === "skip") {
       try {
         await client.query("ROLLBACK");
       } catch {

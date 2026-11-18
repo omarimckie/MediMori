@@ -31,7 +31,7 @@ test("needs_review card shows full caption, platform, status, and review control
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
   assert.match(html, /needs review/i);
@@ -41,12 +41,12 @@ test("needs_review card shows full caption, platform, status, and review control
   assert.match(html, /Full caption/);
   assert.match(html, /Approve/);
   assert.match(html, /Reject/);
-  assert.match(html, /does not schedule or publish/i);
+  assert.match(html, /does not schedule or publish|planner/i);
   assert.match(html, /api\/admin\/marketing\/assets\/a87843a4-2f77-4626-880d-ddda9445ab09\/image/);
   assert.doesNotMatch(html, /blob\.vercel-storage/);
 });
 
-test("approved content does not show Approve\/Reject controls", () => {
+test("approved content shows Add to Planner and hides Approve/Reject", () => {
   const html = renderToStaticMarkup(
     <ContentQueueReviewCard
       item={{ ...baseItem, status: "approved" }}
@@ -57,11 +57,31 @@ test("approved content does not show Approve\/Reject controls", () => {
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
   assert.doesNotMatch(html, />Approve</);
   assert.doesNotMatch(html, />Reject</);
+  assert.match(html, /Add to Planner/);
+});
+
+test("plannerQueued content shows In planner badge and planner link", () => {
+  const html = renderToStaticMarkup(
+    <ContentQueueReviewCard
+      item={{ ...baseItem, status: "approved", plannerQueued: true }}
+      previewUrl={null}
+      showVisualPreview={false}
+      plans={[]}
+      currentWeekPlanId={null}
+      busy={false}
+      onApprove={noop}
+      onReject={noop}
+      onAddToPlanner={noop}
+    />,
+  );
+  assert.match(html, /In planner/i);
+  assert.match(html, /planning-queue/);
+  assert.doesNotMatch(html, /Add to Planner/);
 });
 
 test("raw blob preview URL is not rendered; unavailable fallback shown", () => {
@@ -75,10 +95,10 @@ test("raw blob preview URL is not rendered; unavailable fallback shown", () => {
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
-  assert.match(html, /Preview unavailable/);
+  assert.match(html, /not allowed for in-browser review/i);
   assert.doesNotMatch(html, /blob\.vercel-storage/);
   assert.doesNotMatch(html, /Q7Bbz4IQuVq0GO24/);
 });
@@ -98,7 +118,7 @@ test("preview read-only card renders an explicit public Blob URL", () => {
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
   assert.match(html, new RegExp(publicBlob.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -118,11 +138,34 @@ test("invalid public Blob URL stays on the review fallback when preview images a
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
-  assert.match(html, /Preview unavailable/);
+  assert.match(html, /not an allowed public marketing Blob/i);
   assert.doesNotMatch(html, /example\.com/);
+});
+
+test("preview read-only hides approve, reject, and week controls but keeps caption", () => {
+  const html = renderToStaticMarkup(
+    <ContentQueueReviewCard
+      item={baseItem}
+      previewUrl={adminPreview}
+      showVisualPreview
+      previewReadonlyMode
+      plans={[{ id: "plan-1", weekStart: "2026-10-13" }]}
+      currentWeekPlanId={null}
+      busy={false}
+      onApprove={noop}
+      onReject={noop}
+      onAddToPlanner={noop}
+    />,
+  );
+  assert.doesNotMatch(html, />Approve</);
+  assert.doesNotMatch(html, />Reject</);
+  assert.doesNotMatch(html, /Add to Week/);
+  assert.match(html, /read-only/i);
+  assert.match(html, /Full caption/);
+  assert.match(html, /#SickleCellAwareness/);
 });
 
 test("caption line breaks are preserved in markup", () => {
@@ -136,7 +179,7 @@ test("caption line breaks are preserved in markup", () => {
       busy={false}
       onApprove={noop}
       onReject={noop}
-      onAddToWeek={noop}
+      onAddToPlanner={noop}
     />,
   );
   assert.match(html, /whitespace-pre-wrap/);

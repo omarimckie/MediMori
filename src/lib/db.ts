@@ -1,9 +1,9 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import {
-  createPreviewGuardedSql,
-  previewDatabaseGuardDecision,
-  PreviewDatabaseGuardError,
-} from "@/lib/marketing/preview-db-guard";
+  assertMarketingDatabaseGuardAllowsAccess,
+  createMarketingGuardedSql,
+  resolveMarketingDatabaseGuardRoute,
+} from "@/lib/marketing/marketing-database-guard";
 
 type SqlClient = NeonQueryFunction<false, false>;
 type SqlFactory = (connectionString: string) => SqlClient;
@@ -29,9 +29,8 @@ export function resetSqlCacheForTests(): void {
  * Server Actions, or other server modules — never from Client Components.
  * DATABASE_URL is never exposed to the browser.
  *
- * On the feature/order-notifications Preview deployment, the returned client
- * runs a read-only identity probe before the caller's first statement.
- * Production and other Preview branches keep a single unguarded client.
+ * On protected Preview deployments, the returned client probes database identity
+ * before the caller's first statement (production read-only or staging verification).
  */
 export function getSql(): SqlClient {
   if (typeof window !== "undefined") {
@@ -43,12 +42,10 @@ export function getSql(): SqlClient {
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const decision = previewDatabaseGuardDecision(process.env);
-  if (decision === "reject") {
-    throw new PreviewDatabaseGuardError("ambiguous-scope");
-  }
+  assertMarketingDatabaseGuardAllowsAccess(process.env);
 
-  if (decision === "skip") {
+  const route = resolveMarketingDatabaseGuardRoute(process.env);
+  if (route === "skip") {
     if (!unguarded) unguarded = sqlFactory(connectionString);
     return unguarded;
   }
@@ -56,7 +53,7 @@ export function getSql(): SqlClient {
   const cached = guardedByConnection.get(connectionString);
   if (cached) return cached;
 
-  const guarded = createPreviewGuardedSql(sqlFactory(connectionString));
+  const guarded = createMarketingGuardedSql(sqlFactory(connectionString), connectionString);
   guardedByConnection.set(connectionString, guarded);
   return guarded;
 }

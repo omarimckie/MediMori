@@ -90,17 +90,24 @@ test("weekly generation creates platform-specific content and cost logs", async 
 test("approval, edit, rejection, and preference signals", async () => {
   const store = new MemoryMarketingStore();
   await seedMarketing(store);
-  const [item] = await store.listContent({ status: "needs_review" });
+  const warmerEdit =
+    "Talking to your child about sickle cell doesn't have to feel scary.";
+  const reviewItems = await store.listContent({ status: "needs_review" });
+  const item =
+    reviewItems.find((row) =>
+      inferPreferenceSignals(row.body, warmerEdit).some((signal) =>
+        /warmer|conversational/i.test(signal.statement),
+      ),
+    ) ?? reviewItems[0];
   assert.ok(item);
 
   const approved = await approveContent(store, item.id, "omari");
   assert.equal(approved?.status, "approved");
 
-  const edited = await editContent(
-    store,
-    item.id,
-    "Talking to your child about sickle cell doesn't have to feel scary.",
-    "omari",
+  const edited = await editContent(store, item.id, warmerEdit, "omari");
+  assert.deepEqual(
+    edited.signals,
+    inferPreferenceSignals(item.body, warmerEdit),
   );
   assert.ok(edited.signals.some((signal) => /warmer|conversational/i.test(signal.statement)));
 

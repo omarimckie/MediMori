@@ -63,6 +63,25 @@ export function isSafeAdminContentPreviewUrl(
   return /^\/api\/admin\/marketing\/assets\/[0-9a-f-]+\/image$/i.test(trimmed);
 }
 
+export function reviewCardPreviewUnavailableMessage(
+  previewUrl: string | null | undefined,
+  allowExplicitPublicBlob: boolean,
+): string {
+  const trimmed = previewUrl?.trim();
+  if (
+    !allowExplicitPublicBlob &&
+    trimmed &&
+    !trimmed.startsWith("/") &&
+    /blob\.vercel-storage/i.test(trimmed)
+  ) {
+    return "Direct Blob URLs are not allowed for in-browser review.";
+  }
+  if (allowExplicitPublicBlob && trimmed && !trimmed.startsWith("/") && !explicitPublicMarketingBlobReviewUrl(trimmed)) {
+    return "This image is not an allowed public marketing Blob URL.";
+  }
+  return "Preview unavailable";
+}
+
 export function resolveReviewCardImageSrc(
   url: string | null | undefined,
   allowExplicitPublicBlob = false,

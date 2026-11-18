@@ -1,3 +1,4 @@
+import { assertPlannerStagingE2eOwnedContentIds } from "./planner-staging-e2e-gate";
 import { SMART_UPLOAD_SOURCE } from "./content-metadata";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
@@ -48,6 +49,7 @@ export async function assignContentToWeeklyPlan(
   }
 
   const contentIds = normalizeContentIds(input.contentIds);
+  await assertPlannerStagingE2eOwnedContentIds(store, contentIds);
   const plan = await store.getWeeklyPlan(weeklyPlanId);
   if (!plan) {
     throw new AssignContentToWeekError("Weekly plan not found.", "plan_not_found");

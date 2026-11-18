@@ -14,6 +14,8 @@ import type {
   MarketingRecommendation,
   MarketingRule,
   MarketingTemplate,
+  PlannerQueueListParams,
+  PlannerQueueListResult,
   WeeklyPlan,
 } from "./types";
 
@@ -32,6 +34,7 @@ export type MarketingStore = {
   ): Promise<MarketingCampaign | null>;
   getCampaign(id: string): Promise<MarketingCampaign | null>;
   listCampaigns(): Promise<MarketingCampaign[]>;
+  deleteCampaign(id: string): Promise<boolean>;
 
   createWeeklyPlan(input: Omit<WeeklyPlan, "createdAt">): Promise<WeeklyPlan>;
   updateWeeklyPlan(id: string, patch: Partial<WeeklyPlan>): Promise<WeeklyPlan | null>;
@@ -39,6 +42,7 @@ export type MarketingStore = {
   listWeeklyPlans(campaignId?: string): Promise<WeeklyPlan[]>;
   findWeeklyPlan(campaignId: string, weekStart: string): Promise<WeeklyPlan | null>;
   findCampaignlessWeeklyPlan(weekStart: string): Promise<WeeklyPlan | null>;
+  deleteWeeklyPlan(id: string): Promise<boolean>;
 
   createAsset(input: Omit<MarketingAsset, "createdAt">): Promise<MarketingAsset>;
   updateAsset(
@@ -67,6 +71,7 @@ export type MarketingStore = {
   getContent(id: string): Promise<MarketingContent | null>;
   getContentByToken(token: string): Promise<MarketingContent | null>;
   listContent(filters?: ContentFilters): Promise<MarketingContent[]>;
+  listPlannerQueue(params: PlannerQueueListParams): Promise<PlannerQueueListResult>;
   findSmartUploadContentByFinalizeKey(finalizeKey: string): Promise<SmartUploadFinalizeLookup>;
   deleteContent(id: string): Promise<boolean>;
 

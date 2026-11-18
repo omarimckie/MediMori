@@ -1,4 +1,4 @@
-import { jsonError, requireMarketingAdmin } from "@/lib/marketing/http";
+import { jsonError, requireMarketingAdmin, requireMarketingAdminMutation } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
 import { executeMarketingContentPostAction } from "@/lib/marketing/content-post-action";
 import { NextResponse } from "next/server";
@@ -23,7 +23,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireMarketingAdmin();
+  const auth = await requireMarketingAdminMutation(request);
   if (!auth.ok) return auth.response;
   const { id } = await context.params;
   let body: {
