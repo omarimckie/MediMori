@@ -342,4 +342,6 @@ test("route modules export handlers", () => {
   assert.match(addRoute, /requireMarketingAdminMutation/);
   assert.match(queueRoute, /listPlannerQueue/);
   assert.match(queueRoute, /requireMarketingAdmin/);
+  assert.match(queueRoute, /buildContentListPreviewById/);
+  assert.match(queueRoute, /enrich === "preview"/);
 });

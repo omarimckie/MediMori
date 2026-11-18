@@ -1,9 +1,12 @@
 import { requireMarketingAdmin } from "@/lib/marketing/http";
 import { getMarketingStore } from "@/lib/marketing/context";
+import { buildContentListPreviewById } from "@/lib/marketing/content-list-preview";
 import {
   listPlannerQueue,
   parsePlannerQueuePagination,
 } from "@/lib/marketing/content-planner-queue";
+import { isMarketingPreviewReadonly } from "@/lib/marketing/preview-readonly";
+import { buildWeeklyItemReview } from "@/lib/marketing/weekly-review";
 import type { Platform } from "@/lib/marketing/types";
 import { PLATFORMS } from "@/lib/marketing/types";
 import { NextResponse } from "next/server";
@@ -28,6 +31,22 @@ export async function GET(request: Request) {
     platform = platformParam as Platform;
   }
 
-  const result = await listPlannerQueue(getMarketingStore(), { limit, offset, platform });
+  const store = getMarketingStore();
+  const result = await listPlannerQueue(store, { limit, offset, platform });
+  const enrich = url.searchParams.get("enrich");
+  if (enrich === "preview") {
+    const previewByContentId = await buildContentListPreviewById(store, result.content);
+    const reviewByContentId: Record<string, Awaited<ReturnType<typeof buildWeeklyItemReview>>> =
+      {};
+    for (const item of result.content) {
+      reviewByContentId[item.id] = await buildWeeklyItemReview(store, item);
+    }
+    return NextResponse.json({
+      ...result,
+      previewByContentId,
+      reviewByContentId,
+      previewReadonlyImages: isMarketingPreviewReadonly(),
+    });
+  }
   return NextResponse.json(result);
 }

@@ -8,4 +8,6 @@ test("calendar planning queue exposes remove-from-planner control", () => {
   assert.match(source, /remove-from-planner/);
   assert.match(source, /Remove from queue/);
   assert.match(source, /loadPlanningQueue/);
+  assert.match(source, /enrich=preview|plannerQueueListRequestUrl/);
+  assert.match(source, /PlanningQueuePreviewThumb/);
 });
