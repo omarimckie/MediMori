@@ -314,6 +314,14 @@ test("disabling E2E mode restores skip on unrelated mutation policy", () => {
       "POST",
       other,
     ),
+    "readonly",
+  );
+  assert.equal(
+    evaluatePlannerStagingE2eHttpMutation(
+      "/api/admin/marketing/content/add-to-planner",
+      "POST",
+      { ...other, MARKETING_PREVIEW_READONLY: "false" },
+    ),
     "skip",
   );
 });
