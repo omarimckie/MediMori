@@ -39,6 +39,20 @@ test("preview fail-closed allows staging neon project id", () => {
   );
 });
 
+test("preview fail-closed rejects unknown non-production neon project ids", () => {
+  assert.equal(
+    previewFailClosedIdentityMatches([
+      {
+        neon_project_id: "aged-brook-70202332",
+        current_user: "neondb_owner",
+        current_database: "neondb",
+        marketing_content_insert_allowed: false,
+      },
+    ]),
+    false,
+  );
+});
+
 test("order-notifications production read-only exception uses production-ro route", () => {
   assert.equal(
     resolveMarketingDatabaseGuardRoute({

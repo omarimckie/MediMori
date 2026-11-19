@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { PreviewFailClosedDatabaseGuardError } from "@/lib/marketing/preview-fail-closed-guard";
 import { resolveMarketingDatabaseGuardRoute } from "@/lib/marketing/marketing-database-guard";
 import {
   isMarketingPreviewReadonly,
@@ -119,7 +120,7 @@ export async function previewRuntimeDbIdentityResponse(deps: {
     const identity = await deps.queryIdentity();
     return NextResponse.json(identity, { status: 200, headers: noStore });
   } catch (error: unknown) {
-    if (error instanceof Error && error.name === "PreviewFailClosedDatabaseGuardError") {
+    if (error instanceof PreviewFailClosedDatabaseGuardError) {
       return NextResponse.json(
         { error: "Preview database isolation check failed." },
         { status: 503, headers: noStore },

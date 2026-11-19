@@ -9,10 +9,13 @@ import {
   PREVIEW_DB_IDENTITY_PROBE_SQL,
   type GuardablePoolClient,
 } from "@/lib/marketing/preview-db-guard";
-import { PRODUCTION_NEON_PROJECT_ID } from "@/lib/marketing/staging-planner-db-guard";
+import {
+  PRODUCTION_NEON_PROJECT_ID,
+  STAGING_PLANNER_NEON_PROJECT_ALLOWLIST,
+} from "@/lib/marketing/staging-planner-db-guard";
 
 export const PREVIEW_FAIL_CLOSED_GUARD_ERROR =
-  "Preview cannot use unrestricted Production database credentials.";
+  "Preview database connection is not on an approved staging Neon project.";
 
 export type PreviewFailClosedGuardFailure =
   | "production-forbidden"
@@ -33,8 +36,8 @@ export class PreviewFailClosedDatabaseGuardError extends Error {
 const FailClosedGuardError = PreviewFailClosedDatabaseGuardError as unknown as GuardErrorClass;
 
 /**
- * Fail closed when a generic Preview deployment probes Production Neon without the
- * order-notifications read-only guard path or integration staging guard.
+ * Fail closed when a generic Preview deployment is not on an approved staging Neon project.
+ * Production Neon and order-notifications routes use separate verified guard paths.
  */
 export function previewFailClosedIdentityMatches(rows: unknown): boolean {
   if (!Array.isArray(rows) || rows.length !== 1 || rows[0] === null || typeof rows[0] !== "object") {
@@ -48,7 +51,7 @@ export function previewFailClosedIdentityMatches(rows: unknown): boolean {
   if (projectId === PRODUCTION_NEON_PROJECT_ID) {
     return false;
   }
-  return true;
+  return (STAGING_PLANNER_NEON_PROJECT_ALLOWLIST as readonly string[]).includes(projectId);
 }
 
 export function createPreviewFailClosedGuardedSql(

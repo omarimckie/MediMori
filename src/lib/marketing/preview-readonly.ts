@@ -22,28 +22,41 @@ export class MarketingPreviewReadonlyError extends Error {
   }
 }
 
-function truthyFlag(value: string | undefined): boolean {
-  const trimmed = value?.trim().toLowerCase();
-  return trimmed === "1" || trimmed === "true" || trimmed === "yes";
+export const MARKETING_PREVIEW_READONLY_FALSE_VALUES = ["false", "0", "no"] as const;
+export const MARKETING_PREVIEW_READONLY_TRUE_VALUES = ["true", "1", "yes"] as const;
+
+export function normalizeMarketingPreviewReadonlyFlag(
+  value: string | undefined,
+): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed.toLowerCase();
 }
 
 export function isMarketingPreviewReadonlyExplicitlyDisabled(env: EnvLike = process.env): boolean {
-  const trimmed = env.MARKETING_PREVIEW_READONLY?.trim().toLowerCase();
-  return trimmed === "false" || trimmed === "0" || trimmed === "no";
+  const normalized = normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY);
+  if (normalized === null) return false;
+  return (MARKETING_PREVIEW_READONLY_FALSE_VALUES as readonly string[]).includes(normalized);
+}
+
+export function isMarketingPreviewReadonlyExplicitlyEnabled(env: EnvLike = process.env): boolean {
+  const normalized = normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY);
+  if (normalized === null) return false;
+  return (MARKETING_PREVIEW_READONLY_TRUE_VALUES as readonly string[]).includes(normalized);
 }
 
 export function isMarketingPreviewReadonlyConfigured(env: EnvLike = process.env): boolean {
-  const trimmed = env.MARKETING_PREVIEW_READONLY?.trim();
-  return Boolean(trimmed);
+  return normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY) !== null;
 }
 
-/** True on Vercel Preview unless MARKETING_PREVIEW_READONLY is explicitly disabled. */
+/**
+ * True on Vercel Preview unless MARKETING_PREVIEW_READONLY is an explicit supported disable value.
+ * Missing, empty, typo, or other unrecognized values fail closed (read-only enabled).
+ */
 export function isMarketingPreviewReadonly(env: EnvLike = process.env): boolean {
   if (env.VERCEL_ENV !== "preview") return false;
   if (isMarketingPreviewReadonlyExplicitlyDisabled(env)) return false;
-  if (isMarketingPreviewReadonlyConfigured(env)) {
-    return truthyFlag(env.MARKETING_PREVIEW_READONLY);
-  }
+  if (isMarketingPreviewReadonlyExplicitlyEnabled(env)) return true;
   return true;
 }
 

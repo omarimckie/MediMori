@@ -75,6 +75,30 @@ test("client-style signals cannot spoof readonly disable on preview", () => {
   );
 });
 
+test("preview readonly fails closed on typos, whitespace-only, and unsupported values", () => {
+  const preview = { VERCEL_ENV: "preview" as const };
+  assert.equal(isMarketingPreviewReadonly({ ...preview }), true);
+  assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: "" }), true);
+  assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: "   " }), true);
+  assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: "flase" }), true);
+  assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: "TURE" }), true);
+  assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: "maybe" }), true);
+});
+
+test("preview readonly disable accepts only supported false variants", () => {
+  const preview = { VERCEL_ENV: "preview" as const };
+  for (const value of ["false", "FALSE", "  false ", "0", "no"]) {
+    assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: value }), false);
+  }
+});
+
+test("preview readonly enable accepts only supported true variants", () => {
+  const preview = { VERCEL_ENV: "preview" as const };
+  for (const value of ["true", "TRUE", "  true ", "1", "yes"]) {
+    assert.equal(isMarketingPreviewReadonly({ ...preview, MARKETING_PREVIEW_READONLY: value }), true);
+  }
+});
+
 test("mutation path matrix blocks marketing writes and cron triggers", () => {
   const blocked: Array<[string, string]> = [
     ["/api/admin/marketing/content/abc", "POST"],

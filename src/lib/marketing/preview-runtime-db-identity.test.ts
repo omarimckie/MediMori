@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { PreviewFailClosedDatabaseGuardError } from "./preview-fail-closed-guard";
 import {
   buildPreviewRuntimeDeploymentIdentity,
   parsePreviewRuntimeDbIdentityRows,
@@ -61,6 +62,20 @@ test("preview runtime identity disabled outside preview", async () => {
   assert.equal(response.status, 404);
   const body = await response.json();
   assert.deepEqual(body, { enabled: false });
+});
+
+test("guard rejection returns controlled 503 without internal errors", async () => {
+  const response = await previewRuntimeDbIdentityResponse({
+    isAuthenticated: async () => true,
+    isPreviewRuntime: () => true,
+    queryIdentity: async () => {
+      throw new PreviewFailClosedDatabaseGuardError("mismatch");
+    },
+  });
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.deepEqual(body, { error: "Preview database isolation check failed." });
+  assert.doesNotMatch(JSON.stringify(body), /postgres:\/\/|DATABASE_URL|SELECT|PreviewFailClosed/);
 });
 
 test("authorized preview runtime identity returns non-secret fields", async () => {
