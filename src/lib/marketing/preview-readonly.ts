@@ -1,9 +1,9 @@
 /**
  * Server-only Preview read-only mode for temporary Content Queue review.
  *
- * Enabled only when BOTH are true:
- * - VERCEL_ENV === "preview" (set by Vercel; not client-controllable)
- * - MARKETING_PREVIEW_READONLY is "1" or "true" (project env; not client-controllable)
+ * On Vercel Preview (VERCEL_ENV === "preview"):
+ * - Default: marketing mutations are read-only when MARKETING_PREVIEW_READONLY is unset.
+ * - Explicit false/0/no disables read-only for authorized write windows only.
  *
  * Never active in Production, even if the flag is mis-set.
  */
@@ -22,15 +22,42 @@ export class MarketingPreviewReadonlyError extends Error {
   }
 }
 
-function truthyFlag(value: string | undefined): boolean {
-  const trimmed = value?.trim().toLowerCase();
-  return trimmed === "1" || trimmed === "true" || trimmed === "yes";
+export const MARKETING_PREVIEW_READONLY_FALSE_VALUES = ["false", "0", "no"] as const;
+export const MARKETING_PREVIEW_READONLY_TRUE_VALUES = ["true", "1", "yes"] as const;
+
+export function normalizeMarketingPreviewReadonlyFlag(
+  value: string | undefined,
+): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed.toLowerCase();
 }
 
-/** True only for explicitly configured Vercel Preview deployments. */
+export function isMarketingPreviewReadonlyExplicitlyDisabled(env: EnvLike = process.env): boolean {
+  const normalized = normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY);
+  if (normalized === null) return false;
+  return (MARKETING_PREVIEW_READONLY_FALSE_VALUES as readonly string[]).includes(normalized);
+}
+
+export function isMarketingPreviewReadonlyExplicitlyEnabled(env: EnvLike = process.env): boolean {
+  const normalized = normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY);
+  if (normalized === null) return false;
+  return (MARKETING_PREVIEW_READONLY_TRUE_VALUES as readonly string[]).includes(normalized);
+}
+
+export function isMarketingPreviewReadonlyConfigured(env: EnvLike = process.env): boolean {
+  return normalizeMarketingPreviewReadonlyFlag(env.MARKETING_PREVIEW_READONLY) !== null;
+}
+
+/**
+ * True on Vercel Preview unless MARKETING_PREVIEW_READONLY is an explicit supported disable value.
+ * Missing, empty, typo, or other unrecognized values fail closed (read-only enabled).
+ */
 export function isMarketingPreviewReadonly(env: EnvLike = process.env): boolean {
   if (env.VERCEL_ENV !== "preview") return false;
-  return truthyFlag(env.MARKETING_PREVIEW_READONLY);
+  if (isMarketingPreviewReadonlyExplicitlyDisabled(env)) return false;
+  if (isMarketingPreviewReadonlyExplicitlyEnabled(env)) return true;
+  return true;
 }
 
 /**
