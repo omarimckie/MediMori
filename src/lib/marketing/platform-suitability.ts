@@ -47,6 +47,7 @@ export function contentFormatUsesSocialImage(
     return false;
   }
   if (platform === "pinterest") return format === "pin";
+  if (platform === "tiktok") return format === "post" || format === "reel_script";
   return SOCIAL_IMAGE_FORMATS.has(format);
 }
 
@@ -82,6 +83,22 @@ export function platformImageRule(platform: Platform, format: ContentFormat): Pl
       requiresAspectRatio: true,
       minRatio: PINTEREST_ASPECT_RATIO_MIN,
       maxRatio: PINTEREST_ASPECT_RATIO_MAX,
+    };
+  }
+  if (platform === "tiktok") {
+    if (format === "reel_script") {
+      return {
+        requiresImage: false,
+        requiresAspectRatio: false,
+        minRatio: null,
+        maxRatio: null,
+      };
+    }
+    return {
+      requiresImage: true,
+      requiresAspectRatio: false,
+      minRatio: null,
+      maxRatio: null,
     };
   }
   return {

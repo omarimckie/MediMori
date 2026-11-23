@@ -29,6 +29,7 @@ import {
   runPartialPublicationFailureBackupSweep,
   type PartialPublicationFailureBackupInput,
 } from "../publication-incidents/partial-publication-failure";
+import { reconcileBufferTikTokPublications } from "../buffer-tiktok-reconcile";
 import type { MarketingStore } from "../store";
 
 export type ReliabilitySweepResult = {
@@ -172,6 +173,15 @@ export async function runMarketingReliabilitySweep(
     : await reconcileAutoResolvableIncidents();
 
   const store = options?.store ?? getMarketingStore();
+  try {
+    await reconcileBufferTikTokPublications(store);
+  } catch (error) {
+    logMarketing({
+      operation: "buffer_tiktok_reconcile",
+      success: false,
+      error: error instanceof Error ? error.message : "buffer_tiktok_reconcile_failed",
+    });
+  }
   const partialPublicationFailureObserved = options?.partialPublicationFailureBackup
     ? await runPartialPublicationFailureBackupSweep(
         store,

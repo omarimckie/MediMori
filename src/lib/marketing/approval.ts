@@ -14,6 +14,7 @@ import { isPublicationEligibleForCronAutoRetry } from "./publication-cron-retry"
 import {
   applyAmbiguousPublicationOutcome,
   applyConfirmedPublicationFailure,
+  applyProviderSubmissionAccepted,
   applySuccessfulPublication,
 } from "./publication-ambiguity/apply-outcome";
 import { handleProviderSuccessAfterLostFinalize } from "./publication-ambiguity/lost-claim-success";
@@ -470,7 +471,7 @@ export async function publishPublication(
   }
 
   const isMetaPlatform = content.platform === "instagram" || content.platform === "facebook";
-  if (isMetaPlatform || content.platform === "pinterest") {
+  if (isMetaPlatform || content.platform === "pinterest" || content.platform === "tiktok") {
     const entered = await store.tryBeginProviderPublish({
       id: current.id,
       claimToken,
@@ -482,13 +483,14 @@ export async function publishPublication(
   }
 
   const started = Date.now();
-  const social = getSocialPublisher(content.platform);
+  const social = getSocialPublisher(content.platform, { store });
   const email = getEmailProvider();
   const imageUrl = preflight.imageUrl ?? (await resolveContentImageUrl(store, content));
   const publishRequest = {
     content,
     publication: current,
     imageUrl,
+    videoUrl: preflight.ok ? preflight.videoUrl ?? null : null,
     simulateFailure: options?.simulateFailure,
     hooks: content.platform === "instagram"
       ? {
@@ -511,6 +513,42 @@ export async function publishPublication(
 
   const attemptCount = current.attemptCount + 1;
   if (result.ok) {
+    if (result.deferFinalPublishedState) {
+      const keepStatus =
+        current.scheduledFor && new Date(current.scheduledFor).getTime() > Date.now() + 60_000
+          ? "scheduled"
+          : "processing";
+      const updated = await applyProviderSubmissionAccepted(store, {
+        publication: current,
+        claimToken,
+        attemptCount,
+        externalId: result.externalId ?? publication.externalId,
+        url: result.url ?? publication.url,
+        keepStatus,
+      });
+      if (!updated) {
+        return (await store.getPublication(current.id)) ?? current;
+      }
+      await store.updateContent(content.id, { status: "scheduled" });
+      await store.recordEvent({
+        id: crypto.randomUUID(),
+        name: "content_submitted_to_buffer",
+        campaignId: content.campaignId,
+        contentId: content.id,
+        platform: content.platform,
+        properties: { provider: result.provider, externalId: updated.externalId },
+      });
+      logMarketing({
+        operation: "publish",
+        campaignId: content.campaignId,
+        contentId: content.id,
+        provider: result.provider,
+        success: true,
+        durationMs: Date.now() - started,
+        error: "buffer_submitted_awaiting_reconcile",
+      });
+      return updated;
+    }
     const updated = await applySuccessfulPublication(store, {
       publication: current,
       claimToken,

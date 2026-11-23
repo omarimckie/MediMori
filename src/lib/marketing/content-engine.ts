@@ -40,6 +40,7 @@ const FORMAT_FOR_PLATFORM: Record<Platform, ContentFormat[]> = {
   instagram: ["post", "carousel", "reel_script", "story", "post"],
   facebook: ["post", "post", "post", "post", "post"],
   pinterest: ["pin", "pin", "pin"],
+  tiktok: ["post", "reel_script", "post"],
   email: ["email"],
   website: ["article"],
   google: ["google_update"],
@@ -212,6 +213,7 @@ export async function generateWeeklyContent(
   for (const platform of Object.keys(quotas) as Platform[]) {
     const count = quotas[platform] ?? 0;
     const formats = FORMAT_FOR_PLATFORM[platform];
+    if (!formats?.length) continue;
     for (let index = 0; index < count; index += 1) {
       const book = bookFor(campaign, slot);
       const character = characterFor(book.id);

@@ -15,6 +15,17 @@ import {
   validateTrackedWebsiteDestinationForPublish,
 } from "./marketing-website-destination";
 import { formatPreflightErrorWithRecovery } from "./marketing-publish-operator-guidance";
+import {
+  getBufferTikTokChannelId,
+  isMarketingBufferTikTokFeatureEnabled,
+} from "./buffer/buffer-config";
+import { probePublicMediaUrl } from "./buffer/buffer-public-media-probe";
+import {
+  resolveTikTokPublishMedia,
+  TIKTOK_UNSUPPORTED_FORMATS,
+  tiktokUnsupportedFormatMessage,
+} from "./buffer-tiktok-media";
+import { resolvePublishableMarketingAssetUrl } from "./marketing-asset-public-image-url";
 import type { MarketingStore } from "./store";
 import type { MarketingContent } from "./types";
 
@@ -29,7 +40,7 @@ export type PreflightErrorCode =
   | "unsupported_platform_asset";
 
 export type PublishPreflightResult =
-  | { ok: true; imageUrl: string | null }
+  | { ok: true; imageUrl: string | null; videoUrl?: string | null }
   | { ok: false; code: PreflightErrorCode; message: string };
 
 async function resolvePrimaryAsset(
@@ -79,6 +90,57 @@ export async function runPublishPreflight(
         message: linkCheck.message,
       };
     }
+  }
+
+  if (content.platform === "tiktok") {
+    if (TIKTOK_UNSUPPORTED_FORMATS.has(content.format)) {
+      return {
+        ok: false,
+        code: "unsupported_platform_asset",
+        message: tiktokUnsupportedFormatMessage(content.format),
+      };
+    }
+    if (!isMockMode() && !isMarketingBufferTikTokFeatureEnabled()) {
+      return {
+        ok: false,
+        code: "invalid_asset",
+        message:
+          "TikTok via Buffer requires MARKETING_BUFFER_TIKTOK_ENABLED=true before scheduling or publishing.",
+      };
+    }
+    if (!isMockMode() && isMarketingBufferTikTokFeatureEnabled() && !getBufferTikTokChannelId()) {
+      return {
+        ok: false,
+        code: "invalid_asset",
+        message: "TikTok via Buffer requires BUFFER_TIKTOK_CHANNEL_ID.",
+      };
+    }
+
+    const assets = [];
+    for (const assetId of content.assetIds) {
+      const asset = await store.getAsset(assetId);
+      if (asset) {
+        assets.push({
+          ...asset,
+          url: resolvePublishableMarketingAssetUrl(asset, content.status),
+        });
+      }
+    }
+    const resolved = resolveTikTokPublishMedia(content, assets);
+    if (!resolved.ok) {
+      return { ok: false, code: "invalid_asset", message: resolved.message };
+    }
+    if (!isMockMode()) {
+      const probeError = await probePublicMediaUrl(resolved.media.publicUrl, resolved.media.kind);
+      if (probeError) {
+        return { ok: false, code: "invalid_asset", message: probeError };
+      }
+    }
+    return {
+      ok: true,
+      imageUrl: resolved.media.kind === "image" ? resolved.media.publicUrl : null,
+      videoUrl: resolved.media.kind === "video" ? resolved.media.publicUrl : null,
+    };
   }
 
   if (content.platform === "pinterest") {

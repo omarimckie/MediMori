@@ -24,6 +24,7 @@ export const PLATFORMS = [
   "instagram",
   "facebook",
   "pinterest",
+  "tiktok",
   "email",
   "website",
   "google",

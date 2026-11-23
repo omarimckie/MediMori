@@ -30,7 +30,12 @@ export type PublicationRetryResult = {
   body: PublicationRetryResponseBody;
 };
 
-const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook", "pinterest"]);
+const ADMIN_RETRY_PLATFORMS = new Set<Platform>([
+  "instagram",
+  "facebook",
+  "pinterest",
+  "tiktok",
+]);
 
 /** Explicit admin retry may claim failed publications after automatic attempt exhaustion. */
 function adminAllowsExhaustedRetry(platform: Platform): boolean {
