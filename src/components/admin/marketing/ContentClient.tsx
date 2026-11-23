@@ -170,7 +170,7 @@ export function ContentClient() {
         <div className="grid gap-3 sm:grid-cols-4">
           {[
             ["status", ["", "draft", "needs_review", "approved", "rejected", "scheduled", "published", "failed"]],
-            ["platform", ["", "instagram", "facebook", "pinterest", "email", "website", "google"]],
+            ["platform", ["", "instagram", "facebook", "pinterest", "tiktok", "email", "website", "google"]],
             ["category", ["", "educational", "brand_story", "product_feature", "engagement", "trust", "conversion", "community"]],
             ["audience", ["", "parents", "hospitals", "schools", "libraries"]],
           ].map(([name, options]) => (

@@ -30,7 +30,12 @@ export type PublicationRetryResult = {
   body: PublicationRetryResponseBody;
 };
 
-const ADMIN_RETRY_PLATFORMS = new Set<Platform>(["instagram", "facebook", "pinterest"]);
+const ADMIN_RETRY_PLATFORMS = new Set<Platform>([
+  "instagram",
+  "facebook",
+  "pinterest",
+  "tiktok",
+]);
 
 /** Explicit admin retry may claim failed publications after automatic attempt exhaustion. */
 function adminAllowsExhaustedRetry(platform: Platform): boolean {
@@ -128,7 +133,7 @@ export async function retryAdminPublication(
         error: {
           code: "unsupported_platform",
           message:
-            "Only Instagram, Facebook, and Pinterest publications can be retried through this endpoint.",
+            "Only Instagram, Facebook, Pinterest, and TikTok publications can be retried through this endpoint.",
         },
       },
     };

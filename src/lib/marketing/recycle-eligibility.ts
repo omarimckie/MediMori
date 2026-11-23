@@ -4,6 +4,7 @@ export const RECYCLABLE_PLATFORMS = new Set<Platform>([
   "instagram",
   "facebook",
   "pinterest",
+  "tiktok",
 ]);
 
 export function isContentRecyclablePlatform(

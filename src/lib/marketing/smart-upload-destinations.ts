@@ -9,12 +9,15 @@ export type SmartUploadDestinations = {
   facebook: boolean;
   instagram: boolean;
   pinterest: boolean;
+  /** Optional in fixtures; normalized to boolean at runtime. */
+  tiktok?: boolean;
 };
 
 export const SMART_UPLOAD_DESTINATIONS_ALL: SmartUploadDestinations = {
   facebook: true,
   instagram: true,
   pinterest: true,
+  tiktok: false,
 };
 
 /** Legacy Smart Upload validation scope (Meta feed only). */
@@ -22,6 +25,7 @@ export const SMART_UPLOAD_DESTINATIONS_META_ONLY: SmartUploadDestinations = {
   facebook: true,
   instagram: true,
   pinterest: false,
+  tiktok: false,
 };
 
 export function normalizeSmartUploadDestinations(
@@ -32,6 +36,7 @@ export function normalizeSmartUploadDestinations(
     facebook: Boolean(input.facebook),
     instagram: Boolean(input.instagram),
     pinterest: Boolean(input.pinterest),
+    tiktok: Boolean(input.tiktok),
   };
 }
 
@@ -44,26 +49,42 @@ export function parseSmartUploadDestinationsRecord(
   const facebook = record.facebook;
   const instagram = record.instagram;
   const pinterest = record.pinterest;
-  if (facebook === undefined && instagram === undefined && pinterest === undefined) {
+  const tiktok = record.tiktok;
+  if (
+    facebook === undefined &&
+    instagram === undefined &&
+    pinterest === undefined &&
+    tiktok === undefined
+  ) {
     return { ...SMART_UPLOAD_DESTINATIONS_ALL };
   }
   const normalized = normalizeSmartUploadDestinations({
     facebook: facebook === undefined ? true : Boolean(facebook),
     instagram: instagram === undefined ? true : Boolean(instagram),
     pinterest: pinterest === undefined ? true : Boolean(pinterest),
+    tiktok: tiktok === undefined ? false : Boolean(tiktok),
   });
   assertAtLeastOneDestination(normalized);
   return normalized;
 }
 
 export function assertAtLeastOneDestination(destinations: SmartUploadDestinations): void {
-  if (!destinations.facebook && !destinations.instagram && !destinations.pinterest) {
+  if (
+    !destinations.facebook &&
+    !destinations.instagram &&
+    !destinations.pinterest &&
+    !destinations.tiktok
+  ) {
     throw new Error("At least one platform destination must be selected.");
   }
 }
 
 export function metaDestinationsSelected(destinations: SmartUploadDestinations): boolean {
   return destinations.facebook || destinations.instagram;
+}
+
+export function tiktokDestinationSelected(destinations: SmartUploadDestinations): boolean {
+  return Boolean(destinations.tiktok);
 }
 
 export type SmartUploadValidationIssue = {

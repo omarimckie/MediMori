@@ -13,6 +13,7 @@ import {
   metaDestinationsSelected,
   type SmartUploadDestinations,
 } from "./smart-upload-destinations";
+import type { SmartUploadTikTokMediaKind } from "./smart-upload-tiktok";
 import { SMART_UPLOAD_DERIVATIVE_TAG, smartUploadOriginalTag } from "./smart-upload-fix";
 import type {
   SmartUploadFinalizeInput,
@@ -35,6 +36,9 @@ export function resolveSmartUploadFinalizeCaptions(
     if (destinations.instagram && !instagram) {
       throw new Error("Instagram caption is required when Instagram is selected.");
     }
+    if (destinations.tiktok && !metaDestinationsSelected(destinations) && !instagram && !facebook) {
+      throw new Error("Caption is required when TikTok is the only destination.");
+    }
     const primaryForAssetAlt = instagram || facebook || "";
     return {
       facebook: destinations.facebook ? facebook : "",
@@ -45,6 +49,9 @@ export function resolveSmartUploadFinalizeCaptions(
   const caption = input.caption.trim();
   if (metaDestinationsSelected(destinations) && !caption) {
     throw new Error("Caption is required for selected Meta destinations.");
+  }
+  if (destinations.tiktok && !metaDestinationsSelected(destinations) && !caption) {
+    throw new Error("Caption is required when TikTok is the only destination.");
   }
   return {
     facebook: destinations.facebook ? caption : "",
@@ -82,7 +89,7 @@ export type SmartUploadPinterestCopy = {
 };
 
 export type SmartUploadImageOutputs = {
-  original: { assetId: string; url: string; truth: AssetImageTruth; mime: string };
+  original: { assetId: string; url: string; truth: AssetImageTruth | null; mime: string };
   meta?: { assetId: string; url: string; truth: AssetImageTruth; mime: string; fix?: SmartUploadFixFinalizeBundle };
   pinterest?: { assetId: string; url: string; truth: AssetImageTruth; mime: string; fix?: SmartUploadFixFinalizeBundle };
 };
@@ -103,9 +110,11 @@ export function finalizeResultFromLookup(
     instagramContentId: lookup.instagram?.id ?? null,
     facebookContentId: lookup.facebook?.id ?? null,
     pinterestContentId: lookup.pinterest?.id ?? null,
+    tiktokContentId: lookup.tiktok?.id ?? null,
     instagram: lookup.instagram,
     facebook: lookup.facebook,
     pinterest: lookup.pinterest,
+    tiktok: lookup.tiktok,
     idempotentReplay,
   };
 }
@@ -133,23 +142,26 @@ async function createOriginalAsset(
   campaignId: string | null,
   assetId: string,
   url: string,
-  truth: AssetImageTruth,
+  truth: AssetImageTruth | null,
+  mime: string,
   altCaption: string,
 ): Promise<MarketingAsset> {
   return store.createAsset({
     id: assetId,
-    name: sanitizeUploadFilename(input.imageFilename ?? "upload.jpg"),
+    name: sanitizeUploadFilename(input.imageFilename ?? (truth ? "upload.jpg" : "upload.mp4")),
     type: "upload",
     source: SMART_UPLOAD_SOURCE,
     bookId: input.bookId ?? null,
     characterId: null,
     campaignId,
     approved: true,
-    usageRestrictions: "Smart Upload original image (immutable).",
-    aspectRatio: formatAspectRatioLabel(truth.width, truth.height),
-    imageWidth: truth.width,
-    imageHeight: truth.height,
-    mimeType: truth.mimeType,
+    usageRestrictions: truth
+      ? "Smart Upload original image (immutable)."
+      : "Smart Upload original video (immutable).",
+    aspectRatio: truth ? formatAspectRatioLabel(truth.width, truth.height) : null,
+    imageWidth: truth?.width ?? null,
+    imageHeight: truth?.height ?? null,
+    mimeType: truth?.mimeType ?? mime,
     tags: ["smart_upload", `batch:${input.batchId}`],
     url,
     altText: altCaption.slice(0, 120),
@@ -209,6 +221,7 @@ function buildWarnings(destinations: SmartUploadDestinations): string[] {
     parts.push("Meta feed");
   }
   if (destinations.pinterest) parts.push("Pinterest pin");
+  if (destinations.tiktok) parts.push("TikTok");
   return [`Smart Upload — image validated for ${parts.join(" and ")}.`];
 }
 
@@ -217,6 +230,8 @@ export async function persistSmartUploadMultiPlatform(
   input: SmartUploadFinalizeInput & {
     destinations: SmartUploadDestinations;
     pinterestCopy: SmartUploadPinterestCopy | null;
+    tiktokMediaKind?: SmartUploadTikTokMediaKind;
+    tiktokTitle?: string | null;
     weeklyPlanId: string | null;
     campaignId: string | null;
     outputs: SmartUploadImageOutputs;
@@ -235,6 +250,7 @@ export async function persistSmartUploadMultiPlatform(
     initialLookup.status === "partial" ? initialLookup.instagram : null;
   const existingFacebook = initialLookup.status === "partial" ? initialLookup.facebook : null;
   const existingPinterest = initialLookup.status === "partial" ? initialLookup.pinterest : null;
+  const existingTiktok = initialLookup.status === "partial" ? initialLookup.tiktok : null;
 
   const resolved = resolveSmartUploadFinalizeCaptions(input, input.destinations);
   const flags = scanCaptionSafety(resolved, input.pinterestCopy);
@@ -319,6 +335,29 @@ export async function persistSmartUploadMultiPlatform(
       owned.contentIds.push(facebook.id);
     }
 
+    if (!existingTiktok && input.destinations.tiktok) {
+      const tiktokMediaKind = input.tiktokMediaKind ?? "image";
+      const tiktokBody =
+        resolved.instagram || resolved.facebook || resolved.primaryForAssetAlt || input.caption.trim();
+      if (!tiktokBody.trim()) {
+        throw new Error("Caption is required when TikTok is selected.");
+      }
+      const tiktok = await store.createContent({
+        ...baseContent,
+        id: crypto.randomUUID(),
+        platform: "tiktok",
+        format: tiktokMediaKind === "video" ? "reel_script" : "post",
+        body: tiktokBody,
+        title: input.tiktokTitle?.trim() || tiktokBody.split("\n")[0]?.slice(0, 80) || "TikTok post",
+        assetIds: [metaAssetId],
+        trackingToken: null,
+        metadata: sharedMetadata(input, input.destinations, originalAssetId, {
+          smartUploadTikTokMediaKind: tiktokMediaKind,
+        }),
+      });
+      owned.contentIds.push(tiktok.id);
+    }
+
     if (!existingPinterest && input.destinations.pinterest && input.pinterestCopy) {
       const pinFix = input.outputs.pinterest?.fix;
       const title = truncatePinterestTitle(input.pinterestCopy.title);
@@ -355,6 +394,7 @@ export async function persistSmartUploadMultiPlatform(
         originalAssetId,
         input.outputs.original.url,
         input.outputs.original.truth,
+        input.outputs.original.mime,
         resolved.primaryForAssetAlt,
       );
       owned.createdAssetIds.push(originalAssetId);

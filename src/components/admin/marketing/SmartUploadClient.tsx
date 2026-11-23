@@ -1226,9 +1226,9 @@ export function SmartUploadClient() {
     <div className="space-y-6">
       <Card>
         <p className="text-sm text-brand-charcoal/70">
-          Upload once to create Facebook, Instagram, and/or Pinterest content (needs review). The
-          server validates each selected destination and can produce separate Meta and Pinterest
-          image versions before finalize.
+          Upload once to create Facebook, Instagram, Pinterest, and/or TikTok content (needs
+          review). TikTok supports image posts alongside Meta/Pinterest, or MP4 video when TikTok
+          is the only destination.
         </p>
         <fieldset className="mt-4 flex flex-wrap gap-4 text-sm font-bold">
           <legend className="sr-only">Destinations</legend>
@@ -1237,6 +1237,7 @@ export function SmartUploadClient() {
               ["facebook", "Facebook"],
               ["instagram", "Instagram"],
               ["pinterest", "Pinterest"],
+              ["tiktok", "TikTok"],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="inline-flex items-center gap-2">

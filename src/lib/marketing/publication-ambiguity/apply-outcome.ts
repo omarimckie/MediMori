@@ -132,6 +132,35 @@ export async function applySuccessfulPublication(
   });
 }
 
+export async function applyProviderSubmissionAccepted(
+  store: MarketingStore,
+  input: {
+    publication: MarketingPublication;
+    claimToken: string;
+    attemptCount: number;
+    externalId: string | null | undefined;
+    url: string | null | undefined;
+    keepStatus: "scheduled" | "processing";
+  },
+): Promise<MarketingPublication | null> {
+  return store.finalizePublicationClaim({
+    id: input.publication.id,
+    claimToken: input.claimToken,
+    patch: {
+      status: input.keepStatus,
+      externalId: input.externalId ?? input.publication.externalId,
+      url: input.url ?? input.publication.url,
+      attemptCount: input.attemptCount,
+      lastError: null,
+      publishedAt: null,
+      ambiguityState: "none",
+      claimToken: null,
+      processingStartedAt: null,
+      providerCreationId: null,
+    },
+  });
+}
+
 export function outcomeToAmbiguityState(outcome: PublishOutcomeClass) {
   return ambiguityStateForOutcome(outcome);
 }

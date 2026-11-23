@@ -16,7 +16,9 @@ import {
 } from "./meta";
 import { composeSocialPublishCaption } from "./marketing-social-website-link";
 import { buildPublishTrackingLink } from "./tracking";
+import { BufferTikTokPublisher } from "./buffer-tiktok-publisher";
 import { PinterestPublisher } from "./pinterest-publisher";
+import type { MarketingStore } from "./store";
 import type { MarketingContent, MarketingPublication, Platform } from "./types";
 
 export type PublicationPublishHooks = {
@@ -27,6 +29,7 @@ export type PublishRequest = {
   content: MarketingContent;
   publication: MarketingPublication;
   imageUrl?: string | null;
+  videoUrl?: string | null;
   simulateFailure?: boolean;
   hooks?: PublicationPublishHooks;
 };
@@ -41,6 +44,8 @@ export type PublishResult = {
   retryable?: boolean;
   /** True once a provider publish API request may have reached Meta. */
   providerInteractionStarted?: boolean;
+  /** Buffer/TikTok: API accepted the post but remote TikTok publication is not confirmed. */
+  deferFinalPublishedState?: boolean;
 };
 
 export interface SocialPublisher {
@@ -469,7 +474,13 @@ export class MockImageProvider implements ImageProvider {
   }
 }
 
-export function getSocialPublisher(platform?: Platform): SocialPublisher {
+export function getSocialPublisher(
+  platform?: Platform,
+  options?: { store?: MarketingStore },
+): SocialPublisher {
+  if (platform === "tiktok") {
+    return new BufferTikTokPublisher({ store: options?.store });
+  }
   if (isMockMode()) return new MockSocialPublisher();
   if (platform === "instagram") return new InstagramPublisher();
   if (platform === "facebook") return new FacebookPagePublisher();

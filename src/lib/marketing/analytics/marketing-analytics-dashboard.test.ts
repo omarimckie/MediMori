@@ -6,9 +6,10 @@ import {
   buildPriorDayAnalyticsNotificationPayload,
   buildPriorDayAnalyticsSummary,
 } from "./prior-day-analytics-summary";
-import { resolveAnalyticsReportingPeriod } from "./analytics-time";
+import { calendarDayInTimezone, resolveAnalyticsReportingPeriod } from "./analytics-time";
 import { sanitizeAttributionRows } from "./analytics-privacy";
 import { attributePurchases } from "../attribution";
+import { getMarketingTimezone } from "../config";
 
 test("reporting period week contains seven day keys", () => {
   const period = resolveAnalyticsReportingPeriod("week", new Date("2026-10-23T15:00:00.000Z"));
@@ -16,6 +17,9 @@ test("reporting period week contains seven day keys", () => {
 });
 
 test("dashboard counts tracked clicks and labels mock metrics separately", async () => {
+  const anchor = new Date();
+  const marketingTz = getMarketingTimezone();
+  const metricDate = calendarDayInTimezone(anchor, marketingTz);
   const store = new MemoryMarketingStore();
   const contentId = "content-analytics-1";
   await store.createContent({
@@ -56,7 +60,7 @@ test("dashboard counts tracked clicks and labels mock metrics separately", async
     contentId,
     campaignId: "camp-1",
     platform: "facebook",
-    metricDate: new Date().toISOString().slice(0, 10),
+    metricDate,
     impressions: 100,
     engagements: 10,
     clicks: 1,
@@ -68,7 +72,7 @@ test("dashboard counts tracked clicks and labels mock metrics separately", async
     source: "mock",
   });
 
-  const dashboard = await buildMarketingAnalyticsDashboard({ store, window: "week" });
+  const dashboard = await buildMarketingAnalyticsDashboard({ store, window: "week", anchor });
   assert.ok(dashboard.measured.trackedLinkClicks >= 1);
   assert.equal(dashboard.socialEngagement.facebook.source, "unavailable");
   assert.ok(dashboard.syntheticMetricsRollup.included);

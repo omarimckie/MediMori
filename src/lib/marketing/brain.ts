@@ -259,12 +259,16 @@ export function platformVoice(platform: Platform): string {
       return "A little longer. Speak to caregivers in complete sentences. Invite comments without mining health stories.";
     case "pinterest":
       return "Searchable and specific. Title-like first line. Evergreen, not recap-of-the-week.";
+    case "tiktok":
+      return "Short, engaging, spoken-caption friendly. Visual hook in the first line; no medical claims beyond approved copy.";
     case "email":
       return "One idea, one book, one CTA. Subject line must not sensationalize illness.";
     case "website":
       return "Helpful article structure with SEO title/description. Stay inside approved claims.";
     case "google":
       return "Brief Google Business update. Factual, local-friendly, no medical advice.";
+    default:
+      return "Warm, family-centered tone. Stay inside approved claims.";
   }
 }
 
