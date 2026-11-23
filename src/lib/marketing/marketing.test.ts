@@ -260,6 +260,7 @@ test("channel quotas are configurable and not hardcoded as business law", async 
     instagram: 2,
     facebook: 1,
     pinterest: 1,
+    tiktok: 0,
     email: 1,
     website: 1,
     google: 1,

@@ -157,12 +157,16 @@ test("mock mode tiktok schedule and publish flow", async () => {
     type: "image",
     source: "upload",
     bookId: null,
-    url: "https://cdn.example/a.jpg",
-    mimeType: "image/jpeg",
+    characterId: null,
+    campaignId: null,
     approved: true,
-    metadata: {},
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    usageRestrictions: null,
+    aspectRatio: null,
+    mimeType: "image/jpeg",
+    tags: [],
+    url: "https://cdn.example/a.jpg",
+    altText: null,
+    isDemo: false,
   });
   const content = sampleTikTokContent();
   await store.createContent(content);

@@ -80,6 +80,7 @@ async function planContext(store: MemoryMarketingStore) {
         instagram: 1,
         facebook: 1,
         pinterest: 1,
+        tiktok: 0,
         email: 0,
         website: 1,
         google: 0,

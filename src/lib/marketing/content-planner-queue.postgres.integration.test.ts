@@ -112,6 +112,7 @@ async function seedWeeklyPlan(store: PostgresMarketingStore) {
         instagram: 1,
         facebook: 1,
         pinterest: 0,
+        tiktok: 0,
         email: 0,
         website: 0,
         google: 0,

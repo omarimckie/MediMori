@@ -1,5 +1,3 @@
-import { isMockMode } from "../config";
-
 export const BUFFER_GRAPHQL_URL = "https://api.buffer.com";
 
 export const MARKETING_BUFFER_TIKTOK_ENABLED_ENV = "MARKETING_BUFFER_TIKTOK_ENABLED";
@@ -21,7 +19,7 @@ export function isMarketingBufferTikTokFeatureEnabled(
 export function isBufferTikTokLivePublishingAllowed(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  if (isMockMode(env)) return false;
+  if (env.MARKETING_MOCK_MODE !== "false") return false;
   if (!isMarketingBufferTikTokFeatureEnabled(env)) return false;
   const live = env[MARKETING_BUFFER_TIKTOK_LIVE_ENV]?.trim().toLowerCase();
   return live === "1" || live === "true" || live === "yes";

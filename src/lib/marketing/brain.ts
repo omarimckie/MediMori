@@ -267,6 +267,8 @@ export function platformVoice(platform: Platform): string {
       return "Helpful article structure with SEO title/description. Stay inside approved claims.";
     case "google":
       return "Brief Google Business update. Factual, local-friendly, no medical advice.";
+    default:
+      return "Warm, family-centered tone. Stay inside approved claims.";
   }
 }
 

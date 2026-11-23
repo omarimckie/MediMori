@@ -135,7 +135,7 @@ export async function createPlannerE2eStagingFixtures(
       warningCount: 0,
       objective: "e2e",
       audience: "parents",
-      quotas: { instagram: 2, facebook: 2, pinterest: 0, email: 0, website: 0, google: 0 },
+      quotas: { instagram: 2, facebook: 2, pinterest: 0, tiktok: 0, email: 0, website: 0, google: 0 },
     },
     rationale: {},
     isDemo: true,
