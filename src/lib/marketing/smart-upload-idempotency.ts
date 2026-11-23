@@ -44,6 +44,7 @@ export type SmartUploadFinalizeLookup =
       instagram: MarketingContent | null;
       facebook: MarketingContent | null;
       pinterest: MarketingContent | null;
+      tiktok: MarketingContent | null;
       assetId: string;
     }
   | {
@@ -52,6 +53,7 @@ export type SmartUploadFinalizeLookup =
       instagram: MarketingContent | null;
       facebook: MarketingContent | null;
       pinterest: MarketingContent | null;
+      tiktok: MarketingContent | null;
       assetId: string;
     }
   | { status: "inconsistent"; reason: string };
@@ -63,17 +65,20 @@ function expectedDestinationsFromRows(tagged: MarketingContent[]): SmartUploadDe
   const hasInstagram = tagged.some((row) => row.platform === "instagram");
   const hasFacebook = tagged.some((row) => row.platform === "facebook");
   const hasPinterest = tagged.some((row) => row.platform === "pinterest");
-  if (hasFacebook && !hasInstagram && !hasPinterest) {
+  const hasTiktok = tagged.some((row) => row.platform === "tiktok");
+  if (hasFacebook && !hasInstagram && !hasPinterest && !hasTiktok) {
     return normalizeSmartUploadDestinations({
       facebook: true,
       instagram: false,
       pinterest: false,
+      tiktok: false,
     });
   }
   return normalizeSmartUploadDestinations({
     facebook: hasFacebook || hasInstagram,
     instagram: hasInstagram || hasFacebook,
     pinterest: hasPinterest,
+    tiktok: hasTiktok,
   });
 }
 
@@ -92,7 +97,8 @@ export function assertSmartUploadPlatformSlotAvailable(
   const occupied =
     (platform === "instagram" && lookup.instagram) ||
     (platform === "facebook" && lookup.facebook) ||
-    (platform === "pinterest" && lookup.pinterest);
+    (platform === "pinterest" && lookup.pinterest) ||
+    (platform === "tiktok" && lookup.tiktok);
   if (occupied) {
     throw new SmartUploadFinalizeKeyConflictError(finalizeKey, platform);
   }
@@ -102,11 +108,13 @@ function primaryAssetIdFromRows(
   instagram: MarketingContent | undefined,
   facebook: MarketingContent | undefined,
   pinterest: MarketingContent | undefined,
+  tiktok: MarketingContent | undefined,
 ): string {
   return (
     instagram?.assetIds[0] ??
     facebook?.assetIds[0] ??
     pinterest?.assetIds[0] ??
+    tiktok?.assetIds[0] ??
     ""
   );
 }
@@ -124,8 +132,14 @@ export function parseSmartUploadFinalizeRows(
   const instagramRows = tagged.filter((row) => row.platform === "instagram");
   const facebookRows = tagged.filter((row) => row.platform === "facebook");
   const pinterestRows = tagged.filter((row) => row.platform === "pinterest");
+  const tiktokRows = tagged.filter((row) => row.platform === "tiktok");
 
-  if (instagramRows.length > 1 || facebookRows.length > 1 || pinterestRows.length > 1) {
+  if (
+    instagramRows.length > 1 ||
+    facebookRows.length > 1 ||
+    pinterestRows.length > 1 ||
+    tiktokRows.length > 1
+  ) {
     return {
       status: "inconsistent",
       reason: "Multiple Smart Upload content rows exist for the same finalize key and platform.",
@@ -135,15 +149,21 @@ export function parseSmartUploadFinalizeRows(
   const instagram = instagramRows[0] ?? null;
   const facebook = facebookRows[0] ?? null;
   const pinterest = pinterestRows[0] ?? null;
+  const tiktok = tiktokRows[0] ?? null;
 
-  if (!instagram && !facebook && !pinterest) {
+  if (!instagram && !facebook && !pinterest && !tiktok) {
     return { status: "none" };
   }
 
   const destinations = expectedDestinationsFromRows(tagged);
-  const assetId = primaryAssetIdFromRows(instagram ?? undefined, facebook ?? undefined, pinterest ?? undefined);
+  const assetId = primaryAssetIdFromRows(
+    instagram ?? undefined,
+    facebook ?? undefined,
+    pinterest ?? undefined,
+    tiktok ?? undefined,
+  );
 
-  if ((instagram || facebook || pinterest) && !assetId) {
+  if ((instagram || facebook || pinterest || tiktok) && !assetId) {
     return {
       status: "inconsistent",
       reason: "Smart Upload row is missing an asset reference.",
@@ -154,6 +174,7 @@ export function parseSmartUploadFinalizeRows(
   if (destinations.instagram && !instagram) missing.push("instagram");
   if (destinations.facebook && !facebook) missing.push("facebook");
   if (destinations.pinterest && !pinterest) missing.push("pinterest");
+  if (destinations.tiktok && !tiktok) missing.push("tiktok");
 
   if (missing.length > 0) {
     return {
@@ -162,6 +183,7 @@ export function parseSmartUploadFinalizeRows(
       instagram,
       facebook,
       pinterest,
+      tiktok,
       assetId,
     };
   }
@@ -172,6 +194,7 @@ export function parseSmartUploadFinalizeRows(
     instagram,
     facebook,
     pinterest,
+    tiktok,
     assetId,
   };
 }

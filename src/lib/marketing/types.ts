@@ -214,7 +214,9 @@ export type MarketingContentMetadata = {
     facebook: boolean;
     instagram: boolean;
     pinterest: boolean;
+    tiktok?: boolean;
   };
+  smartUploadTikTokMediaKind?: "image" | "video";
   resourceType?: ResourceType;
   slug?: string;
   relatedCondition?: string | null;

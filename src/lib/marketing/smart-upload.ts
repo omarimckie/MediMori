@@ -56,7 +56,14 @@ import {
   metaDestinationsSelected,
   type SmartUploadDestinations,
   type SmartUploadValidationIssue,
+  tiktokDestinationSelected,
 } from "./smart-upload-destinations";
+import {
+  assertTikTokVideoCompatibleDestinations,
+  isMp4VideoBuffer,
+  tiktokSmartUploadFormat,
+  tiktokVideoOnlyDestinations,
+} from "./smart-upload-tiktok";
 import {
   finalizeResultFromLookup,
   persistSmartUploadMultiPlatform,
@@ -66,7 +73,8 @@ import {
 } from "./smart-upload-finalize";
 
 export type SmartUploadValidationResult =
-  | { ok: true; truth: AssetImageTruth; mime: string }
+  | { ok: true; truth: AssetImageTruth; mime: string; mediaKind?: "image" }
+  | { ok: true; truth: null; mime: string; mediaKind: "video" }
   | { ok: false; issues: SmartUploadValidationIssue[] };
 
 export type SmartUploadPlatformCaptions = {
@@ -81,6 +89,8 @@ export type SmartUploadFinalizeInput = {
   destinations?: SmartUploadDestinations;
   pinterestTitle?: string | null;
   pinterestDescription?: string | null;
+  tiktokTitle?: string | null;
+  tiktokMediaKind?: "image" | "video";
   batchId: string;
   finalizeKey: string;
   weeklyPlanId?: string | null;
@@ -124,9 +134,11 @@ export type SmartUploadFinalizeResult = {
   instagramContentId: string | null;
   facebookContentId: string | null;
   pinterestContentId: string | null;
+  tiktokContentId: string | null;
   instagram: MarketingContent | null;
   facebook: MarketingContent | null;
   pinterest: MarketingContent | null;
+  tiktok: MarketingContent | null;
   idempotentReplay: boolean;
 };
 
@@ -137,10 +149,33 @@ export async function validateSmartUploadImageBytes(
   destinations: SmartUploadDestinations = SMART_UPLOAD_DESTINATIONS_META_ONLY,
 ): Promise<SmartUploadValidationResult> {
   try {
+    if (tiktokDestinationSelected(destinations) && isMp4VideoBuffer(buffer)) {
+      try {
+        assertTikTokVideoCompatibleDestinations(destinations);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid TikTok video destination.";
+        return { ok: false, issues: [{ code: "invalid_asset", message }] };
+      }
+      if (!tiktokVideoOnlyDestinations(destinations)) {
+        return {
+          ok: false,
+          issues: [
+            {
+              code: "invalid_asset",
+              message:
+                "TikTok video requires TikTok as the only Smart Upload destination. Unselect Facebook, Instagram, and Pinterest.",
+            },
+          ],
+        };
+      }
+      return { ok: true, truth: null, mime: "video/mp4", mediaKind: "video" };
+    }
     const { mime } = assertImageUpload(buffer);
     const dimensions = await probeImageDimensions(buffer);
     const truth = truthFromDimensions(dimensions.width, dimensions.height, dimensions.mimeType);
-    return validateSmartUploadTruth(truth, mime, destinations);
+    const validated = validateSmartUploadTruth(truth, mime, destinations);
+    if (!validated.ok) return validated;
+    return validated;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid image.";
     return {
@@ -159,7 +194,7 @@ function validateSmartUploadTruth(
   if (issues.length > 0) {
     return { ok: false, issues };
   }
-  return { ok: true, truth, mime };
+  return { ok: true, truth, mime, mediaKind: "image" };
 }
 
 async function resolveOptionalPlanAndCampaign(
@@ -211,14 +246,15 @@ async function rollbackOwnedFinalizeAttempt(
   if (finalizeKey?.trim()) {
     const lookup = await store.findSmartUploadContentByFinalizeKey(finalizeKey);
     if (lookup.status === "complete" || lookup.status === "partial") {
-      for (const row of [lookup.instagram, lookup.facebook, lookup.pinterest]) {
+      for (const row of [lookup.instagram, lookup.facebook, lookup.pinterest, lookup.tiktok]) {
         if (row) protectedContentIds.add(row.id);
       }
       protectedAssetIds.add(lookup.assetId);
       const originalId =
         lookup.instagram?.metadata?.originalAssetId?.trim() ??
         lookup.facebook?.metadata?.originalAssetId?.trim() ??
-        lookup.pinterest?.metadata?.originalAssetId?.trim();
+        lookup.pinterest?.metadata?.originalAssetId?.trim() ??
+        lookup.tiktok?.metadata?.originalAssetId?.trim();
       if (originalId) protectedAssetIds.add(originalId);
     }
   }
@@ -550,9 +586,13 @@ function throwValidationFailure(validation: { ok: false; issues: SmartUploadVali
 
 function assertValidationOk(
   validation: SmartUploadValidationResult,
-): { truth: AssetImageTruth; mime: string } {
+): { truth: AssetImageTruth | null; mime: string; mediaKind: "image" | "video" } {
   if (!validation.ok) throwValidationFailure(validation);
-  return { truth: validation.truth, mime: validation.mime };
+  return {
+    truth: validation.truth,
+    mime: validation.mime,
+    mediaKind: validation.mediaKind ?? "image",
+  };
 }
 
 export async function validateSmartUploadStagedBlob(input: {
@@ -592,7 +632,10 @@ async function validatedBlobTruth(
   assertPreviewPublicUrlMatchesPathname(ref.pathname, ref.publicUrl);
   const buffer = await readMarketingBlobBuffer(ref.pathname, "public");
   const validation = assertValidationOk(await validateSmartUploadImageBytes(buffer, destinations));
-  return { ...validation, buffer };
+  if (!validation.truth) {
+    throw new Error("Staged Smart Upload does not support TikTok-only video blobs.");
+  }
+  return { truth: validation.truth, mime: validation.mime, buffer };
 }
 
 async function assembleBlobFinalizeOutputs(
@@ -630,6 +673,9 @@ async function assembleBlobFinalizeOutputs(
       const metaValidation = assertValidationOk(
         await validateSmartUploadImageBytes(metaBuffer, { ...destinations, pinterest: false }),
       );
+      if (!metaValidation.truth) {
+        throw new Error("Meta Smart Upload derivatives require image bytes.");
+      }
       outputs.meta = {
         assetId: crypto.randomUUID(),
         url: input.publicUrl.trim(),
@@ -668,8 +714,12 @@ async function assembleBlobFinalizeOutputs(
           facebook: false,
           instagram: false,
           pinterest: true,
+          tiktok: false,
         }),
       );
+      if (!pinValidation.truth) {
+        throw new Error("Pinterest Smart Upload derivatives require image bytes.");
+      }
       outputs.pinterest = {
         assetId: crypto.randomUUID(),
         url: pinRef.publicUrl.trim(),
@@ -684,6 +734,7 @@ async function assembleBlobFinalizeOutputs(
           facebook: false,
           instagram: false,
           pinterest: true,
+          tiktok: false,
         }),
       });
     }
@@ -714,10 +765,14 @@ async function runSmartUploadFinalize(
     input.weeklyPlanId,
     input.campaignId,
   );
+  const tiktokMediaKind =
+    input.tiktokMediaKind ??
+    (input.outputs.original.mime.startsWith("video/") ? "video" : "image");
   return persistSmartUploadMultiPlatform(store, {
     ...input,
     destinations,
     pinterestCopy,
+    tiktokMediaKind,
     weeklyPlanId,
     campaignId,
     outputs: input.outputs,
@@ -1045,6 +1100,9 @@ export async function finalizeSmartUploadFixedFromStagedBlobs(
   const derivativeValidation = assertValidationOk(
     await validateSmartUploadImageBytes(derivativeBuffer),
   );
+  if (!derivativeValidation.truth) {
+    throw new Error("Fixed Smart Upload derivatives require image bytes.");
+  }
 
   return persistFixedSmartUploadRecords(
     store,
@@ -1057,7 +1115,7 @@ export async function finalizeSmartUploadFixedFromStagedBlobs(
     },
     originalTruth,
     originalMime,
-    derivativeValidation,
+    { truth: derivativeValidation.truth!, mime: derivativeValidation.mime },
     input.fix,
     input.fix.original.publicUrl.trim(),
     input.publicUrl.trim(),
@@ -1092,6 +1150,9 @@ export async function finalizeSmartUploadFixedFromBuffers(
   const derivativeValidation = assertValidationOk(
     await validateSmartUploadImageBytes(input.derivativeBuffer, destinations),
   );
+  if (!derivativeValidation.truth) {
+    throw new Error("Fixed Smart Upload derivatives require image bytes.");
+  }
   const originalAssetId = crypto.randomUUID();
 
   return runSmartUploadFinalize(store, {
@@ -1242,6 +1303,9 @@ export async function finalizeSmartUploadFromBuffer(
       if (!recoveredUrl) {
         throw new Error("Smart Upload asset is missing a URL during partial recovery.");
       }
+      if (!validation.truth) {
+        throw new Error("Partial Smart Upload recovery requires an image asset.");
+      }
       const outputs: SmartUploadImageOutputs = {
         original: {
           assetId: lookup.assetId,
@@ -1258,24 +1322,41 @@ export async function finalizeSmartUploadFromBuffer(
       });
     }
 
-    const { kind, mime } = assertImageUpload(input.imageBuffer);
-    const extension = extensionForKind(kind);
-    const uploaded = await uploadPublicMarketingFile(input.imageBuffer, mime, extension);
     const originalAssetId = crypto.randomUUID();
-    const outputs: SmartUploadImageOutputs = {
-      original: {
-        assetId: originalAssetId,
-        url: uploaded.url,
-        truth: validation.truth,
-        mime: validation.mime,
-      },
-    };
+    let outputs: SmartUploadImageOutputs;
+    let rollbackBlobPathname: string;
+    if (validation.mediaKind === "video") {
+      const uploaded = await uploadPublicMarketingFile(input.imageBuffer, validation.mime, ".mp4");
+      outputs = {
+        original: {
+          assetId: originalAssetId,
+          url: uploaded.url,
+          truth: null,
+          mime: validation.mime,
+        },
+      };
+      rollbackBlobPathname = uploaded.pathname;
+    } else {
+      const { kind, mime } = assertImageUpload(input.imageBuffer);
+      const extension = extensionForKind(kind);
+      const uploaded = await uploadPublicMarketingFile(input.imageBuffer, mime, extension);
+      outputs = {
+        original: {
+          assetId: originalAssetId,
+          url: uploaded.url,
+          truth: validation.truth,
+          mime: validation.mime,
+        },
+      };
+      rollbackBlobPathname = uploaded.pathname;
+    }
 
     return await runSmartUploadFinalize(store, {
       ...input,
       destinations,
+      tiktokMediaKind: validation.mediaKind === "video" ? "video" : "image",
       outputs,
-      rollbackBlobPathname: uploaded.pathname,
+      rollbackBlobPathname,
     });
   } catch (error) {
     await observeSmartUploadFinalizeFailure(

@@ -1,4 +1,8 @@
 import {
+  bufferTikTokDuplicateRetryMessage,
+  isBufferTikTokDuplicateRetryBlocked,
+} from "../buffer/buffer-tiktok-guards";
+import {
   INSTAGRAM_PROVIDER_RECOVERY_MESSAGE,
   isInstagramProviderMediaRecoveryRequired,
 } from "../publication-recovery-guard";
@@ -38,6 +42,9 @@ export function publicationRetryBlockedReason(
 ): string | null {
   if (isInstagramProviderMediaRecoveryRequired(publication)) {
     return INSTAGRAM_PROVIDER_RECOVERY_MESSAGE;
+  }
+  if (isBufferTikTokDuplicateRetryBlocked(publication)) {
+    return bufferTikTokDuplicateRetryMessage();
   }
   if (publication.status === "processing") {
     return "Publication is still processing. Retry is blocked to avoid duplicate posts.";

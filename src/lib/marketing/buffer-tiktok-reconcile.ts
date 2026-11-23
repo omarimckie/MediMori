@@ -6,7 +6,6 @@ import {
   isBufferTikTokLivePublishingAllowed,
   isMarketingBufferTikTokFeatureEnabled,
 } from "./buffer/buffer-config";
-import { isMockMode } from "./config";
 import type { MarketingStore } from "./store";
 import type { MarketingPublication } from "./types";
 
@@ -28,9 +27,17 @@ export type BufferTikTokReconcileStats = {
   unchanged: number;
 };
 
+export type BufferTikTokReconcileOptions = {
+  fetchPost?: typeof bufferFetchPostById;
+  env?: Record<string, string | undefined>;
+};
+
 export async function reconcileBufferTikTokPublications(
   store: MarketingStore,
+  options?: BufferTikTokReconcileOptions,
 ): Promise<BufferTikTokReconcileStats> {
+  const env = options?.env ?? process.env;
+  const fetchPost = options?.fetchPost ?? bufferFetchPostById;
   const stats: BufferTikTokReconcileStats = {
     scanned: 0,
     published: 0,
@@ -38,11 +45,11 @@ export async function reconcileBufferTikTokPublications(
     unchanged: 0,
   };
 
-  if (!isMarketingBufferTikTokFeatureEnabled() || isMockMode()) {
+  if (!isMarketingBufferTikTokFeatureEnabled(env) || env.MARKETING_MOCK_MODE !== "false") {
     return stats;
   }
 
-  if (!isBufferTikTokLivePublishingAllowed()) {
+  if (!isBufferTikTokLivePublishingAllowed(env)) {
     return stats;
   }
 
@@ -55,7 +62,7 @@ export async function reconcileBufferTikTokPublications(
     const externalId = publication.externalId!.trim();
     let remote;
     try {
-      remote = await bufferFetchPostById(externalId);
+      remote = await fetchPost(externalId);
     } catch {
       stats.unchanged += 1;
       continue;

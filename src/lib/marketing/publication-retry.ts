@@ -133,7 +133,7 @@ export async function retryAdminPublication(
         error: {
           code: "unsupported_platform",
           message:
-            "Only Instagram, Facebook, and Pinterest publications can be retried through this endpoint.",
+            "Only Instagram, Facebook, Pinterest, and TikTok publications can be retried through this endpoint.",
         },
       },
     };

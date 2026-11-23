@@ -33,13 +33,18 @@ export async function POST(request: Request) {
           { status: 422 },
         );
       }
-      return NextResponse.json({
-        ok: true,
-        width: result.truth.width,
-        height: result.truth.height,
-        mime: result.mime,
-        aspectRatio: result.truth.aspectRatio,
-      });
+      return NextResponse.json(
+        result.mediaKind === "video" || !result.truth
+          ? { ok: true, mime: result.mime, mediaKind: result.mediaKind ?? "video" }
+          : {
+              ok: true,
+              width: result.truth.width,
+              height: result.truth.height,
+              mime: result.mime,
+              aspectRatio: result.truth.aspectRatio,
+              mediaKind: "image" as const,
+            },
+      );
     }
 
     let record: Record<string, unknown>;
@@ -76,13 +81,18 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    return NextResponse.json({
-      ok: true,
-      width: result.truth.width,
-      height: result.truth.height,
-      mime: result.mime,
-      aspectRatio: result.truth.aspectRatio,
-    });
+    return NextResponse.json(
+      result.mediaKind === "video" || !result.truth
+        ? { ok: true, mime: result.mime, mediaKind: result.mediaKind ?? "video" }
+        : {
+            ok: true,
+            width: result.truth.width,
+            height: result.truth.height,
+            mime: result.mime,
+            aspectRatio: result.truth.aspectRatio,
+            mediaKind: "image" as const,
+          },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Validation failed.";
     const status = /Unauthorized|intent|expired|Invalid preview|not found/i.test(message) ? 400 : 500;
