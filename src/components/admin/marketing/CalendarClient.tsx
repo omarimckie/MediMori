@@ -16,6 +16,11 @@ import {
   formatRemoveFromPlannerSuccessMessage,
   type PlannerQueueContent,
 } from "@/lib/marketing/content-planner-client";
+import type { ContentListPreview } from "@/lib/marketing/content-list-preview";
+import {
+  plannerQueueListRequestUrl,
+  type PlannerQueueReviewById,
+} from "@/lib/marketing/planner-queue-preview";
 import type { MarketingCalendarEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyForEvent } from "@/lib/marketing/marketing-calendar";
 import { calendarDayKeyInMarketingTimezone } from "@/lib/marketing/marketing-scheduling";
@@ -28,6 +33,8 @@ import {
 import { CalendarPublicationDetailModal } from "./CalendarPublicationDetailModal";
 import { AssignWeekModal } from "./AssignWeekModal";
 import { ScheduleContentModal } from "./ScheduleContentModal";
+import { PlanningQueuePreviewModal } from "./PlanningQueuePreviewModal";
+import { PlanningQueuePreviewThumb } from "./PlanningQueuePreviewThumb";
 import { Card, PrimaryButton, SecondaryButton, StatusPill } from "./ui";
 import { runMarketingWeekPostAction } from "./week-client-act";
 
@@ -53,6 +60,10 @@ export function CalendarClient() {
     Pick<MarketingPublication, "contentId" | "platform" | "status" | "publishedAt" | "externalId">[]
   >([]);
   const [planningQueue, setPlanningQueue] = useState<PlannerQueueContent[]>([]);
+  const [queuePreviewById, setQueuePreviewById] = useState<Record<string, ContentListPreview>>({});
+  const [queueReviewById, setQueueReviewById] = useState<PlannerQueueReviewById>({});
+  const [allowPublicBlobPreview, setAllowPublicBlobPreview] = useState(false);
+  const [previewExpandTarget, setPreviewExpandTarget] = useState<PlannerQueueContent | null>(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [weeklyPlans, setWeeklyPlans] = useState<Array<{ id: string; weekStart: string }>>([]);
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget | null>(null);
@@ -83,14 +94,23 @@ export function CalendarClient() {
     setQueueLoading(true);
     try {
       const [queueRes, settingsRes] = await Promise.all([
-        fetch("/api/admin/marketing/planner/queue"),
+        fetch(plannerQueueListRequestUrl({ enrich: "preview" })),
         fetch("/api/admin/marketing/settings"),
       ]);
-      const queueData = (await queueRes.json()) as { content?: PlannerQueueContent[]; error?: string };
+      const queueData = (await queueRes.json()) as {
+        content?: PlannerQueueContent[];
+        previewByContentId?: Record<string, ContentListPreview>;
+        reviewByContentId?: PlannerQueueReviewById;
+        previewReadonlyImages?: boolean;
+        error?: string;
+      };
       if (!queueRes.ok) {
         throw new Error(queueData.error ?? "Could not load planning queue.");
       }
       setPlanningQueue(queueData.content ?? []);
+      setQueuePreviewById(queueData.previewByContentId ?? {});
+      setQueueReviewById(queueData.reviewByContentId ?? {});
+      setAllowPublicBlobPreview(queueData.previewReadonlyImages === true);
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json();
         setWeeklyPlans(
@@ -361,17 +381,30 @@ export function CalendarClient() {
           <ul className="mt-4 space-y-3">
             {planningQueue.map((item) => {
               const week = formatContentWeekLabel(item.weeklyPlanId, weeklyPlans);
+              const preview = queuePreviewById[item.id];
               return (
                 <li
                   key={item.id}
-                  className="flex flex-col gap-2 border-b border-brand-brown/10 pb-3 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 border-b border-brand-brown/10 pb-3 last:border-0 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 gap-3 sm:items-start">
+                    <PlanningQueuePreviewThumb
+                      contentId={item.id}
+                      platform={item.platform}
+                      title={item.title}
+                      previewUrl={preview?.previewUrl ?? null}
+                      showVisualPreview={preview?.showVisualPreview ?? false}
+                      allowPublicBlobPreview={allowPublicBlobPreview}
+                      disabled={busy}
+                      onExpand={() => setPreviewExpandTarget(item)}
+                    />
+                    <div className="min-w-0">
                     <p className="font-bold">{item.title || item.platform}</p>
                     <p className="text-xs text-brand-charcoal/60">{item.platform}</p>
                     <p className="mt-1 text-xs text-brand-charcoal/55">
                       Week: <span className="font-semibold">{week.label}</span>
                     </p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill status="approved" />
@@ -485,6 +518,23 @@ export function CalendarClient() {
           initialWeeklyPlanId={assignWeekTarget.weeklyPlanId}
           onClose={() => setAssignWeekTarget(null)}
           onConfirm={(weeklyPlanId) => void submitAssignWeek(assignWeekTarget.id, weeklyPlanId)}
+        />
+      ) : null}
+
+      {previewExpandTarget ? (
+        <PlanningQueuePreviewModal
+          open
+          busy={busy}
+          title={previewExpandTarget.title}
+          body={previewExpandTarget.body}
+          platform={previewExpandTarget.platform}
+          previewUrl={queuePreviewById[previewExpandTarget.id]?.previewUrl ?? null}
+          showVisualPreview={
+            queuePreviewById[previewExpandTarget.id]?.showVisualPreview ?? false
+          }
+          allowPublicBlobPreview={allowPublicBlobPreview}
+          review={queueReviewById[previewExpandTarget.id] ?? null}
+          onClose={() => setPreviewExpandTarget(null)}
         />
       ) : null}
     </div>
