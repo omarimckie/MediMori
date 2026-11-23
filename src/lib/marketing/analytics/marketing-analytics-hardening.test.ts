@@ -5,6 +5,7 @@ import { buildMarketingAnalyticsDashboard } from "./analytics-aggregation";
 import { resolveAnalyticsReportingPeriod, calendarDayInTimezone } from "./analytics-time";
 import { parseAnalyticsAnchorParam, parseAnalyticsWindowParam } from "./analytics-query";
 import { buildPriorDayAnalyticsSummary } from "./prior-day-analytics-summary";
+import { getMarketingTimezone } from "../config";
 
 test("parseAnalyticsAnchorParam rejects invalid calendar dates", () => {
   assert.equal(parseAnalyticsAnchorParam("2026-13-40"), undefined);
@@ -29,7 +30,22 @@ test("DST spring-forward day still yields a single local day key", () => {
   assert.equal(period.dayKeys[0], calendarDayInTimezone(new Date("2026-03-09T12:00:00.000Z"), tz));
 });
 
+test("mock metric fixtures use marketing timezone day keys at UTC midnight boundary", () => {
+  const tz = "America/New_York";
+  // Still Sunday locally while UTC calendar date has rolled to Monday.
+  const anchor = new Date("2026-11-23T04:30:00.000Z");
+  const utcDay = anchor.toISOString().slice(0, 10);
+  const localDay = calendarDayInTimezone(anchor, tz);
+  assert.notEqual(utcDay, localDay);
+  const week = resolveAnalyticsReportingPeriod("week", anchor, tz);
+  assert.ok(week.dayKeys.includes(localDay));
+  assert.equal(week.dayKeys.includes(utcDay), false);
+});
+
 test("repeated tracked clicks are counted and mock metrics stay out of social engagement", async () => {
+  const anchor = new Date();
+  const marketingTz = getMarketingTimezone();
+  const metricDate = calendarDayInTimezone(anchor, marketingTz);
   const store = new MemoryMarketingStore();
   const contentId = "repeat-clicks";
   await store.createContent({
@@ -77,7 +93,7 @@ test("repeated tracked clicks are counted and mock metrics stay out of social en
     contentId,
     campaignId: null,
     platform: "instagram",
-    metricDate: new Date().toISOString().slice(0, 10),
+    metricDate,
     impressions: 999,
     engagements: 999,
     clicks: 0,
@@ -89,7 +105,7 @@ test("repeated tracked clicks are counted and mock metrics stay out of social en
     source: "mock",
   });
 
-  const dashboard = await buildMarketingAnalyticsDashboard({ store, window: "week" });
+  const dashboard = await buildMarketingAnalyticsDashboard({ store, window: "week", anchor });
   assert.equal(dashboard.measured.trackedLinkClicks, 2);
   assert.equal(dashboard.socialEngagement.instagram.source, "unavailable");
   assert.equal(dashboard.socialEngagement.instagram.engagements, null);
