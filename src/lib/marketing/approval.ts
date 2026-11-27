@@ -1,3 +1,7 @@
+import {
+  evaluateBufferTikTokLiveSubmissionGate,
+  isBufferTikTokOutboundLiveAttempt,
+} from "./buffer/buffer-tiktok-activation";
 import { estimatedAiCostUsd, getAIProvider } from "./ai";
 import { resolveContentImageUrl } from "./assets";
 import { regenerateContent } from "./content-engine";
@@ -413,6 +417,13 @@ export async function publishPublication(
     return current;
   }
   if (isPublicationAmbiguityBlocked(current.ambiguityState)) {
+    return current;
+  }
+  if (
+    content.platform === "tiktok" &&
+    isBufferTikTokOutboundLiveAttempt() &&
+    !evaluateBufferTikTokLiveSubmissionGate(current.id).allow
+  ) {
     return current;
   }
   if (current.status === "scheduled" || current.status === "failed") {

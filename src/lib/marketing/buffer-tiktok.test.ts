@@ -130,6 +130,7 @@ test("BufferTikTokPublisher mock mode succeeds without live gate", async () => {
 test("BufferTikTokPublisher blocks live mutations without MARKETING_BUFFER_TIKTOK_LIVE", async () => {
   process.env.MARKETING_MOCK_MODE = "false";
   process.env.MARKETING_BUFFER_TIKTOK_ENABLED = "true";
+  process.env.MARKETING_BUFFER_TIKTOK_ACTIVATION_MODE = "automated";
   process.env.BUFFER_TIKTOK_CHANNEL_ID = "ch-tiktok";
   const publisher = new BufferTikTokPublisher();
   const content = sampleTikTokContent();

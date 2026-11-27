@@ -26,6 +26,7 @@ test("Buffer live success defers published state via publisher flag", async () =
   process.env.MARKETING_MOCK_MODE = "false";
   process.env.MARKETING_BUFFER_TIKTOK_ENABLED = "true";
   process.env.MARKETING_BUFFER_TIKTOK_LIVE = "true";
+  process.env.MARKETING_BUFFER_TIKTOK_ACTIVATION_MODE = "automated";
   process.env.BUFFER_TIKTOK_CHANNEL_ID = "ch";
   process.env.BUFFER_ACCESS_TOKEN = "test-token";
   const publisher = new BufferTikTokPublisher({

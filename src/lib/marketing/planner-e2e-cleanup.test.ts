@@ -33,7 +33,7 @@ test("cleanup removes batch-owned fixtures idempotently", async () => {
   const store = new MemoryMarketingStore();
   const created = await createPlannerE2eStagingFixtures(store);
   const first = await cleanupPlannerE2eStagingFixtures(store, { batchId: created.batchId });
-  assert.equal(first.deletedContentIds.length, 7);
+  assert.equal(first.deletedContentIds.length, 9);
   const second = await cleanupPlannerE2eStagingFixtures(store, { batchId: created.batchId });
   assert.equal(second.deletedContentIds.length, 0);
   const campaigns = await store.listCampaigns();

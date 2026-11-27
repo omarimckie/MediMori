@@ -136,7 +136,7 @@ async function main() {
   pass("missing_id_rejected", rejectedMissing);
 
   const cleanup1 = await cleanupPlannerE2eStagingFixtures(store, { batchId: fixtures.batchId });
-  pass("cleanup_removed_7", cleanup1.deletedContentIds.length === 7);
+  pass("cleanup_removed_9", cleanup1.deletedContentIds.length === 9);
 
   const cleanup2 = await cleanupPlannerE2eStagingFixtures(store, { batchId: fixtures.batchId });
   pass("cleanup_idempotent", cleanup2.deletedContentIds.length === 0);

@@ -1,6 +1,10 @@
 import { composeSocialPublishCaption } from "./marketing-social-website-link";
 import { resolveContentImageUrl } from "./assets";
 import {
+  evaluateBufferTikTokLiveSubmissionGate,
+  withBufferTikTokControlledSubmitLock,
+} from "./buffer/buffer-tiktok-activation";
+import {
   getBufferTikTokChannelId,
   isBufferTikTokLivePublishingAllowed,
   isMarketingBufferTikTokFeatureEnabled,
@@ -137,6 +141,17 @@ export class BufferTikTokPublisher implements SocialPublisher {
       };
     }
 
+    const activationGate = evaluateBufferTikTokLiveSubmissionGate(request.publication.id);
+    if (!activationGate.allow) {
+      return {
+        ok: false,
+        provider: this.id,
+        error: activationGate.reason,
+        errorCode: activationGate.errorCode,
+        retryable: false,
+      };
+    }
+
     const scheduledFor = request.publication.scheduledFor;
     const mode: BufferCreateTikTokPostInput["mode"] =
       scheduledFor && new Date(scheduledFor).getTime() > Date.now() + 60_000
@@ -144,17 +159,22 @@ export class BufferTikTokPublisher implements SocialPublisher {
         : "shareNow";
 
     try {
-      const created = await bufferCreateTikTokPost(
-        {
-          channelId,
-          text: composeSocialPublishCaption(request.content),
-          schedulingType: "automatic",
-          mode,
-          dueAt: mode === "customScheduled" ? scheduledFor ?? undefined : undefined,
-          media,
-          photoTitle: media.kind === "image" ? request.content.title : null,
-        },
-        this.options.graphql,
+      const created = await withBufferTikTokControlledSubmitLock(
+        request.publication.id,
+        process.env,
+        () =>
+          bufferCreateTikTokPost(
+            {
+              channelId,
+              text: composeSocialPublishCaption(request.content),
+              schedulingType: "automatic",
+              mode,
+              dueAt: mode === "customScheduled" ? scheduledFor ?? undefined : undefined,
+              media,
+              photoTitle: media.kind === "image" ? request.content.title : null,
+            },
+            this.options.graphql,
+          ),
       );
 
       return {

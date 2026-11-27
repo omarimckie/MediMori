@@ -43,6 +43,8 @@ export type PlannerE2eFixtureCreateResult = {
     | "smartInstagram"
     | "smartFacebook"
     | "legacy"
+    | "tiktokImage"
+    | "tiktokVideo"
     | "scheduledControl"
     | "publishedControl",
     string
@@ -147,6 +149,8 @@ export async function createPlannerE2eStagingFixtures(
     smartInstagram: crypto.randomUUID(),
     smartFacebook: crypto.randomUUID(),
     legacy: crypto.randomUUID(),
+    tiktokImage: crypto.randomUUID(),
+    tiktokVideo: crypto.randomUUID(),
     scheduledControl: crypto.randomUUID(),
     publishedControl: crypto.randomUUID(),
   };
@@ -212,6 +216,70 @@ export async function createPlannerE2eStagingFixtures(
       metadata: serverE2eFixtureMetadata(batchId, "smartFacebook", {
         source: SMART_UPLOAD_SOURCE,
         smartUploadFinalizeKey: finalizeKey,
+      }),
+    }),
+  );
+
+  const tiktokImageAssetId = crypto.randomUUID();
+  await store.createAsset({
+    id: tiktokImageAssetId,
+    name: `${PLANNER_E2E_STAGING_TAG} tiktok image`,
+    type: "upload",
+    source: "manual_upload",
+    bookId: null,
+    characterId: null,
+    campaignId,
+    approved: true,
+    usageRestrictions: null,
+    aspectRatio: "9:16",
+    imageWidth: 1080,
+    imageHeight: 1920,
+    mimeType: "image/png",
+    tags: [PLANNER_E2E_STAGING_TAG, "tiktok_fixture_image"],
+    url: "https://example.test/e2e-tiktok-image.png",
+    altText: "e2e tiktok image",
+    isDemo: true,
+  });
+  await store.createContent(
+    baseFixtureContent(ids.tiktokImage, batchId, "tiktokImage", {
+      platform: "tiktok",
+      format: "post",
+      ...withCampaign,
+      assetIds: [tiktokImageAssetId],
+      metadata: serverE2eFixtureMetadata(batchId, "tiktokImage", {
+        tiktokFixtureKind: "image",
+      }),
+    }),
+  );
+
+  const tiktokVideoAssetId = crypto.randomUUID();
+  await store.createAsset({
+    id: tiktokVideoAssetId,
+    name: `${PLANNER_E2E_STAGING_TAG} tiktok video`,
+    type: "upload",
+    source: "manual_upload",
+    bookId: null,
+    characterId: null,
+    campaignId,
+    approved: true,
+    usageRestrictions: null,
+    aspectRatio: "9:16",
+    imageWidth: 1080,
+    imageHeight: 1920,
+    mimeType: "video/mp4",
+    tags: [PLANNER_E2E_STAGING_TAG, "tiktok_fixture_video"],
+    url: "https://example.test/e2e-tiktok-video.mp4",
+    altText: "e2e tiktok video",
+    isDemo: true,
+  });
+  await store.createContent(
+    baseFixtureContent(ids.tiktokVideo, batchId, "tiktokVideo", {
+      platform: "tiktok",
+      format: "reel_script",
+      ...withCampaign,
+      assetIds: [tiktokVideoAssetId],
+      metadata: serverE2eFixtureMetadata(batchId, "tiktokVideo", {
+        tiktokFixtureKind: "video",
       }),
     }),
   );

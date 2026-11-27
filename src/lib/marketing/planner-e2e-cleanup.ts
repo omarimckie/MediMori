@@ -90,7 +90,9 @@ export async function cleanupPlannerE2eStagingFixtures(
     if (
       (row.status === "published" || row.status === "scheduled") &&
       role !== "scheduledControl" &&
-      role !== "publishedControl"
+      role !== "publishedControl" &&
+      role !== "tiktokImage" &&
+      role !== "tiktokVideo"
     ) {
       throw new PlannerStagingE2eCleanupError(
         `Refusing to delete scheduled/published content without control role: ${row.id}.`,
